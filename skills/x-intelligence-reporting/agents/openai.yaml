@@ -1,0 +1,5 @@
+interface:
+  display_name: "X Intelligence Reporting"
+  short_description: "Linked X intelligence reports"
+  default_prompt: "Use $x-intelligence-reporting to summarize the latest loopcraft X digest with post links, external links, frontier-lab highlights, follow candidates, and loopcraft implications."
+
