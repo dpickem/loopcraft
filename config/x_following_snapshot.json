@@ -1,0 +1,2686 @@
+{
+  "generated_at": "2026-06-15T19:08:43.473212+00:00",
+  "source_user": {
+    "verified_type": "blue",
+    "username": "dpickem",
+    "description": "",
+    "id": "544509418",
+    "name": "Daniel Pickem",
+    "verified": true
+  },
+  "count": 155,
+  "users": [
+    {
+      "description": "AI research paper tweets, ML @Gradio (acq. by @HuggingFace 🤗) dm for promo ,submit papers here: https://t.co/UzmYN5XOCi",
+      "id": "2465283662",
+      "name": "AK",
+      "public_metrics": {
+        "followers_count": 505013,
+        "following_count": 3136,
+        "tweet_count": 46923,
+        "listed_count": 5748,
+        "like_count": 38243,
+        "media_count": 19577
+      },
+      "username": "_akhaliq",
+      "verified_type": "blue",
+      "verified": true
+    },
+    {
+      "description": "Scaling RL @AnthropicAI, ex @DeepMind - working towards intelligence too cheap to meter",
+      "id": "968053955845484545",
+      "name": "Sholto Douglas",
+      "public_metrics": {
+        "followers_count": 45810,
+        "following_count": 1799,
+        "tweet_count": 1066,
+        "listed_count": 730,
+        "like_count": 7687,
+        "media_count": 60
+      },
+      "username": "_sholtodouglas",
+      "verified_type": "blue",
+      "verified": true
+    },
+    {
+      "description": "Brooklyn, NY USA - Manufacturer, open-source hardware, certified Minority and Woman-owned Business Enterprise (M/WBE) X account managed by @ladyada & @ptorrone",
+      "id": "20731304",
+      "name": "adafruit industries",
+      "public_metrics": {
+        "followers_count": 241420,
+        "following_count": 6,
+        "tweet_count": 26554,
+        "listed_count": 4298,
+        "like_count": 11092,
+        "media_count": 8950
+      },
+      "username": "adafruit",
+      "verified_type": "blue",
+      "verified": true
+    },
+    {
+      "description": "Scaling RL @huggingface 🤗 • Founded @cognitivelab_ai\nPrev : Research @MSFTResearch • ML @apple • AI Resident @lossfunk  • 22",
+      "id": "1272104335439048705",
+      "name": "Adithya S K",
+      "public_metrics": {
+        "followers_count": 13558,
+        "following_count": 2241,
+        "tweet_count": 1321,
+        "listed_count": 93,
+        "like_count": 13126,
+        "media_count": 266
+      },
+      "username": "adithya_s_k",
+      "verified_type": "blue",
+      "verified": true
+    },
+    {
+      "description": "Together with the AI community, we are pushing the boundaries of what’s possible through open science to create a more connected world.",
+      "affiliation": {
+        "description": "Meta",
+        "badge_url": "https://pbs.twimg.com/profile_images/1453818753880190978/HqrrEcrI_bigger.png",
+        "url": "https://twitter.com/Meta",
+        "user_id": [
+          "2425151"
+        ]
+      },
+      "id": "1034844617261248512",
+      "name": "AI at Meta",
+      "public_metrics": {
+        "followers_count": 807103,
+        "following_count": 323,
+        "tweet_count": 2609,
+        "listed_count": 11794,
+        "like_count": 2708,
+        "media_count": 1105
+      },
+      "username": "AIatMeta",
+      "verified_type": "business",
+      "verified": true
+    },
+    {
+      "description": "Co-Founder of Coursera; Stanford CS adjunct faculty. Former head of Baidu AI Group/Google Brain. #ai #machinelearning, #deeplearning #MOOCs",
+      "id": "216939636",
+      "name": "Andrew Ng",
+      "public_metrics": {
+        "followers_count": 1621100,
+        "following_count": 1080,
+        "tweet_count": 2006,
+        "listed_count": 19398,
+        "like_count": 1797,
+        "media_count": 467
+      },
+      "username": "AndrewYNg",
+      "verified_type": "blue",
+      "verified": true
+    },
+    {
+      "description": "engineering & research at anthropic.\n\ni don't check twitter DMs. email me!",
+      "id": "857827716",
+      "name": "andy jones",
+      "public_metrics": {
+        "followers_count": 21214,
+        "following_count": 352,
+        "tweet_count": 2309,
+        "listed_count": 258,
+        "like_count": 1293,
+        "media_count": 292
+      },
+      "username": "andy_l_jones",
+      "verified_type": "blue",
+      "verified": true
+    },
+    {
+      "description": "We're an AI safety and research company that builds reliable, interpretable, and steerable AI systems. Talk to our AI assistant @claudeai on https://t.co/FhDI3KQh0n.",
+      "id": "1353836358901501952",
+      "name": "Anthropic",
+      "public_metrics": {
+        "followers_count": 1424126,
+        "following_count": 2,
+        "tweet_count": 1589,
+        "listed_count": 13218,
+        "like_count": 1582,
+        "media_count": 624
+      },
+      "username": "AnthropicAI",
+      "verified_type": "business",
+      "verified": true
+    },
+    {
+      "description": "Sharing AI research. Early work on AI (GPT-J, LAION, scaling, MoE). Ex ML PhD (GT) & Google.",
+      "id": "794433401591693312",
+      "name": "Aran Komatsuzaki",
+      "public_metrics": {
+        "followers_count": 179325,
+        "following_count": 364,
+        "tweet_count": 6765,
+        "listed_count": 1812,
+        "like_count": 16389,
+        "media_count": 2557
+      },
+      "username": "arankomatsuzaki",
+      "verified_type": "blue",
+      "verified": true
+    },
+    {
+      "description": "High fidelity research",
+      "id": "1722422481942884352",
+      "name": "alphaXiv",
+      "public_metrics": {
+        "followers_count": 44925,
+        "following_count": 51,
+        "tweet_count": 2282,
+        "listed_count": 439,
+        "like_count": 3714,
+        "media_count": 1033
+      },
+      "username": "askalphaxiv",
+      "verified_type": "blue",
+      "verified": true
+    },
+    {
+      "description": "@IEEESpectrum's award-winning coverage of robots, drones, AI, and more, led by robotics editor @botjunkie",
+      "id": "70482598",
+      "name": "Automaton",
+      "public_metrics": {
+        "followers_count": 20196,
+        "following_count": 968,
+        "tweet_count": 9331,
+        "listed_count": 753,
+        "like_count": 2505,
+        "media_count": 1824
+      },
+      "username": "AutomatonBlog",
+      "verified_type": "none",
+      "verified": false
+    },
+    {
+      "description": "ow knee",
+      "id": "245262377",
+      "name": "Awni Hannun",
+      "public_metrics": {
+        "followers_count": 44944,
+        "following_count": 346,
+        "tweet_count": 5029,
+        "listed_count": 836,
+        "like_count": 11804,
+        "media_count": 879
+      },
+      "username": "awnihannun",
+      "verified_type": "blue",
+      "verified": true
+    },
+    {
+      "description": "News, features and analysis from the World's newsroom. Breaking news, follow @BBCBreaking. UK news, @BBCNews. Latest sports news @BBCSport",
+      "affiliation": {
+        "description": "BBC News (UK)",
+        "badge_url": "https://pbs.twimg.com/profile_images/1529107486271225859/03qcVNIk_bigger.jpg",
+        "url": "https://twitter.com/BBCNews",
+        "user_id": [
+          "612473"
+        ]
+      },
+      "id": "742143",
+      "name": "BBC News (World)",
+      "public_metrics": {
+        "followers_count": 42146911,
+        "following_count": 17,
+        "tweet_count": 408839,
+        "listed_count": 134013,
+        "like_count": 1,
+        "media_count": 27236
+      },
+      "username": "BBCWorld",
+      "verified_type": "business",
+      "verified": true
+    },
+    {
+      "description": "optimization. machine learning. uc berkeley.\n\nI blog at https://t.co/fkJujOPsJb\n\nThe world won't end.",
+      "id": "352013269",
+      "name": "Ben Recht",
+      "public_metrics": {
+        "followers_count": 34193,
+        "following_count": 325,
+        "tweet_count": 8432,
+        "listed_count": 464,
+        "like_count": 5654,
+        "media_count": 562
+      },
+      "username": "beenwrekt",
+      "verified_type": "none",
+      "verified": false
+    },
+    {
+      "description": "",
+      "affiliation": {
+        "description": "a16z",
+        "badge_url": "https://pbs.twimg.com/profile_images/1919488160125616128/QAZXTMEj_bigger.png",
+        "url": "https://twitter.com/a16z",
+        "user_id": [
+          "64844802"
+        ]
+      },
+      "id": "16242081",
+      "name": "benahorowitz.eth",
+      "public_metrics": {
+        "followers_count": 715888,
+        "following_count": 648,
+        "tweet_count": 2548,
+        "listed_count": 9619,
+        "like_count": 12078,
+        "media_count": 41
+      },
+      "username": "bhorowitz",
+      "verified_type": "blue",
+      "verified": true
+    },
+    {
+      "description": "Learning new things.\n\nFormer Chief Research Officer at OpenAI, early exec at Palantir, early employee at Paypal.",
+      "id": "1010741757917532161",
+      "name": "Bob McGrew",
+      "public_metrics": {
+        "followers_count": 34046,
+        "following_count": 1258,
+        "tweet_count": 590,
+        "listed_count": 567,
+        "like_count": 968,
+        "media_count": 5
+      },
+      "username": "bobmcgrewai",
+      "verified_type": "blue",
+      "verified": true
+    },
+    {
+      "description": "Good at following directions. Bad at obeying rules.\n\nSponsor me: https://t.co/2tvC9KKsit\n\nMastodon: @bunnie@treehouse.systems Bluesky: @bunnie.org",
+      "id": "100883962",
+      "name": "bunnie",
+      "public_metrics": {
+        "followers_count": 24732,
+        "following_count": 275,
+        "tweet_count": 1113,
+        "listed_count": 454,
+        "like_count": 889,
+        "media_count": 229
+      },
+      "username": "bunniestudios",
+      "verified_type": "none",
+      "verified": false
+    },
+    {
+      "description": "Follow @CBSNews SciTech for all the latest science and technology news.",
+      "affiliation": {
+        "description": "CBS News",
+        "badge_url": "https://pbs.twimg.com/profile_images/1617634745348661249/6YmPYpNd_bigger.jpg",
+        "url": "https://twitter.com/CBSNews",
+        "user_id": [
+          "15012486"
+        ]
+      },
+      "id": "219073535",
+      "name": "CBS News Sci Tech",
+      "public_metrics": {
+        "followers_count": 7026,
+        "following_count": 114,
+        "tweet_count": 8975,
+        "listed_count": 336,
+        "like_count": 3,
+        "media_count": 2507
+      },
+      "username": "CBSSciTech",
+      "verified_type": "business",
+      "verified": true
+    },
+    {
+      "description": "@thinkymachines Formerly @PyTorch \"My learning style is Horace twitter threads\" - @typedfemale",
+      "affiliation": {
+        "description": "Thinking Machines",
+        "badge_url": "https://pbs.twimg.com/profile_images/1891614400328630273/U6tsxu60_bigger.jpg",
+        "url": "https://twitter.com/thinkymachines",
+        "user_id": [
+          "1891523745929732096"
+        ]
+      },
+      "id": "117233133",
+      "name": "Horace He",
+      "public_metrics": {
+        "followers_count": 50523,
+        "following_count": 590,
+        "tweet_count": 3566,
+        "listed_count": 585,
+        "like_count": 8381,
+        "media_count": 434
+      },
+      "username": "cHHillee",
+      "verified_type": "blue",
+      "verified": true
+    },
+    {
+      "description": "Chief Scientist (former CTO) and cofounder @bitpanda_global #bitcoin",
+      "affiliation": {
+        "description": "Bitpanda",
+        "badge_url": "https://pbs.twimg.com/profile_images/1955654594563899395/lugnH5Ix_bigger.jpg",
+        "url": "https://twitter.com/Bitpanda",
+        "user_id": [
+          "1362360444804096000"
+        ]
+      },
+      "id": "11012032",
+      "name": "Christian Trummer - eu/acc /dd",
+      "public_metrics": {
+        "followers_count": 4270,
+        "following_count": 429,
+        "tweet_count": 470,
+        "listed_count": 46,
+        "like_count": 3919,
+        "media_count": 97
+      },
+      "username": "christiant5r",
+      "verified_type": "blue",
+      "verified": true
+    },
+    {
+      "description": "Cool Unix/Linux Command Line tricks you can use in $TWITTER_CHAR_LIMIT characters or less. Here mostly to inspire.  Also on  https://t.co/YYJE9JpVnF",
+      "id": "91333167",
+      "name": "Command Line Magic",
+      "public_metrics": {
+        "followers_count": 186461,
+        "following_count": 10457,
+        "tweet_count": 14332,
+        "listed_count": 3555,
+        "like_count": 1968,
+        "media_count": 744
+      },
+      "username": "climagic",
+      "verified_type": "blue",
+      "verified": true
+    },
+    {
+      "description": "Building profitable businesses. \nFounder or Own: @CTVentureCap @contrarian @bizscout_ @resibrands https://t.co/GeVvWuYSgV\nYou grow or die / #1 M&A book👇",
+      "affiliation": {
+        "description": "Contrarian Thinking",
+        "badge_url": "https://pbs.twimg.com/profile_images/1984737001883545600/8Fz8GkHz_bigger.jpg",
+        "url": "https://twitter.com/Contrarian",
+        "user_id": [
+          "1721943892650545152"
+        ]
+      },
+      "id": "258512916",
+      "name": "Codie Sanchez",
+      "public_metrics": {
+        "followers_count": 707626,
+        "following_count": 692,
+        "tweet_count": 26597,
+        "listed_count": 6801,
+        "like_count": 27875,
+        "media_count": 4888
+      },
+      "username": "Codie_Sanchez",
+      "verified_type": "blue",
+      "verified": true
+    },
+    {
+      "description": "Building systems to automate and optimize",
+      "id": "2009225013833134080",
+      "name": "Core Automation",
+      "public_metrics": {
+        "followers_count": 7437,
+        "following_count": 6,
+        "tweet_count": 110,
+        "listed_count": 49,
+        "like_count": 160,
+        "media_count": 5
+      },
+      "username": "CoreAutoAI",
+      "verified_type": "business",
+      "verified": true
+    },
+    {
+      "description": "@blackstar_cmptr\n\nPrev: Codex @OpenAI",
+      "id": "1288905098630815744",
+      "name": "daniel",
+      "public_metrics": {
+        "followers_count": 14343,
+        "following_count": 942,
+        "tweet_count": 1506,
+        "listed_count": 138,
+        "like_count": 4565,
+        "media_count": 91
+      },
+      "username": "DanielEdrisian",
+      "verified_type": "blue",
+      "verified": true
+    },
+    {
+      "description": "Anthropic CEO. https://t.co/qXHIf42jTl",
+      "affiliation": {
+        "description": "Anthropic",
+        "badge_url": "https://pbs.twimg.com/profile_images/1798110641414443008/XP8gyBaY_bigger.jpg",
+        "url": "https://twitter.com/AnthropicAI",
+        "user_id": [
+          "1353836358901501952"
+        ]
+      },
+      "id": "874126509245476864",
+      "name": "Dario Amodei",
+      "public_metrics": {
+        "followers_count": 428183,
+        "following_count": 0,
+        "tweet_count": 21,
+        "listed_count": 3994,
+        "like_count": 2,
+        "media_count": 1
+      },
+      "username": "DarioAmodei",
+      "verified_type": "blue",
+      "verified": true
+    },
+    {
+      "description": "Partner at Menlo Ventures. ex-founding Glean, Google Search. Cornell CS. \nInvestor: Anthropic, OpenRouter, Modal, Wispr Flow, Inception, Prime Intellect",
+      "affiliation": {
+        "description": "Menlo Ventures",
+        "badge_url": "https://pbs.twimg.com/profile_images/1145947031183089665/iWgvFmg6_bigger.png",
+        "url": "https://twitter.com/MenloVentures",
+        "user_id": [
+          "185358059"
+        ]
+      },
+      "id": "361044311",
+      "name": "Deedy",
+      "public_metrics": {
+        "followers_count": 244725,
+        "following_count": 6031,
+        "tweet_count": 16523,
+        "listed_count": 2299,
+        "like_count": 57859,
+        "media_count": 2939
+      },
+      "username": "deedydas",
+      "verified_type": "blue",
+      "verified": true
+    },
+    {
+      "description": "deepfates is an open-source AI project, developer, and publication focused on AI agent frameworks, large language models, and autonomous multi-agent systems.",
+      "id": "3315205122",
+      "name": "🎭",
+      "public_metrics": {
+        "followers_count": 61874,
+        "following_count": 6363,
+        "tweet_count": 140394,
+        "listed_count": 669,
+        "like_count": 712006,
+        "media_count": 9969
+      },
+      "username": "deepfates",
+      "verified_type": "blue",
+      "verified": true
+    },
+    {
+      "description": "Account for Deep Learning related news, papers, software, reading materials and also other machine learning related news and facts",
+      "id": "2895770934",
+      "name": "Deep Learning Hub",
+      "public_metrics": {
+        "followers_count": 51299,
+        "following_count": 411,
+        "tweet_count": 2283,
+        "listed_count": 1173,
+        "like_count": 332,
+        "media_count": 35
+      },
+      "username": "DeepLearningHub",
+      "verified_type": "none",
+      "verified": false
+    },
+    {
+      "description": "Busy inventing the shipwreck. @Penn. Past: @johnshopkins, @UCSC, @Amazon, @Twitter ||Art: #NLProc, Vision, Speech, #DeepLearning || Life: 道元, improv, running 🌈",
+      "id": "16984977",
+      "name": "Delip Rao e/σ",
+      "public_metrics": {
+        "followers_count": 68945,
+        "following_count": 5251,
+        "tweet_count": 54924,
+        "listed_count": 967,
+        "like_count": 49328,
+        "media_count": 5206
+      },
+      "username": "deliprao",
+      "verified_type": "blue",
+      "verified": true
+    },
+    {
+      "description": "Nobel Laureate. Co-Founder & CEO @GoogleDeepMind - working on AGI. Solving disease @IsomorphicLabs. Trying to understand the fundamental nature of reality.",
+      "id": "1482581556",
+      "name": "Demis Hassabis",
+      "public_metrics": {
+        "followers_count": 1178845,
+        "following_count": 173,
+        "tweet_count": 3114,
+        "listed_count": 12547,
+        "like_count": 18053,
+        "media_count": 169
+      },
+      "username": "demishassabis",
+      "verified_type": "blue",
+      "verified": true
+    },
+    {
+      "description": "Founder & CEO @ClickUp",
+      "affiliation": {
+        "description": "ClickUp",
+        "badge_url": "https://pbs.twimg.com/profile_images/1954978523732643842/TCyGfr9i_bigger.jpg",
+        "url": "https://twitter.com/clickup",
+        "user_id": [
+          "857643149149085696"
+        ]
+      },
+      "id": "42836285",
+      "name": "Zeb Evans",
+      "public_metrics": {
+        "followers_count": 232601,
+        "following_count": 375,
+        "tweet_count": 1541,
+        "listed_count": 138,
+        "like_count": 2171,
+        "media_count": 96
+      },
+      "username": "DJ_CURFEW",
+      "verified_type": "blue",
+      "verified": true
+    },
+    {
+      "description": "Distinguished Scientist at Google. National Academy of Engineering. Computational Imaging ∩ AI. Posts are personal opinions",
+      "id": "2324423269",
+      "name": "Peyman Milanfar",
+      "public_metrics": {
+        "followers_count": 112705,
+        "following_count": 575,
+        "tweet_count": 8384,
+        "listed_count": 729,
+        "like_count": 13159,
+        "media_count": 3006
+      },
+      "username": "docmilanfar",
+      "verified_type": "blue",
+      "verified": true
+    },
+    {
+      "description": "CS Faculty @Stanford, @StanfordAILab, @StanfordHAI\nResearch scientist @GoogleDeepMind\nPhD and BS from @Berkeley_EECS",
+      "id": "2364317023",
+      "name": "Dorsa Sadigh",
+      "public_metrics": {
+        "followers_count": 11780,
+        "following_count": 399,
+        "tweet_count": 577,
+        "listed_count": 157,
+        "like_count": 1630,
+        "media_count": 94
+      },
+      "username": "DorsaSadigh",
+      "verified_type": "none",
+      "verified": false
+    },
+    {
+      "description": "NVIDIA Director of Robotics & Distinguished Scientist. Co-Lead of GEAR lab. Solving Physical AGI, one motor at a time. Stanford Ph.D. OpenAI's 1st intern.",
+      "id": "1007413134",
+      "name": "Jim Fan",
+      "public_metrics": {
+        "followers_count": 454444,
+        "following_count": 3132,
+        "tweet_count": 4167,
+        "listed_count": 6025,
+        "like_count": 8813,
+        "media_count": 851
+      },
+      "username": "DrJimFan",
+      "verified_type": "blue",
+      "verified": true
+    },
+    {
+      "description": "Prof @Stanford, Distinguished Research Scientist and AV research lead @nvidia. PhD from @MITAeroAstro. Robotics, autonomous systems, AI. Opinions are my own.",
+      "id": "1060671808678977536",
+      "name": "Marco Pavone",
+      "public_metrics": {
+        "followers_count": 5521,
+        "following_count": 67,
+        "tweet_count": 254,
+        "listed_count": 46,
+        "like_count": 113,
+        "media_count": 31
+      },
+      "username": "drmapavone",
+      "verified_type": "blue",
+      "verified": true
+    },
+    {
+      "description": "https://t.co/dDtDyVssfm",
+      "affiliation": {
+        "description": "X",
+        "badge_url": "https://pbs.twimg.com/profile_images/1955359038532653056/OSHY3ewP_bigger.jpg",
+        "url": "https://twitter.com/X",
+        "user_id": [
+          "783214"
+        ]
+      },
+      "id": "44196397",
+      "name": "Elon Musk",
+      "public_metrics": {
+        "followers_count": 240274478,
+        "following_count": 1355,
+        "tweet_count": 104231,
+        "listed_count": 169565,
+        "like_count": 234334,
+        "media_count": 4541
+      },
+      "username": "elonmusk",
+      "verified_type": "blue",
+      "verified": true
+    },
+    {
+      "description": "Sharing daily personal notes on selected interesting Embodied AI papers, blogs and talks | Maintained by @yilun_chen_ | Opinions are my own.",
+      "id": "1941983406176481280",
+      "name": "Embodied AI Reading Notes",
+      "public_metrics": {
+        "followers_count": 3165,
+        "following_count": 1,
+        "tweet_count": 150,
+        "listed_count": 44,
+        "like_count": 22,
+        "media_count": 133
+      },
+      "username": "EmbodiedAIRead",
+      "verified_type": "blue",
+      "verified": true
+    },
+    {
+      "description": "Making the World a Better Place, One Evil Mad Scientist at a Time. And now, part of Bantam Tools.",
+      "id": "14324794",
+      "name": "Evil Mad Scientist",
+      "public_metrics": {
+        "followers_count": 27150,
+        "following_count": 3092,
+        "tweet_count": 21354,
+        "listed_count": 682,
+        "like_count": 56285,
+        "media_count": 756
+      },
+      "username": "EMSL",
+      "verified_type": "none",
+      "verified": false
+    },
+    {
+      "description": "Breaking news from the worlds of technology and entertainment, and expert reviews of the latest consumer tech products. https://t.co/XnAXVxz7WG",
+      "id": "14372486",
+      "name": "Engadget",
+      "public_metrics": {
+        "followers_count": 2795460,
+        "following_count": 238,
+        "tweet_count": 224875,
+        "listed_count": 44323,
+        "like_count": 1605,
+        "media_count": 99281
+      },
+      "username": "engadget",
+      "verified_type": "business",
+      "verified": true
+    },
+    {
+      "description": "Chief Scientific Officer, Microsoft",
+      "id": "264501255",
+      "name": "Eric Horvitz",
+      "public_metrics": {
+        "followers_count": 31500,
+        "following_count": 1598,
+        "tweet_count": 2964,
+        "listed_count": 812,
+        "like_count": 3395,
+        "media_count": 266
+      },
+      "username": "erichorvitz",
+      "verified_type": "blue",
+      "verified": true
+    },
+    {
+      "description": "Wi-Fi & Bluetooth system-on-chip, following in the footsteps of @ESP8266. News & info on the ESP32 SoC, SiP, PCB modules like ESP-WROOM-32, and more!",
+      "id": "4134016874",
+      "name": "ESP32",
+      "public_metrics": {
+        "followers_count": 25444,
+        "following_count": 798,
+        "tweet_count": 3898,
+        "listed_count": 416,
+        "like_count": 4844,
+        "media_count": 1016
+      },
+      "username": "ESP32net",
+      "verified_type": "none",
+      "verified": false
+    },
+    {
+      "description": "The little chip with big dreams. Tweets on ESP8266/ESP8285! ESP-WROOM-02, NodeMCU, Ai-Thinker, Adafruit, SparkFun & other modules! For ESP32, follow @ESP32net!",
+      "id": "2802797885",
+      "name": "ESP8266",
+      "public_metrics": {
+        "followers_count": 24473,
+        "following_count": 934,
+        "tweet_count": 4721,
+        "listed_count": 585,
+        "like_count": 9826,
+        "media_count": 1731
+      },
+      "username": "ESP8266",
+      "verified_type": "none",
+      "verified": false
+    },
+    {
+      "description": "https://t.co/YkZVpB84j0 supporting the #esp8266 community in their #iot and @arduino efforts, follow @esp32com for the new ESP32!",
+      "id": "2958668424",
+      "name": "ESP8266 Community",
+      "public_metrics": {
+        "followers_count": 16613,
+        "following_count": 114,
+        "tweet_count": 4722,
+        "listed_count": 414,
+        "like_count": 5357,
+        "media_count": 168
+      },
+      "username": "ESP8266COM",
+      "verified_type": "none",
+      "verified": false
+    },
+    {
+      "description": "ExtremeTech is the world's top destination for news and analysis of emerging science and technology trends, software, hardware, and gadgets.",
+      "id": "23455553",
+      "name": "ExtremeTech",
+      "public_metrics": {
+        "followers_count": 106550,
+        "following_count": 242,
+        "tweet_count": 36030,
+        "listed_count": 1907,
+        "like_count": 347,
+        "media_count": 13922
+      },
+      "username": "ExtremeTech",
+      "verified_type": "none",
+      "verified": false
+    },
+    {
+      "description": "Co-founder @ndea. Co-founder @arcprize. Creator of Keras and ARC-AGI. Author of 'Deep Learning with Python'.",
+      "id": "68746721",
+      "name": "François Chollet",
+      "public_metrics": {
+        "followers_count": 696786,
+        "following_count": 825,
+        "tweet_count": 25371,
+        "listed_count": 9947,
+        "like_count": 10805,
+        "media_count": 1498
+      },
+      "username": "fchollet",
+      "verified_type": "blue",
+      "verified": true
+    },
+    {
+      "description": "Gemini Pretraining Area TL, Google DeepMind",
+      "id": "1035960203659726848",
+      "name": "Vlad Feinberg",
+      "public_metrics": {
+        "followers_count": 6492,
+        "following_count": 83,
+        "tweet_count": 277,
+        "listed_count": 60,
+        "like_count": 771,
+        "media_count": 17
+      },
+      "username": "FeinbergVlad",
+      "verified_type": "blue",
+      "verified": true
+    },
+    {
+      "description": "President & Co-Founder @OpenAI",
+      "affiliation": {
+        "description": "OpenAI",
+        "badge_url": "https://pbs.twimg.com/profile_images/1885410181409820672/ztsaR0JW_bigger.jpg",
+        "url": "https://twitter.com/OpenAI",
+        "user_id": [
+          "4398626122"
+        ]
+      },
+      "id": "162124540",
+      "name": "Greg Brockman",
+      "public_metrics": {
+        "followers_count": 993359,
+        "following_count": 8,
+        "tweet_count": 6195,
+        "listed_count": 10786,
+        "like_count": 2388,
+        "media_count": 445
+      },
+      "username": "gdb",
+      "verified_type": "blue",
+      "verified": true
+    },
+    {
+      "description": "Generalist is an AI robotics company building general intelligence for the physical world and making it useful to everyone.",
+      "id": "1931415664918700032",
+      "name": "Generalist",
+      "public_metrics": {
+        "followers_count": 10269,
+        "following_count": 22,
+        "tweet_count": 152,
+        "listed_count": 129,
+        "like_count": 312,
+        "media_count": 56
+      },
+      "username": "GeneralistAI",
+      "verified_type": "business",
+      "verified": true
+    },
+    {
+      "description": "Screenshots of chatbots since 2022.\nFormerly: Google DeepMind, Scale",
+      "id": "16535432",
+      "name": "Riley Goodside",
+      "public_metrics": {
+        "followers_count": 212569,
+        "following_count": 3477,
+        "tweet_count": 4683,
+        "listed_count": 2508,
+        "like_count": 31004,
+        "media_count": 790
+      },
+      "username": "goodside",
+      "verified_type": "blue",
+      "verified": true
+    },
+    {
+      "description": "Making AI helpful for everyone. Show thinking ↓",
+      "id": "33838201",
+      "name": "Google AI",
+      "public_metrics": {
+        "followers_count": 2421001,
+        "following_count": 30,
+        "tweet_count": 3299,
+        "listed_count": 29064,
+        "like_count": 1423,
+        "media_count": 1392
+      },
+      "username": "GoogleAI",
+      "verified_type": "business",
+      "verified": true
+    },
+    {
+      "description": "The engine room of @Google. Building AI safely and responsibly to solve the world’s most complex problems. Join us: https://t.co/jUHQA27iBL",
+      "id": "4783690002",
+      "name": "Google DeepMind",
+      "public_metrics": {
+        "followers_count": 1454731,
+        "following_count": 278,
+        "tweet_count": 4443,
+        "listed_count": 16688,
+        "like_count": 2837,
+        "media_count": 1889
+      },
+      "username": "GoogleDeepMind",
+      "verified_type": "business",
+      "verified": true
+    },
+    {
+      "description": "I drop startup ideas daily. Host @startupideaspod. CEO: @latecheckoutplz we build companies like @ideabrowser, @meetLCA, @boringmarketer etc",
+      "id": "14642331",
+      "name": "GREG ISENBERG",
+      "public_metrics": {
+        "followers_count": 672841,
+        "following_count": 980,
+        "tweet_count": 63289,
+        "listed_count": 10912,
+        "like_count": 116081,
+        "media_count": 3084
+      },
+      "username": "gregisenberg",
+      "verified_type": "blue",
+      "verified": true
+    },
+    {
+      "description": "The Institute for Robotics & Intelligent Machines (IRIM) at Georgia Tech designs the next generation of robots that will change the world.",
+      "id": "1890625712",
+      "name": "Robotics@GT",
+      "public_metrics": {
+        "followers_count": 2829,
+        "following_count": 360,
+        "tweet_count": 1552,
+        "listed_count": 53,
+        "like_count": 1342,
+        "media_count": 510
+      },
+      "username": "GTrobotics",
+      "verified_type": "none",
+      "verified": false
+    },
+    {
+      "description": "🔥 Read: https://t.co/KG4TpCzO7H\n☠️ Contribute: tips at hackaday dot com \n👉 Projects: @hackadayio\n#Fediverse: @hackaday@hackaday.social\n📒 Learn: https://t.co/p1jaCktSDt",
+      "id": "14607140",
+      "name": "hackaday",
+      "public_metrics": {
+        "followers_count": 271509,
+        "following_count": 2022,
+        "tweet_count": 84407,
+        "listed_count": 3782,
+        "like_count": 15820,
+        "media_count": 10832
+      },
+      "username": "hackaday",
+      "verified_type": "blue",
+      "verified": true
+    },
+    {
+      "description": "❤️ World's largest hardware + software community \nHome of @hackaday community, weekly #HackChats & #HackadayU",
+      "id": "2670064278",
+      "name": "hackaday.io",
+      "public_metrics": {
+        "followers_count": 50348,
+        "following_count": 1844,
+        "tweet_count": 15598,
+        "listed_count": 852,
+        "like_count": 10417,
+        "media_count": 5245
+      },
+      "username": "hackadayio",
+      "verified_type": "none",
+      "verified": false
+    },
+    {
+      "description": "Updates from our annual electronics innovation competition, and other hacking contests. Join the Hardware Revolution! @hackaday",
+      "id": "2543887154",
+      "name": "The Hackaday Prize",
+      "public_metrics": {
+        "followers_count": 3758,
+        "following_count": 710,
+        "tweet_count": 6232,
+        "listed_count": 166,
+        "like_count": 1032,
+        "media_count": 2005
+      },
+      "username": "HackadayPrize",
+      "verified_type": "none",
+      "verified": false
+    },
+    {
+      "description": "Home of the Single Board Computer Database ( formerly at https://t.co/UnSeqbHEMW, and maintained by @DeviceGuru  )",
+      "id": "53046723",
+      "name": "HackerBoards",
+      "public_metrics": {
+        "followers_count": 514,
+        "following_count": 13,
+        "tweet_count": 1004,
+        "listed_count": 19,
+        "like_count": 0,
+        "media_count": 57
+      },
+      "username": "HackerBoards",
+      "verified_type": "none",
+      "verified": false
+    },
+    {
+      "description": "https://t.co/mTAliYkLw3, an Avnet community, is the world’s fastest growing developer community for learning, programming, and building hardware.",
+      "id": "1473686120",
+      "name": "Hackster.io",
+      "public_metrics": {
+        "followers_count": 157471,
+        "following_count": 4015,
+        "tweet_count": 53229,
+        "listed_count": 1895,
+        "like_count": 34991,
+        "media_count": 28125
+      },
+      "username": "Hacksterio",
+      "verified_type": "none",
+      "verified": false
+    },
+    {
+      "description": "Co-Founder and CEO @SakanaAILabs 🎏",
+      "id": "2895499182",
+      "name": "hardmaru",
+      "public_metrics": {
+        "followers_count": 413365,
+        "following_count": 1875,
+        "tweet_count": 25889,
+        "listed_count": 4765,
+        "like_count": 143626,
+        "media_count": 4476
+      },
+      "username": "hardmaru",
+      "verified_type": "blue",
+      "verified": true
+    },
+    {
+      "description": "Director Contextual Robotics Institute, UC San Diego, Professor of Computer Science, Coordinator of Robotics-VO, Photographer, Foodie, Explorer, ...",
+      "id": "17293820",
+      "name": "Henrik I Christensen",
+      "public_metrics": {
+        "followers_count": 4599,
+        "following_count": 482,
+        "tweet_count": 1187,
+        "listed_count": 159,
+        "like_count": 3586,
+        "media_count": 36
+      },
+      "username": "hiskov",
+      "verified_type": "none",
+      "verified": false
+    },
+    {
+      "description": "@LangChain\n\nAlways hiring: https://t.co/D5Ut3loFO7",
+      "affiliation": {
+        "description": "LangChain",
+        "badge_url": "https://pbs.twimg.com/profile_images/2028336270431453184/jRRpLAdG_bigger.jpg",
+        "url": "https://twitter.com/LangChain",
+        "user_id": [
+          "1589007443853340672"
+        ]
+      },
+      "id": "2728439146",
+      "name": "Harrison Chase",
+      "public_metrics": {
+        "followers_count": 110037,
+        "following_count": 563,
+        "tweet_count": 16748,
+        "listed_count": 2230,
+        "like_count": 16198,
+        "media_count": 641
+      },
+      "username": "hwchase17",
+      "verified_type": "blue",
+      "verified": true
+    },
+    {
+      "description": "Senior Research Scientist and Manager, Autonomous Vehicle Research @ NVIDIA. Opinions are my own.",
+      "id": "1008944276431036416",
+      "name": "Boris Ivanovic",
+      "public_metrics": {
+        "followers_count": 947,
+        "following_count": 136,
+        "tweet_count": 135,
+        "listed_count": 14,
+        "like_count": 259,
+        "media_count": 18
+      },
+      "username": "iamborisi",
+      "verified_type": "none",
+      "verified": false
+    },
+    {
+      "description": "The latest technology news and analysis from the world's leading engineering magazine.",
+      "id": "15825547",
+      "name": "IEEE Spectrum",
+      "public_metrics": {
+        "followers_count": 152513,
+        "following_count": 3501,
+        "tweet_count": 30870,
+        "listed_count": 3313,
+        "like_count": 1717,
+        "media_count": 3115
+      },
+      "username": "IEEESpectrum",
+      "verified_type": "none",
+      "verified": false
+    },
+    {
+      "description": "SSI @SSI",
+      "id": "1720046887",
+      "name": "Ilya Sutskever",
+      "public_metrics": {
+        "followers_count": 720749,
+        "following_count": 3,
+        "tweet_count": 1196,
+        "listed_count": 8385,
+        "like_count": 4268,
+        "media_count": 27
+      },
+      "username": "ilyasut",
+      "verified_type": "blue",
+      "verified": true
+    },
+    {
+      "description": "Learn to make, make to learn. 🙌\nhttps://t.co/zzODKo8VIc • a project sharing community for the creative and curious.",
+      "id": "7597362",
+      "name": "instructables",
+      "public_metrics": {
+        "followers_count": 135151,
+        "following_count": 3808,
+        "tweet_count": 52495,
+        "listed_count": 2924,
+        "like_count": 32744,
+        "media_count": 21437
+      },
+      "username": "instructables",
+      "verified_type": "none",
+      "verified": false
+    },
+    {
+      "description": "@AnthropicAI, ONEAI OECD, co-chair @indexingai, writer @ https://t.co/3vmtHYkIJ2 Past: @openai, @business @theregister. Neural nets, distributed systems, weird futures",
+      "id": "86351835",
+      "name": "Jack Clark",
+      "public_metrics": {
+        "followers_count": 133732,
+        "following_count": 4620,
+        "tweet_count": 32157,
+        "listed_count": 3507,
+        "like_count": 34742,
+        "media_count": 1287
+      },
+      "username": "jackclarkSF",
+      "verified_type": "blue",
+      "verified": true
+    },
+    {
+      "description": "AI research @AnthropicAI. Previously OpenAI & DeepMind.\nOptimizing for a post-AGI future where humanity flourishes.\nOpinions aren't my employer's.",
+      "id": "710610891058716673",
+      "name": "Jan Leike",
+      "public_metrics": {
+        "followers_count": 132340,
+        "following_count": 335,
+        "tweet_count": 790,
+        "listed_count": 2000,
+        "like_count": 3744,
+        "media_count": 43
+      },
+      "username": "janleike",
+      "verified_type": "blue",
+      "verified": true
+    },
+    {
+      "description": "Chief Scientist, Google DeepMind & Google Research. Gemini Lead. Opinions stated here are my own, not those of Google. TensorFlow, MapReduce, Bigtable, ...",
+      "id": "911297187664949248",
+      "name": "Jeff Dean",
+      "public_metrics": {
+        "followers_count": 444022,
+        "following_count": 6427,
+        "tweet_count": 9349,
+        "listed_count": 7669,
+        "like_count": 44965,
+        "media_count": 568
+      },
+      "username": "JeffDean",
+      "verified_type": "blue",
+      "verified": true
+    },
+    {
+      "description": "Recently started @thinkymachines. Interested in reinforcement learning, alignment, birds, jazz music",
+      "affiliation": {
+        "description": "Thinking Machines",
+        "badge_url": "https://pbs.twimg.com/profile_images/1891614400328630273/U6tsxu60_bigger.jpg",
+        "url": "https://twitter.com/thinkymachines",
+        "user_id": [
+          "1891523745929732096"
+        ]
+      },
+      "id": "1388977636618080256",
+      "name": "John Schulman",
+      "public_metrics": {
+        "followers_count": 75050,
+        "following_count": 1883,
+        "tweet_count": 187,
+        "listed_count": 1289,
+        "like_count": 4756,
+        "media_count": 7
+      },
+      "username": "johnschulman2",
+      "verified_type": "blue",
+      "verified": true
+    },
+    {
+      "description": "Roboticist.",
+      "id": "22986180",
+      "name": "J.-P. de la Croix",
+      "public_metrics": {
+        "followers_count": 53,
+        "following_count": 61,
+        "tweet_count": 0,
+        "listed_count": 1,
+        "like_count": 6,
+        "media_count": 0
+      },
+      "username": "jpdelacroix",
+      "verified_type": "none",
+      "verified": false
+    },
+    {
+      "description": "I like training large deep neural nets.",
+      "id": "33836629",
+      "name": "Andrej Karpathy",
+      "public_metrics": {
+        "followers_count": 3014223,
+        "following_count": 1099,
+        "tweet_count": 10118,
+        "listed_count": 27488,
+        "like_count": 23869,
+        "media_count": 865
+      },
+      "username": "karpathy",
+      "verified_type": "blue",
+      "verified": true
+    },
+    {
+      "description": "Here to make the world a more creative place💡\nDiscover new projects to back — or launch your own: https://t.co/dun4Iay1RU",
+      "id": "16186995",
+      "name": "Kickstarter",
+      "public_metrics": {
+        "followers_count": 900688,
+        "following_count": 1140,
+        "tweet_count": 29141,
+        "listed_count": 11750,
+        "like_count": 25495,
+        "media_count": 10668
+      },
+      "username": "Kickstarter",
+      "verified_type": "business",
+      "verified": true
+    },
+    {
+      "description": "Member of Technical Staff (Agents), Research - @sullyai | ex-99Ravens AI",
+      "affiliation": {
+        "description": "Sully.ai",
+        "badge_url": "https://pbs.twimg.com/profile_images/1984530242783039488/x9LWpM4z_bigger.jpg",
+        "url": "https://twitter.com/sullyai",
+        "user_id": [
+          "943104487467732994"
+        ]
+      },
+      "id": "1603551009854423040",
+      "name": "Muratcan Koylan",
+      "public_metrics": {
+        "followers_count": 21623,
+        "following_count": 3719,
+        "tweet_count": 12497,
+        "listed_count": 431,
+        "like_count": 64621,
+        "media_count": 2832
+      },
+      "username": "koylanai",
+      "verified_type": "blue",
+      "verified": true
+    },
+    {
+      "description": "Native Marylander in CO. Tennis, hiking, running, game theory, & control theory. Computer Science @UCCS.",
+      "id": "828265303670980609",
+      "name": "Keith Paarporn",
+      "public_metrics": {
+        "followers_count": 157,
+        "following_count": 258,
+        "tweet_count": 86,
+        "listed_count": 4,
+        "like_count": 472,
+        "media_count": 4
+      },
+      "username": "kpaarporn",
+      "verified_type": "none",
+      "verified": false
+    },
+    {
+      "description": "Co-founder of Thinking Machines Lab @thinkymachines; Ex-VP, AI Safety & robotics, applied research @OpenAI; Author of Lil'Log",
+      "affiliation": {
+        "description": "Thinking Machines",
+        "badge_url": "https://pbs.twimg.com/profile_images/1891614400328630273/U6tsxu60_bigger.jpg",
+        "url": "https://twitter.com/thinkymachines",
+        "user_id": [
+          "1891523745929732096"
+        ]
+      },
+      "id": "96999384",
+      "name": "Lilian Weng",
+      "public_metrics": {
+        "followers_count": 258492,
+        "following_count": 178,
+        "tweet_count": 211,
+        "listed_count": 2983,
+        "like_count": 143,
+        "media_count": 15
+      },
+      "username": "lilianweng",
+      "verified_type": "blue",
+      "verified": true
+    },
+    {
+      "description": "DIY projects, How-tos, tech news, electronics, crafts, and ideas.",
+      "id": "1118451",
+      "name": "Make:",
+      "public_metrics": {
+        "followers_count": 219352,
+        "following_count": 2372,
+        "tweet_count": 37263,
+        "listed_count": 5418,
+        "like_count": 6375,
+        "media_count": 5551
+      },
+      "username": "make",
+      "verified_type": "blue",
+      "verified": true
+    },
+    {
+      "description": "A celebration of invention, creativity and curiosity inspiring the future. A global Maker Movement with over 200 Faires across the world.",
+      "id": "1578141",
+      "name": "Maker Faire",
+      "public_metrics": {
+        "followers_count": 102592,
+        "following_count": 1611,
+        "tweet_count": 11893,
+        "listed_count": 2225,
+        "like_count": 9765,
+        "media_count": 2057
+      },
+      "username": "makerfaire",
+      "verified_type": "none",
+      "verified": false
+    },
+    {
+      "description": "An electronics project space powered by @DigiKey \n \nCome #MakeWithDigiKey!",
+      "id": "3241668860",
+      "name": "maker.io",
+      "public_metrics": {
+        "followers_count": 55423,
+        "following_count": 1658,
+        "tweet_count": 16055,
+        "listed_count": 707,
+        "like_count": 12452,
+        "media_count": 12179
+      },
+      "username": "MakerIO",
+      "verified_type": "none",
+      "verified": false
+    },
+    {
+      "description": "DIY Kits + Tools + Books + Fun. Arduino, 3D Printing, Drones, Raspberry Pi. Show us what you're making w/ our products! #makershed. Also at help@makershed.com",
+      "id": "24923100",
+      "name": "Maker Shed",
+      "public_metrics": {
+        "followers_count": 50929,
+        "following_count": 42,
+        "tweet_count": 2236,
+        "listed_count": 1199,
+        "like_count": 277,
+        "media_count": 454
+      },
+      "username": "MakerShed",
+      "verified_type": "none",
+      "verified": false
+    },
+    {
+      "description": "Chief Research Officer at @OpenAI. Coach for the USA IOI Team.",
+      "id": "1273327266957688832",
+      "name": "Mark Chen",
+      "public_metrics": {
+        "followers_count": 72281,
+        "following_count": 352,
+        "tweet_count": 435,
+        "listed_count": 1089,
+        "like_count": 2184,
+        "media_count": 23
+      },
+      "username": "markchen90",
+      "verified_type": "blue",
+      "verified": true
+    },
+    {
+      "description": "Member of Technical Staff @perplexity_ai",
+      "affiliation": {
+        "description": "Perplexity",
+        "badge_url": "https://pbs.twimg.com/profile_images/2009310641165660160/XArF3_Ib_bigger.jpg",
+        "url": "https://twitter.com/perplexity_ai",
+        "user_id": [
+          "1599587232175849472"
+        ]
+      },
+      "id": "1186043355710545920",
+      "name": "Mark Tenenholtz",
+      "public_metrics": {
+        "followers_count": 150245,
+        "following_count": 704,
+        "tweet_count": 7150,
+        "listed_count": 1548,
+        "like_count": 13475,
+        "media_count": 651
+      },
+      "username": "marktenenholtz",
+      "verified_type": "blue",
+      "verified": true
+    },
+    {
+      "description": "Mashable is for superfans. We're not for the casually curious. Obsess with us.\n\nWe may earn affiliate commissions from products linked below.",
+      "id": "972651",
+      "name": "Mashable",
+      "public_metrics": {
+        "followers_count": 8162298,
+        "following_count": 2529,
+        "tweet_count": 583512,
+        "listed_count": 104114,
+        "like_count": 2002,
+        "media_count": 304001
+      },
+      "username": "mashable",
+      "verified_type": "business",
+      "verified": true
+    },
+    {
+      "description": "The future is bright.",
+      "affiliation": {
+        "description": "Forward Future",
+        "badge_url": "https://pbs.twimg.com/profile_images/2029685330878812161/RHL0LyLR_bigger.jpg",
+        "url": "https://twitter.com/ForwardFuture",
+        "user_id": [
+          "1838988260259086336"
+        ]
+      },
+      "id": "6681172",
+      "name": "Matthew Berman",
+      "public_metrics": {
+        "followers_count": 122337,
+        "following_count": 1261,
+        "tweet_count": 15381,
+        "listed_count": 2761,
+        "like_count": 26863,
+        "media_count": 2187
+      },
+      "username": "MatthewBerman",
+      "verified_type": "blue",
+      "verified": true
+    },
+    {
+      "description": "RS at Nvidia focussing on autonomous vehicles. Former Oxford PhD, MSR, Deepmind and Waymo. Opinions my own and do not represent those of my employer, Nvidia.",
+      "id": "89467149",
+      "name": "Maximilian Igl",
+      "public_metrics": {
+        "followers_count": 2926,
+        "following_count": 465,
+        "tweet_count": 287,
+        "listed_count": 53,
+        "like_count": 308,
+        "media_count": 19
+      },
+      "username": "MaxiIgl",
+      "verified_type": "none",
+      "verified": false
+    },
+    {
+      "description": "News from the MIT Media Lab.\n\nExplore all of the official MIT social media accounts at  https://t.co/VBCkJP7BuC.",
+      "id": "13982132",
+      "name": "MIT Media Lab",
+      "public_metrics": {
+        "followers_count": 450881,
+        "following_count": 1067,
+        "tweet_count": 20517,
+        "listed_count": 10863,
+        "like_count": 5627,
+        "media_count": 2212
+      },
+      "username": "medialab",
+      "verified_type": "blue",
+      "verified": true
+    },
+    {
+      "description": "I teach AIs to play nice with each other, and sometimes with us humans.",
+      "id": "1017376789193256960",
+      "name": "Matthias Gerstgrasser",
+      "public_metrics": {
+        "followers_count": 165,
+        "following_count": 50,
+        "tweet_count": 57,
+        "listed_count": 2,
+        "like_count": 49,
+        "media_count": 7
+      },
+      "username": "MGerstgrasser",
+      "verified_type": "none",
+      "verified": false
+    },
+    {
+      "description": "Navigating life & tech with curiosity and patience. Crafting impactful solutions. Finding joy in mindful detachment.",
+      "id": "247212335",
+      "name": "Martin Harizanov",
+      "public_metrics": {
+        "followers_count": 1560,
+        "following_count": 96,
+        "tweet_count": 1168,
+        "listed_count": 62,
+        "like_count": 898,
+        "media_count": 464
+      },
+      "username": "mharizanov",
+      "verified_type": "none",
+      "verified": false
+    },
+    {
+      "description": "CEO and co-founder of Core Automation\n\nformer VP of RL @ OpenAI : reasoning models, o3, o1, GPT4, ChatGPT, Codex, RL for robots\n\ncautious AI optimist",
+      "affiliation": {
+        "description": "Core Automation",
+        "badge_url": "https://pbs.twimg.com/profile_images/2046643788807012352/GM0911Jr_bigger.jpg",
+        "url": "https://twitter.com/CoreAutoAI",
+        "user_id": [
+          "2009225013833134080"
+        ]
+      },
+      "id": "1082912120",
+      "name": "Jerry Tworek",
+      "public_metrics": {
+        "followers_count": 37488,
+        "following_count": 1155,
+        "tweet_count": 1971,
+        "listed_count": 617,
+        "like_count": 3404,
+        "media_count": 145
+      },
+      "username": "MillionInt",
+      "verified_type": "blue",
+      "verified": true
+    },
+    {
+      "description": "The Massachusetts Institute of Technology is a world leader in research and education. Related accounts: @MITevents @MITstudents @MIT_alumni",
+      "id": "15460048",
+      "name": "Massachusetts Institute of Technology (MIT)",
+      "public_metrics": {
+        "followers_count": 1364748,
+        "following_count": 569,
+        "tweet_count": 24084,
+        "listed_count": 9047,
+        "like_count": 1880,
+        "media_count": 12019
+      },
+      "username": "MIT",
+      "verified_type": "blue",
+      "verified": true
+    },
+    {
+      "description": "This account is inactive. Follow @MIT for Institute news and @MITevents for on-campus happenings.",
+      "id": "80044759",
+      "name": "MIT News Tips",
+      "public_metrics": {
+        "followers_count": 7518,
+        "following_count": 779,
+        "tweet_count": 574,
+        "listed_count": 399,
+        "like_count": 0,
+        "media_count": 0
+      },
+      "username": "MITNewsTips",
+      "verified_type": "none",
+      "verified": false
+    },
+    {
+      "description": "Research paper highlights by @CasualEffects",
+      "id": "21575419",
+      "name": "Morgan McGuire",
+      "public_metrics": {
+        "followers_count": 4871,
+        "following_count": 34,
+        "tweet_count": 1277,
+        "listed_count": 152,
+        "like_count": 261,
+        "media_count": 227
+      },
+      "username": "morgan3d",
+      "verified_type": "none",
+      "verified": false
+    },
+    {
+      "description": "We advance science and technology to benefit humanity.",
+      "affiliation": {
+        "description": "Microsoft",
+        "badge_url": "https://pbs.twimg.com/profile_images/1917930887674531840/MRgAH1cv_bigger.jpg",
+        "url": "https://twitter.com/Microsoft",
+        "user_id": [
+          "74286565"
+        ]
+      },
+      "id": "21457289",
+      "name": "Microsoft Research",
+      "public_metrics": {
+        "followers_count": 554215,
+        "following_count": 1822,
+        "tweet_count": 10133,
+        "listed_count": 6846,
+        "like_count": 5773,
+        "media_count": 2485
+      },
+      "username": "MSFTResearch",
+      "verified_type": "business",
+      "verified": true
+    },
+    {
+      "description": "@aisdk @vercel, unfortunate @arsenal fan, like to build stuff",
+      "id": "1051829114494177282",
+      "name": "Nico Albanese",
+      "public_metrics": {
+        "followers_count": 9884,
+        "following_count": 759,
+        "tweet_count": 4607,
+        "listed_count": 122,
+        "like_count": 17216,
+        "media_count": 405
+      },
+      "username": "nicoalbanese10",
+      "verified_type": "blue",
+      "verified": true
+    },
+    {
+      "description": "NPR is an independent news organization committed to informing the public about the world around us. You can find us every other place you read the news.",
+      "id": "5392522",
+      "name": "NPR",
+      "public_metrics": {
+        "followers_count": 7745734,
+        "following_count": 57248,
+        "tweet_count": 243841,
+        "listed_count": 62120,
+        "like_count": 2395,
+        "media_count": 11291
+      },
+      "username": "NPR",
+      "verified_type": "blue",
+      "verified": true
+    },
+    {
+      "description": "News tips? Share them here: https://t.co/ghL9OoYKMM",
+      "id": "807095",
+      "name": "The New York Times",
+      "public_metrics": {
+        "followers_count": 53530172,
+        "following_count": 846,
+        "tweet_count": 564643,
+        "listed_count": 207053,
+        "like_count": 18419,
+        "media_count": 72983
+      },
+      "username": "nytimes",
+      "verified_type": "blue",
+      "verified": true
+    },
+    {
+      "description": "Science, Medicine, Environment, Space & Astronomy. Sign up for the Science Times email, in your inbox every Tuesday: https://t.co/kpdN2C1hDy",
+      "id": "1435461",
+      "name": "NYT Science",
+      "public_metrics": {
+        "followers_count": 1154596,
+        "following_count": 443,
+        "tweet_count": 138476,
+        "listed_count": 16045,
+        "like_count": 4283,
+        "media_count": 8364
+      },
+      "username": "NYTScience",
+      "verified_type": "blue",
+      "verified": true
+    },
+    {
+      "description": "Oblique Strategies (Twitter form) ------ Worthwhile Dilemmas generated every hour - since July 02007",
+      "id": "3894011",
+      "name": "Oblique",
+      "public_metrics": {
+        "followers_count": 8206,
+        "following_count": 2,
+        "tweet_count": 27344,
+        "listed_count": 173,
+        "like_count": 0,
+        "media_count": 0
+      },
+      "username": "Oblique_Chirps",
+      "verified_type": "none",
+      "verified": false
+    },
+    {
+      "description": "Building self-improving AI @dair_ai • Prev: Meta AI | PhD • Learn about AI Agents for FREE here: https://t.co/P5SA9u54xO",
+      "id": "3448284313",
+      "name": "elvis",
+      "public_metrics": {
+        "followers_count": 307465,
+        "following_count": 861,
+        "tweet_count": 18259,
+        "listed_count": 4994,
+        "like_count": 36677,
+        "media_count": 4712
+      },
+      "username": "omarsar0",
+      "verified_type": "blue",
+      "verified": true
+    },
+    {
+      "description": "OpenAI’s mission is to ensure that artificial general intelligence benefits all of humanity. We’re hiring: https://t.co/dJGr6LgzPA",
+      "id": "4398626122",
+      "name": "OpenAI",
+      "public_metrics": {
+        "followers_count": 4932550,
+        "following_count": 4,
+        "tweet_count": 1894,
+        "listed_count": 30112,
+        "like_count": 2259,
+        "media_count": 612
+      },
+      "username": "OpenAI",
+      "verified_type": "business",
+      "verified": true
+    },
+    {
+      "description": "We support hacking and playing with electronics. We share open projects and create amazing products. \nOur Newsletter:\nhttps://t.co/Kv5VdesoDJ",
+      "id": "225025221",
+      "name": "Open Electronics",
+      "public_metrics": {
+        "followers_count": 78923,
+        "following_count": 1068,
+        "tweet_count": 7240,
+        "listed_count": 395,
+        "like_count": 279,
+        "media_count": 3294
+      },
+      "username": "OpenElectronics",
+      "verified_type": "none",
+      "verified": false
+    },
+    {
+      "description": "This account is no longer monitored.  Find us on:\nMastodon/Fediverse: https://t.co/oeANVSxFuD\nBluesky: https://t.co/a0aKseCjbO",
+      "id": "243342953",
+      "name": "OSH Park (@oshpark@fosstodon.org)",
+      "public_metrics": {
+        "followers_count": 23579,
+        "following_count": 7303,
+        "tweet_count": 26731,
+        "listed_count": 439,
+        "like_count": 32529,
+        "media_count": 2979
+      },
+      "username": "oshpark",
+      "verified_type": "none",
+      "verified": false
+    },
+    {
+      "description": "UPS Foundation Professor @Penn, Associate Dean of Research @PennEngineers, former department chair @ESEatPenn, former director @GRASPlab",
+      "id": "747724782842548224",
+      "name": "George Pappas",
+      "public_metrics": {
+        "followers_count": 2999,
+        "following_count": 742,
+        "tweet_count": 892,
+        "listed_count": 20,
+        "like_count": 2295,
+        "media_count": 59
+      },
+      "username": "pappasg69",
+      "verified_type": "blue",
+      "verified": true
+    },
+    {
+      "description": "Particle by Digi is the leading application infrastructure for intelligent devices.",
+      "id": "487010011",
+      "name": "Particle",
+      "public_metrics": {
+        "followers_count": 21949,
+        "following_count": 622,
+        "tweet_count": 11173,
+        "listed_count": 645,
+        "like_count": 9655,
+        "media_count": 1820
+      },
+      "username": "particle",
+      "verified_type": "blue",
+      "verified": true
+    },
+    {
+      "description": "Director of Research @NVIDIA",
+      "id": "2368348172",
+      "name": "Pavlo Molchanov",
+      "public_metrics": {
+        "followers_count": 29293,
+        "following_count": 512,
+        "tweet_count": 430,
+        "listed_count": 204,
+        "like_count": 2340,
+        "media_count": 114
+      },
+      "username": "PavloMolchanov",
+      "verified_type": "blue",
+      "verified": true
+    },
+    {
+      "description": "Your source for robot kits, robot parts, and robot electronics.",
+      "id": "22675870",
+      "name": "Pololu",
+      "public_metrics": {
+        "followers_count": 6579,
+        "following_count": 100,
+        "tweet_count": 2158,
+        "listed_count": 168,
+        "like_count": 621,
+        "media_count": 409
+      },
+      "username": "Pololu",
+      "verified_type": "blue",
+      "verified": true
+    },
+    {
+      "description": "Awe-inspiring science, tech, and DIY. Subscribe to our newsletter: https://t.co/k3JnXX3JNw",
+      "id": "19722699",
+      "name": "Popular Science",
+      "public_metrics": {
+        "followers_count": 1603279,
+        "following_count": 1396,
+        "tweet_count": 160390,
+        "listed_count": 14266,
+        "like_count": 7774,
+        "media_count": 95268
+      },
+      "username": "PopSci",
+      "verified_type": "blue",
+      "verified": true
+    },
+    {
+      "description": "Pursuing stories with moral force\nBluesky: https://t.co/EyqUiH0ScG\nNewsletter: https://t.co/mGR9bA0vgz\nDonate: https://t.co/kjR1VImiDL",
+      "id": "14606079",
+      "name": "ProPublica",
+      "public_metrics": {
+        "followers_count": 985084,
+        "following_count": 689,
+        "tweet_count": 131556,
+        "listed_count": 16067,
+        "like_count": 18221,
+        "media_count": 9617
+      },
+      "username": "propublica",
+      "verified_type": "blue",
+      "verified": true
+    },
+    {
+      "description": "Associate Professor @BE_IISc, @iiscbangalore. Alum of @GeorgiaTech and @UTAustin\nInterested in TB, Osteoarthritis, Biomaterials, Bacteriophages",
+      "id": "808848259",
+      "name": "Drug Delivery Lab",
+      "public_metrics": {
+        "followers_count": 1912,
+        "following_count": 567,
+        "tweet_count": 746,
+        "listed_count": 1,
+        "like_count": 1852,
+        "media_count": 28
+      },
+      "username": "Rachit_AgarwaI",
+      "verified_type": "none",
+      "verified": false
+    },
+    {
+      "description": "ML/AI research engineer. Ex stats professor.\nAuthor of \"Build a Large Language Model From Scratch\" (https://t.co/O8LAAMRzzW) & reasoning (https://t.co/5TueQKx2Fk)",
+      "id": "865622395",
+      "name": "Sebastian Raschka",
+      "public_metrics": {
+        "followers_count": 463605,
+        "following_count": 1150,
+        "tweet_count": 19760,
+        "listed_count": 5782,
+        "like_count": 24952,
+        "media_count": 2126
+      },
+      "username": "rasbt",
+      "verified_type": "blue",
+      "verified": true
+    },
+    {
+      "description": "Recode by Vox. Uncovering and explaining how our digital world is changing — and changing us. Subscribe to our podcasts: https://t.co/bs0BDkzNn3",
+      "id": "2244340904",
+      "name": "Recode",
+      "public_metrics": {
+        "followers_count": 331569,
+        "following_count": 610,
+        "tweet_count": 47590,
+        "listed_count": 9760,
+        "like_count": 1801,
+        "media_count": 18806
+      },
+      "username": "Recode",
+      "verified_type": "blue",
+      "verified": true
+    },
+    {
+      "description": "Robohub is an online platform that brings together leading communicators in robotics research, start-ups, business, and education from around the world.",
+      "id": "419727770",
+      "name": "Robohub",
+      "public_metrics": {
+        "followers_count": 24053,
+        "following_count": 993,
+        "tweet_count": 5255,
+        "listed_count": 663,
+        "like_count": 248,
+        "media_count": 3252
+      },
+      "username": "Robohub",
+      "verified_type": "none",
+      "verified": false
+    },
+    {
+      "description": "The Robotarium is a remotely-accessible mult-robot testbed on the Georgia Institute of Technology Campus. Anyone around the world may use it free of charge!",
+      "id": "4892377637",
+      "name": "Robotarium",
+      "public_metrics": {
+        "followers_count": 121,
+        "following_count": 1,
+        "tweet_count": 45,
+        "listed_count": 5,
+        "like_count": 1,
+        "media_count": 35
+      },
+      "username": "robotariumorg",
+      "verified_type": "none",
+      "verified": false
+    },
+    {
+      "description": "🇺🇦I post regularly as @rodneyabrooks at https://t.co/sF7HmACpnF about AI and robotics. Here I post about political corruption in the US led by Trump. I am woke!!",
+      "id": "743452002",
+      "name": "Rodney Brooks",
+      "public_metrics": {
+        "followers_count": 35392,
+        "following_count": 38,
+        "tweet_count": 1445,
+        "listed_count": 998,
+        "like_count": 727,
+        "media_count": 126
+      },
+      "username": "rodneyabrooks",
+      "verified_type": "blue",
+      "verified": true
+    },
+    {
+      "description": "My days are filled with robots, flying, rock climbing, biking, hiking, coding, dining, living!",
+      "id": "20888817",
+      "name": "Rowland O'Flaherty",
+      "public_metrics": {
+        "followers_count": 11,
+        "following_count": 15,
+        "tweet_count": 45,
+        "listed_count": 0,
+        "like_count": 1,
+        "media_count": 2
+      },
+      "username": "rowoflo",
+      "verified_type": "none",
+      "verified": false
+    },
+    {
+      "description": "AI RS @ Meta TBD. On-Leave from Stanford w/ @sanmikoyejo. Prev @ Gemini, Meta, MIT, Harvard, Uber, UCL, UC Davis",
+      "id": "387918067",
+      "name": "Rylan Schaeffer",
+      "public_metrics": {
+        "followers_count": 6248,
+        "following_count": 1848,
+        "tweet_count": 1490,
+        "listed_count": 87,
+        "like_count": 10640,
+        "media_count": 378
+      },
+      "username": "RylanSchaeffer",
+      "verified_type": "none",
+      "verified": false
+    },
+    {
+      "description": "Building with AI. Sharing what's wild, what's practical, and what's next.\n\nFounder of NicheTrafficKit",
+      "id": "299656190",
+      "name": "Rahul",
+      "public_metrics": {
+        "followers_count": 116470,
+        "following_count": 778,
+        "tweet_count": 52270,
+        "listed_count": 1353,
+        "like_count": 57210,
+        "media_count": 5204
+      },
+      "username": "sairahul1",
+      "verified_type": "blue",
+      "verified": true
+    },
+    {
+      "description": "AI is cool i guess",
+      "affiliation": {
+        "description": "OpenAI",
+        "badge_url": "https://pbs.twimg.com/profile_images/1885410181409820672/ztsaR0JW_bigger.jpg",
+        "url": "https://twitter.com/OpenAI",
+        "user_id": [
+          "4398626122"
+        ]
+      },
+      "id": "1605",
+      "name": "Sam Altman",
+      "public_metrics": {
+        "followers_count": 5179321,
+        "following_count": 1019,
+        "tweet_count": 7777,
+        "listed_count": 29532,
+        "like_count": 1020,
+        "media_count": 392
+      },
+      "username": "sama",
+      "verified_type": "blue",
+      "verified": true
+    },
+    {
+      "description": "Control Theory. Complex Networks. Improv. Postdoc @Northeastern Trying to understand this brain thing. He/Him/His",
+      "id": "848539500167004160",
+      "name": "Sebastian Ruf",
+      "public_metrics": {
+        "followers_count": 475,
+        "following_count": 2180,
+        "tweet_count": 344,
+        "listed_count": 4,
+        "like_count": 3127,
+        "media_count": 28
+      },
+      "username": "sebastian_ruf",
+      "verified_type": "none",
+      "verified": false
+    },
+    {
+      "description": "CEO StealthStartup, Adjunct Prof at Stanford and GaTech",
+      "id": "318063815",
+      "name": "Sebastian Thrun",
+      "public_metrics": {
+        "followers_count": 80568,
+        "following_count": 18,
+        "tweet_count": 1024,
+        "listed_count": 2150,
+        "like_count": 45,
+        "media_count": 72
+      },
+      "username": "SebastianThrun",
+      "verified_type": "blue",
+      "verified": true
+    },
+    {
+      "description": "The #AI Hardware Partner",
+      "id": "28542415",
+      "name": "Seeed Studio",
+      "public_metrics": {
+        "followers_count": 75176,
+        "following_count": 1447,
+        "tweet_count": 23419,
+        "listed_count": 1223,
+        "like_count": 13623,
+        "media_count": 9785
+      },
+      "username": "seeedstudio",
+      "verified_type": "blue",
+      "verified": true
+    },
+    {
+      "description": "Roboticist, crafter, reader, gamer",
+      "id": "18179693",
+      "name": "Shelly",
+      "public_metrics": {
+        "followers_count": 653,
+        "following_count": 4292,
+        "tweet_count": 31855,
+        "listed_count": 34,
+        "like_count": 125363,
+        "media_count": 1049
+      },
+      "username": "shllybkwrm",
+      "verified_type": "none",
+      "verified": false
+    },
+    {
+      "description": "Creator @datasetteproj, co-creator Django. PSF board. Hangs out with @natbat. He/Him. Mastodon: https://t.co/t0MrmnJW0K Bsky: https://t.co/OnWIyhX4CH",
+      "id": "12497",
+      "name": "Simon Willison",
+      "public_metrics": {
+        "followers_count": 191643,
+        "following_count": 5638,
+        "tweet_count": 60926,
+        "listed_count": 5190,
+        "like_count": 63102,
+        "media_count": 3937
+      },
+      "username": "simonw",
+      "verified_type": "blue",
+      "verified": true
+    },
+    {
+      "description": "News for Nerds, Stuff that Matters.\n\nSlashdot is also one of the world's largest & most trusted B2B software review & comparison websites.\n\n#Tech #Software #B2B",
+      "id": "1068831",
+      "name": "Slashdot",
+      "public_metrics": {
+        "followers_count": 353466,
+        "following_count": 463,
+        "tweet_count": 141957,
+        "listed_count": 9881,
+        "like_count": 23880,
+        "media_count": 333
+      },
+      "username": "slashdot",
+      "verified_type": "blue",
+      "verified": true
+    },
+    {
+      "description": "AI alignment + LLMs at Anthropic. On leave from NYU. Views not employers'. No relation to @s8mb. Into @givingwhatwecan.",
+      "id": "338526004",
+      "name": "Sam Bowman",
+      "public_metrics": {
+        "followers_count": 65542,
+        "following_count": 3306,
+        "tweet_count": 2863,
+        "listed_count": 992,
+        "like_count": 77282,
+        "media_count": 135
+      },
+      "username": "sleepinyourhat",
+      "verified_type": "blue",
+      "verified": true
+    },
+    {
+      "description": "Solarbotics Ltd. - Purveyor of geek goods in Canada for over 25 years.\nSign up for our newsletter https://t.co/Dr2weu7f4Z",
+      "id": "27182094",
+      "name": "Solarbotics",
+      "public_metrics": {
+        "followers_count": 4413,
+        "following_count": 160,
+        "tweet_count": 1336,
+        "listed_count": 208,
+        "like_count": 216,
+        "media_count": 263
+      },
+      "username": "solarbotics",
+      "verified_type": "none",
+      "verified": false
+    },
+    {
+      "description": "Building new things @thinkymachines.  Also dabble in robotics at NYU.  Cofounded @PyTorch. AI is delicious when it is accessible and open-source.",
+      "affiliation": {
+        "description": "Thinking Machines",
+        "badge_url": "https://pbs.twimg.com/profile_images/1891614400328630273/U6tsxu60_bigger.jpg",
+        "url": "https://twitter.com/thinkymachines",
+        "user_id": [
+          "1891523745929732096"
+        ]
+      },
+      "id": "70831441",
+      "name": "Soumith Chintala",
+      "public_metrics": {
+        "followers_count": 307247,
+        "following_count": 1283,
+        "tweet_count": 4002,
+        "listed_count": 4222,
+        "like_count": 3678,
+        "media_count": 203
+      },
+      "username": "soumithchintala",
+      "verified_type": "blue",
+      "verified": true
+    },
+    {
+      "description": "Open source technology, resources, DIY electronics and more.",
+      "id": "17877351",
+      "name": "SparkFun Electronics",
+      "public_metrics": {
+        "followers_count": 160024,
+        "following_count": 440,
+        "tweet_count": 11869,
+        "listed_count": 2561,
+        "like_count": 2365,
+        "media_count": 4020
+      },
+      "username": "sparkfun",
+      "verified_type": "none",
+      "verified": false
+    },
+    {
+      "description": "Polyagentmorous ClawFather. Came back from retirement to mess with AI and help a lobster take over the world.\n@OpenClaw🦞 + @OpenAI",
+      "affiliation": {
+        "description": "OpenClaw🦞",
+        "badge_url": "https://pbs.twimg.com/profile_images/2017100664984186880/orbYx-3U_bigger.jpg",
+        "url": "https://twitter.com/openclaw",
+        "user_id": [
+          "1995710751097659392"
+        ]
+      },
+      "id": "25401953",
+      "name": "Peter Steinberger 🦞",
+      "public_metrics": {
+        "followers_count": 545413,
+        "following_count": 2377,
+        "tweet_count": 140431,
+        "listed_count": 6248,
+        "like_count": 62089,
+        "media_count": 8577
+      },
+      "username": "steipete",
+      "verified_type": "blue",
+      "verified": true
+    },
+    {
+      "description": "achieve ambition with intentionality, intensity, integrity & insanity.\n\naffiliations:\n- @dxtipshq \n- @cognition\n- @temporalio\n- @aidotengineer\n- @latentspacepod",
+      "id": "33521530",
+      "name": "swyx",
+      "public_metrics": {
+        "followers_count": 166150,
+        "following_count": 3778,
+        "tweet_count": 77088,
+        "listed_count": 3989,
+        "like_count": 134288,
+        "media_count": 9051
+      },
+      "username": "swyx",
+      "verified_type": "blue",
+      "verified": true
+    },
+    {
+      "description": "Assistant Professor at CS, Cornell. Leads @EmpriseLab. Interested in Assistive Robotics, Human-Robot Interaction, Robot Manipulation, Haptic Perception.",
+      "id": "298089748",
+      "name": "Tapomayukh \"Tapo\" Bhattacharjee",
+      "public_metrics": {
+        "followers_count": 1636,
+        "following_count": 356,
+        "tweet_count": 488,
+        "listed_count": 10,
+        "like_count": 1424,
+        "media_count": 50
+      },
+      "username": "TapoBhat",
+      "verified_type": "blue",
+      "verified": true
+    },
+    {
+      "description": "The world's leading publication for data science and artificial intelligence professionals.\n\nSubmit an Article ✍️ https://t.co/57pIMegK1o",
+      "id": "788898706586275840",
+      "name": "Towards Data Science",
+      "public_metrics": {
+        "followers_count": 250491,
+        "following_count": 1922,
+        "tweet_count": 63340,
+        "listed_count": 2665,
+        "like_count": 7906,
+        "media_count": 1701
+      },
+      "username": "TDataScience",
+      "verified_type": "blue",
+      "verified": true
+    },
+    {
+      "description": "Technology news and analysis with a focus on founders and startup teams. Got a tip? https://t.co/J0WxnZxSRY",
+      "id": "816653",
+      "name": "TechCrunch",
+      "public_metrics": {
+        "followers_count": 10225370,
+        "following_count": 460,
+        "tweet_count": 285886,
+        "listed_count": 101734,
+        "like_count": 7386,
+        "media_count": 51783
+      },
+      "username": "TechCrunch",
+      "verified_type": "business",
+      "verified": true
+    },
+    {
+      "description": "Our in-depth reporting on innovation reveals and explains what’s really happening now to help you know what’s coming next.",
+      "id": "15808647",
+      "name": "MIT Technology Review",
+      "public_metrics": {
+        "followers_count": 1163300,
+        "following_count": 3174,
+        "tweet_count": 122934,
+        "listed_count": 20200,
+        "like_count": 6394,
+        "media_count": 14572
+      },
+      "username": "techreview",
+      "verified_type": "business",
+      "verified": true
+    },
+    {
+      "description": "TED is a nonprofit devoted to the ideas shaping tomorrow. 🔴",
+      "id": "15492359",
+      "name": "TED Talks",
+      "public_metrics": {
+        "followers_count": 10086287,
+        "following_count": 668,
+        "tweet_count": 43396,
+        "listed_count": 46680,
+        "like_count": 7684,
+        "media_count": 8008
+      },
+      "username": "TEDTalks",
+      "verified_type": "business",
+      "verified": true
+    },
+    {
+      "description": "TensorFlow is a fast, flexible, and scalable open-source machine learning library for research and production.",
+      "id": "254107028",
+      "name": "TensorFlow",
+      "public_metrics": {
+        "followers_count": 377379,
+        "following_count": 115,
+        "tweet_count": 2787,
+        "listed_count": 5601,
+        "like_count": 405,
+        "media_count": 1516
+      },
+      "username": "TensorFlow",
+      "verified_type": "business",
+      "verified": true
+    },
+    {
+      "description": "iPod, iPhone, Nest, Investor & NY Times bestselling Author #BUILD",
+      "id": "21576543",
+      "name": "Tony Fadell",
+      "public_metrics": {
+        "followers_count": 238325,
+        "following_count": 480,
+        "tweet_count": 4061,
+        "listed_count": 2070,
+        "like_count": 11997,
+        "media_count": 207
+      },
+      "username": "tfadell",
+      "verified_type": "blue",
+      "verified": true
+    },
+    {
+      "description": "Full time CEO @t3dotchat. Part time YouTuber, investor, and developer",
+      "id": "786375418685165568",
+      "name": "Theo - t3.gg",
+      "public_metrics": {
+        "followers_count": 343920,
+        "following_count": 4157,
+        "tweet_count": 63227,
+        "listed_count": 2449,
+        "like_count": 363391,
+        "media_count": 8610
+      },
+      "username": "theo",
+      "verified_type": "blue",
+      "verified": true
+    },
+    {
+      "description": "World Labs is a spatial intelligence company, building frontier models that can perceive, generate, and interact with the 3D world.",
+      "id": "1741642915871600640",
+      "name": "World Labs",
+      "public_metrics": {
+        "followers_count": 70335,
+        "following_count": 49,
+        "tweet_count": 474,
+        "listed_count": 682,
+        "like_count": 1072,
+        "media_count": 96
+      },
+      "username": "theworldlabs",
+      "verified_type": "business",
+      "verified": true
+    },
+    {
+      "description": "Thinking, beeping, and booping.\n@tinkerapi",
+      "id": "1891523745929732096",
+      "name": "Thinking Machines",
+      "public_metrics": {
+        "followers_count": 155240,
+        "following_count": 1,
+        "tweet_count": 48,
+        "listed_count": 1164,
+        "like_count": 70,
+        "media_count": 18
+      },
+      "username": "thinkymachines",
+      "verified_type": "business",
+      "verified": true
+    },
+    {
+      "description": "News and current events from around the globe. Since 1923. \nSubscribe: https://t.co/yT0dueLEm0",
+      "id": "14293310",
+      "name": "TIME",
+      "public_metrics": {
+        "followers_count": 18526754,
+        "following_count": 474,
+        "tweet_count": 440059,
+        "listed_count": 100761,
+        "like_count": 561,
+        "media_count": 31987
+      },
+      "username": "TIME",
+      "verified_type": "business",
+      "verified": true
+    },
+    {
+      "description": "Maker of Tiny Open Source Circuits",
+      "id": "776209723",
+      "name": "TinyCircuits",
+      "public_metrics": {
+        "followers_count": 3536,
+        "following_count": 853,
+        "tweet_count": 1660,
+        "listed_count": 120,
+        "like_count": 1512,
+        "media_count": 505
+      },
+      "username": "TinyCircuits",
+      "verified_type": "none",
+      "verified": false
+    },
+    {
+      "description": "Stories, tips, and information about living in a tiny house.\nSubscribe to the Tiny House Magazine!",
+      "id": "90451616",
+      "name": "Tiny House Blog",
+      "public_metrics": {
+        "followers_count": 22316,
+        "following_count": 60,
+        "tweet_count": 4845,
+        "listed_count": 292,
+        "like_count": 45,
+        "media_count": 1714
+      },
+      "username": "tinyhouseblog",
+      "verified_type": "none",
+      "verified": false
+    },
+    {
+      "description": "Building the platform for Continual Learning",
+      "id": "2005435102634061824",
+      "name": "Trajectory",
+      "public_metrics": {
+        "followers_count": 2918,
+        "following_count": 1,
+        "tweet_count": 25,
+        "listed_count": 19,
+        "like_count": 123,
+        "media_count": 8
+      },
+      "username": "trajectorylabs",
+      "verified_type": "business",
+      "verified": true
+    },
+    {
+      "description": "Claude Code @anthropicai.   prev YC W20, @southpkcommons, @medialab",
+      "id": "352806502",
+      "name": "Thariq",
+      "public_metrics": {
+        "followers_count": 281965,
+        "following_count": 1840,
+        "tweet_count": 5604,
+        "listed_count": 3266,
+        "like_count": 74953,
+        "media_count": 476
+      },
+      "username": "trq212",
+      "verified_type": "blue",
+      "verified": true
+    },
+    {
+      "description": "Data infrastructure for AI\n\nApache 2.0",
+      "id": "1507488634458439685",
+      "name": "Chroma",
+      "public_metrics": {
+        "followers_count": 29777,
+        "following_count": 62,
+        "tweet_count": 649,
+        "listed_count": 368,
+        "like_count": 945,
+        "media_count": 122
+      },
+      "username": "trychroma",
+      "verified_type": "blue",
+      "verified": true
+    },
+    {
+      "description": "fellow creators the creator seeks",
+      "id": "1460283925",
+      "name": "roon",
+      "public_metrics": {
+        "followers_count": 378569,
+        "following_count": 12971,
+        "tweet_count": 67886,
+        "listed_count": 2646,
+        "like_count": 1064080,
+        "media_count": 2350
+      },
+      "username": "tszzl",
+      "verified_type": "blue",
+      "verified": true
+    },
+    {
+      "description": "🙌📜 What a time to be alive!",
+      "id": "2978637351",
+      "name": "Two Minute Papers",
+      "public_metrics": {
+        "followers_count": 53612,
+        "following_count": 651,
+        "tweet_count": 8406,
+        "listed_count": 882,
+        "like_count": 13369,
+        "media_count": 1962
+      },
+      "username": "twominutepapers",
+      "verified_type": "blue",
+      "verified": true
+    },
+    {
+      "description": "a really exciting new account\n\n\"advanced pytorch user\" - @cHHillee\n\nalt: @typedalt",
+      "id": "1506911064050470915",
+      "name": "typedfemale",
+      "public_metrics": {
+        "followers_count": 45199,
+        "following_count": 555,
+        "tweet_count": 16349,
+        "listed_count": 506,
+        "like_count": 59721,
+        "media_count": 1279
+      },
+      "username": "typedfemale",
+      "verified_type": "blue",
+      "verified": true
+    },
+    {
+      "description": "applied research @LangChain, prev @awscloud, phd cs @templeuniv",
+      "affiliation": {
+        "description": "LangChain",
+        "badge_url": "https://pbs.twimg.com/profile_images/2028336270431453184/jRRpLAdG_bigger.jpg",
+        "url": "https://twitter.com/LangChain",
+        "user_id": [
+          "1589007443853340672"
+        ]
+      },
+      "id": "1222786244",
+      "name": "Viv",
+      "public_metrics": {
+        "followers_count": 13163,
+        "following_count": 1754,
+        "tweet_count": 5515,
+        "listed_count": 208,
+        "like_count": 10271,
+        "media_count": 460
+      },
+      "username": "Vtrivedy10",
+      "verified_type": "blue",
+      "verified": true
+    },
+    {
+      "description": "Democracy Dies in Darkness",
+      "id": "2467791",
+      "name": "The Washington Post",
+      "public_metrics": {
+        "followers_count": 19342042,
+        "following_count": 1634,
+        "tweet_count": 529769,
+        "listed_count": 104802,
+        "like_count": 3722,
+        "media_count": 23620
+      },
+      "username": "washingtonpost",
+      "verified_type": "business",
+      "verified": true
+    },
+    {
+      "description": "For Future Reference.\nSign up for our newsletters: https://t.co/Tl6GImvc8R",
+      "id": "1344951",
+      "name": "WIRED",
+      "public_metrics": {
+        "followers_count": 9594420,
+        "following_count": 449,
+        "tweet_count": 189698,
+        "listed_count": 80094,
+        "like_count": 6851,
+        "media_count": 38789
+      },
+      "username": "WIRED",
+      "verified_type": "business",
+      "verified": true
+    },
+    {
+      "description": "Bringing the radiothermally generated heat. Sign up for the @WIREDScience newsletter: https://t.co/3N3V4n4F5k",
+      "id": "8963722",
+      "name": "WIRED Science",
+      "public_metrics": {
+        "followers_count": 1814487,
+        "following_count": 164,
+        "tweet_count": 23693,
+        "listed_count": 21384,
+        "like_count": 428,
+        "media_count": 1792
+      },
+      "username": "WIREDScience",
+      "verified_type": "business",
+      "verified": true
+    },
+    {
+      "description": "Professor at NYU & Executive Chairman at AMI Labs. \nEx-Chief AI Scientist at Meta.\nResearcher in AI, Machine Learning, Robotics, etc.\nACM Turing Award Laureate.",
+      "id": "48008938",
+      "name": "Yann LeCun",
+      "public_metrics": {
+        "followers_count": 1210365,
+        "following_count": 786,
+        "tweet_count": 26376,
+        "listed_count": 16458,
+        "like_count": 29889,
+        "media_count": 466
+      },
+      "username": "ylecun",
+      "verified_type": "blue",
+      "verified": true
+    },
+    {
+      "description": "",
+      "id": "39547749",
+      "name": "(((ل()(ل() 'yoav))))👾",
+      "public_metrics": {
+        "followers_count": 82705,
+        "following_count": 2219,
+        "tweet_count": 143849,
+        "listed_count": 615,
+        "like_count": 75854,
+        "media_count": 2951
+      },
+      "username": "yoavgo",
+      "verified_type": "blue",
+      "verified": true
+    },
+    {
+      "description": "Lighting Researcher💡👁 & data enthusiast 📊, PhD, Fulbright Scholar, Richard Kelly Grant Awardee, STEP Ahead Emerging Leader. 🎾 🖼️ 🎶 📚 🏔️",
+      "id": "3002402365",
+      "name": "Yulia Tyukhova",
+      "public_metrics": {
+        "followers_count": 101,
+        "following_count": 65,
+        "tweet_count": 193,
+        "listed_count": 1,
+        "like_count": 360,
+        "media_count": 74
+      },
+      "username": "ytyukhova",
+      "verified_type": "none",
+      "verified": false
+    }
+  ]
+}

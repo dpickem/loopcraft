@@ -206,6 +206,9 @@ tempCodeRunnerFile.py
 # Ruff stuff:
 .ruff_cache/
 
+# Local loopcraft intelligence state and generated digests
+var/
+
 # PyPI configuration file
 .pypirc
 
