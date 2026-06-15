@@ -1,0 +1,72 @@
+{
+  "sources": {
+    "categories": ["cs.AI", "cs.CL", "cs.LG", "stat.ML"],
+    "search_terms": [
+      "foundation model",
+      "frontier model",
+      "large language model",
+      "LLM",
+      "agent",
+      "agents",
+      "agentic",
+      "tool use",
+      "post-training",
+      "reinforcement learning from human feedback",
+      "RLHF",
+      "preference optimization",
+      "eval",
+      "evaluation",
+      "benchmark",
+      "harness",
+      "workflow",
+      "self-improving",
+      "recursive self-improvement",
+      "self-evolving",
+      "automated discovery",
+      "test-time compute",
+      "reasoning"
+    ]
+  },
+  "ranking": {
+    "max_results": 150,
+    "top_papers": 10,
+    "min_score": 25,
+    "recency_bonus_days": 3,
+    "keywords": {
+      "recursive self-improvement": 60,
+      "self-improving": 48,
+      "self-evolving": 45,
+      "agentic workflow": 42,
+      "agentic": 34,
+      "tool use": 34,
+      "harness": 34,
+      "post-training": 32,
+      "preference optimization": 30,
+      "large language model": 30,
+      "llm": 28,
+      "foundation model": 28,
+      "frontier model": 28,
+      "agents": 26,
+      "agent": 24,
+      "evaluation": 22,
+      "eval": 22,
+      "benchmark": 18,
+      "reasoning": 18,
+      "test-time compute": 18,
+      "workflow": 16,
+      "reinforcement learning": 14,
+      "rlhf": 14,
+      "automated discovery": 14
+    },
+    "negative_keywords": {
+      "wireless": 25,
+      "protein": 20,
+      "medical image": 20,
+      "traffic": 15
+    }
+  },
+  "output": {
+    "state_db": "var/arxiv_intel/state.sqlite3",
+    "digest_dir": "var/arxiv_intel/digests"
+  }
+}

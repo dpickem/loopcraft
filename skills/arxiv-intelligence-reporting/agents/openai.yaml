@@ -1,0 +1,4 @@
+interface:
+  display_name: "arXiv Intelligence Reporting"
+  short_description: "Daily arXiv paper intelligence"
+  default_prompt: "Use $arxiv-intelligence-reporting to summarize the latest loopcraft arXiv digest with paper links, code/model/data links, themes, and loopcraft implications."

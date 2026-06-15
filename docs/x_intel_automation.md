@@ -49,3 +49,11 @@ Run ./scripts/daily_x_intel.sh. Then run python -m loopcraft.x_intel.cli discove
 - State is stored locally in SQLite so repeats avoid already-seen posts when the X API returns stable IDs.
 - `X_API_BEARER_TOKEN` is the only required credential for the default app-only fetch path. `X_API_OAUTH2_ACCESS_TOKEN` is only needed if you want `/2/users/me` support. Codex provides the reasoning/summarization layer when the recurring automation runs; no OpenAI API key is needed in this repo for that path.
 - The default config searches posts from `config/x_following_snapshot.json`, then applies an AI/model/evals/tool-use topic clause and local ranker filters.
+
+## Related arXiv Automation
+
+For daily paper discovery, run this in the same workspace:
+
+```text
+Run ./scripts/daily_arxiv_intel.sh. Read the generated Markdown digest path printed by the command. Summarize the 5-10 most interesting papers for ML, foundation models, LLMs, post-training, harness/loop engineering, agentic workflows and use-cases, recursive self-improvement, and self-improving systems. Include arXiv abstract and PDF links. Report arXiv API errors first.
+```
