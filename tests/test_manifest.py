@@ -135,6 +135,28 @@ def test_scheme_outputs_are_rejected_in_m1() -> None:
     assert any("external sink" in p for p in problems)
 
 
+def test_unprefixed_ledger_path_requires_state_prefix() -> None:
+    """Finding 1 (review 03): manifest vocabulary is exactly 'state/...'."""
+    bare = LoopManifest.from_dict(_minimal(outputs=["slack/out.md"]))
+    assert any("must use the 'state/...' prefix" in p for p in bare.validate())
+
+    ledger = LoopManifest.from_dict(_minimal(outputs=["ledger/runs/x.json"]))
+    assert any("state/" in p for p in ledger.validate())
+
+
+def test_state_prefixed_paths_are_accepted() -> None:
+    ok = LoopManifest.from_dict(
+        _minimal(inputs=["state/slack/seen.json"], outputs=["state/slack/out.md"])
+    )
+    assert ok.validate() == []
+
+
+def test_slack_skill_verify_mentions_cursor() -> None:
+    """Finding 3 (review 03): the skill verify rubric names the seen.json cursor."""
+    text = (REPO_ROOT / "skills" / "slack-triage" / "SKILL.md").read_text(encoding="utf-8")
+    assert "state/slack/seen.json updated" in text
+
+
 def test_unsafe_skill_paths_are_reported() -> None:
     """Finding 2 (review 02): logic.skill must be a safe source-relative path."""
     traversing = LoopManifest.from_dict(_minimal(logic={"skill": "../outside/SKILL.md"}))

@@ -253,8 +253,11 @@ class CodexRunner:
         lines: list[str] = []
         skill_text = ""
         if loop.logic.skill:
-            skill_path = (ctx.config.source_path / loop.logic.skill).resolve()
-            if skill_path.exists():
+            try:
+                skill_path = ctx.config.resolve_source_path(loop.logic.skill)
+            except SourcePathError:
+                skill_path = None  # unsafe paths are rejected earlier by preflight
+            if skill_path is not None and skill_path.exists():
                 skill_text = skill_path.read_text(encoding="utf-8")
 
         lines.append(f"# Loop: {loop.name} ({loop.id})")

@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 import yaml
 
 from .config import (
+    STATE_PREFIX,
     SourcePathError,
     StatePathError,
     is_state_path,
@@ -212,11 +213,25 @@ class LoopManifest:
             *(("inputs", p) for p in self.inputs),
             *(("outputs", p) for p in self.outputs),
         ):
-            if is_state_path(declared):
+            rel = declared.strip()
+            if PurePosixPath(rel).is_absolute() or rel.startswith("/"):
+                problems.append(f"{label}: absolute path is not allowed: {declared!r}")
+                continue
+            parts = PurePosixPath(rel).parts
+            if parts and parts[0] == STATE_PREFIX:
+                # The manifest vocabulary is exactly ``state/...``; it resolves into
+                # the ledger and must not escape it.
                 try:
                     safe_state_relpath(declared)
                 except StatePathError as exc:
                     problems.append(f"{label}: {exc}")
+            elif is_state_path(declared):
+                # A bare ledger-relative path (e.g. ``slack/out.md`` or
+                # ``ledger/...``) is a lower-level Store API, not manifest
+                # vocabulary. Require the explicit ``state/`` prefix here.
+                problems.append(
+                    f"{label}: '{declared}' must use the 'state/...' prefix"
+                )
             else:
                 # M1 only knows how to resolve ledger ``state/...`` paths. External
                 # sinks (e.g. ``linear:project/Daily``) need an artifact/sink

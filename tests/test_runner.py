@@ -153,6 +153,25 @@ def test_run_handles_missing_codex_binary(tmp_path: Path, monkeypatch) -> None:
     assert result.exit_code == 127
 
 
+def test_build_prompt_embeds_valid_skill(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+    manifest = _manifest()
+    ctx = RunContext(config=config, workdir=tmp_path, log_path=tmp_path / "l")
+    prompt = CodexRunner()._build_prompt(manifest, ctx)
+    assert "do the thing" in prompt
+
+
+def test_build_prompt_uses_safe_source_resolver(tmp_path: Path) -> None:
+    """Finding 2 (review 03): prompt skill loading goes through resolve_source_path."""
+    config = _config(tmp_path)
+    secret = tmp_path / "secret.md"
+    secret.write_text("TOPSECRET", encoding="utf-8")
+    manifest = _manifest(logic={"skill": "../secret.md", "verify": "x"})
+    ctx = RunContext(config=config, workdir=tmp_path, log_path=tmp_path / "l")
+    prompt = CodexRunner()._build_prompt(manifest, ctx)
+    assert "TOPSECRET" not in prompt
+
+
 def test_build_command_includes_model(tmp_path: Path) -> None:
     config = _config(tmp_path)
     manifest = _manifest()
