@@ -252,15 +252,46 @@ Skill guidelines:
 - State approval requirements clearly for propose-tier behavior.
 - Update `Makefile` installation targets if bundled skill layout changes.
 
+## Public/Private Config Split (the prevailing pattern)
+
+Loopcraft config is split into committed *public* files and private overrides, so
+confidential values (channel names, list memberships, account ids, internal URLs)
+never live in the source repo. This is the default pattern for any loop config —
+follow it instead of inventing per-loop schemes.
+
+- **Public file** (committed): holds only non-confidential placeholders and the
+  documentation of how to override it. Example: `skills/slack-triage/channels.txt`.
+- **Private overrides**, resolved at run time with this precedence:
+  1. an **environment variable** (put it in `.env`, which is gitignored),
+  2. a gitignored **`*.local.*` sibling** file (e.g. `channels.local.txt`),
+  3. the public committed file.
+- The control plane resolves the effective value and materializes it into the
+  isolated run worktree during `stage_loop_assets()`, so the agent reads the
+  resolved file and nothing confidential leaves the gitignored sources.
+
+Conventions and helpers:
+
+- The override env var for a skill list asset is derived from its path by
+  `loopcraft.settings.asset_env_var`:
+  `skills/<skill>/<file>.txt` → `LOOPCRAFT_<SKILL>_<FILE>` (uppercased, every run
+  of non-alphanumeric characters becomes `_`). Example:
+  `skills/slack-triage/channels.txt` → `LOOPCRAFT_SLACK_TRIAGE_CHANNELS`.
+- Use `loopcraft.settings.resolve_overridable_list(...)` for list-valued config so
+  precedence is consistent.
+- `.gitignore` ignores `*.local.*`; never commit a `*.local.*` file.
+- A public file must contain **no** confidential entries — only comments and
+  safe placeholders. Add a test that the public file has no active (uncommented)
+  confidential lines when that matters (see `tests/test_settings.py`).
+
 ## Credentials and Local State
 
 - Never commit `.env`, credentials, OAuth tokens, generated digests, memory-tree
-  ledgers, or local outputs.
+  ledgers, `*.local.*` overrides, or local outputs.
 - `.env.example` may document names, but never values.
 - New credential requirements belong in the relevant manifest `depends_on.auth`
   and in user docs.
-- Prefer environment/config loading through `LoopcraftConfig` or the relevant
-  workflow config object. Avoid scattered direct credential reads.
+- Prefer environment/config loading through `LoopcraftConfig`, `loopcraft.settings`,
+  or the relevant workflow config object. Avoid scattered direct credential reads.
 
 ## Dependency Security
 

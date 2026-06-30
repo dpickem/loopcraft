@@ -21,7 +21,9 @@ markdown digest (`state/slack/triage-latest.md`) and the JSON cursor
 - direct messages (DMs)
 - group DMs
 - channels listed in `skills/slack-triage/channels.txt` (one channel per line;
-  ignore blank lines and `#` comments)
+  ignore blank lines and `#` comments). In a staged run this file is the
+  effective list already resolved from the public/private config split
+  (env var > `channels.local.txt` > committed public file); just read it.
 
 ## Window
 

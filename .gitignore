@@ -209,6 +209,11 @@ tempCodeRunnerFile.py
 # Local loopcraft intelligence state and generated digests
 var/
 
+# Loopcraft public/private config split: anything *.local.* is a private override
+# (e.g. channels.local.txt) and must never be committed. Public files hold only
+# non-confidential placeholders; real values live in *.local.* or in .env.
+*.local.*
+
 # PyPI configuration file
 .pypirc
 
