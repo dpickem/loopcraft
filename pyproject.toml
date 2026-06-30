@@ -10,9 +10,12 @@ readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
 authors = [{ name = "Daniel Pickem" }]
-dependencies = []
+dependencies = [
+  "pyyaml>=6.0",
+]
 
 [project.scripts]
+loopctl = "loopcraft.cli:main"
 loopcraft-x-intel = "loopcraft.x_intel.cli:main"
 loopcraft-arxiv-intel = "loopcraft.arxiv_intel.cli:main"
 

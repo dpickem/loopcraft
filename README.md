@@ -1,6 +1,57 @@
 # loopcraft
 
-Local intelligence workflows for loop engineering, frontier-model practice, agents, evals, harnesses, and related AI systems work.
+A small control plane that turns loops into running infrastructure, plus the
+local intelligence workflows that seed the first fleet.
+
+A loop is declared once as a vendor-neutral **manifest** (`loops/*.yaml`). A
+**runtime adapter** translates it into a headless run on a specific vendor, a
+thin **store** writes everything into a separate **memory tree**, and `loopctl`
+ties it together. Source (this repo) and memory (`~/workspace/loopcraft_memory`)
+are deliberately separate trees — see `loopcraft.toml`.
+
+## Control plane (M1)
+
+M1 proves the core run path end to end on a single vendor: the manifest schema +
+validator, the Codex runtime adapter (`preflight` + `run`), `loopctl run` in an
+isolated worktree, and the thin ledger write-path. The first loop is
+`slack-triage` (L1) — observe-only, single connector, no upstream dependencies.
+
+```bash
+make list                       # show known loops
+make validate                   # validate every manifest in loops/
+make check                      # probe runtimes/tools + dry-run validate
+make run LOOP=slack-triage      # run one loop now, headless
+make status                     # last run per loop
+make logs LOOP=slack-triage     # tail the last run's log
+make test                       # unit tests
+```
+
+`loopctl` is the real interface; the `make` targets are thin wrappers. A run
+writes its output(s) into the memory tree's ledger (e.g.
+`ledger/slack/triage-latest.md`) and a durable run record to `ledger/runs/`.
+
+Configuration lives in `loopcraft.toml` (default vendor, host, memory path).
+Override the memory location at runtime with `LOOPCRAFT_MEMORY`.
+
+> Requires the `codex` CLI and `nv-tools` on PATH to actually run `slack-triage`;
+> `make check` reports anything missing before a run rather than failing at 3am.
+> Claude/Cursor adapters, the scheduler, harvester, and UI arrive in later
+> milestones (M2+).
+
+### Layout
+
+```
+loops/            # loop manifests (one YAML per loop)
+skills/           # vendor-neutral SKILL.md per loop (+ bundled Codex skills)
+src/loopcraft/
+  cli.py          # loopctl
+  config.py       # loopcraft.toml + path resolution
+  manifest.py     # LoopManifest schema, validator, dependency DAG check
+  store.py        # the single sanctioned persistence path (ledger + run records)
+  runners/        # the portability seam: base protocol + codex adapter
+  arxiv_intel/    # L2 source prototype (migrated onto the unified store in M2)
+  x_intel/        # L2 source prototype (migrated onto the unified store in M2)
+```
 
 ## Codex Setup
 
@@ -36,7 +87,7 @@ This repo also includes an arXiv abstract-first workflow for ML, foundation mode
 
 ```bash
 cp config/arxiv_intel.example.json config/arxiv_intel.json
-./scripts/daily_arxiv_intel.sh
+make daily-arxiv-intel
 ```
 
 Outputs are written to `var/arxiv_intel/digests/` by default. Local SQLite state is written to `var/arxiv_intel/state.sqlite3` and is ignored by git.
