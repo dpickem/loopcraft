@@ -8,7 +8,7 @@ description: Summarize X/Twitter intelligence digests for ML, AI, frontier/found
 ## Workflow
 
 1. Work in the loopcraft repo unless the user gives another workspace.
-2. Run `./scripts/daily_x_intel.sh` when the user wants a fresh fetch. If network access or X API credentials fail, report that first.
+2. Run `make daily-x-intel` when the user wants a fresh fetch. If network access or X API credentials fail, report that first.
 3. Read the emitted `DIGEST_MARKDOWN=...` and `DIGEST_JSON=...` paths. Prefer JSON for exact fields and Markdown for human-readable ordering.
 4. When useful, run `PYTHONPATH=src python -m loopcraft.x_intel.cli discover-follows --config config/x_intel.json` and read the emitted follow-candidate Markdown/JSON paths.
 5. When summarizing, include both the X post permalink and any external links from `entities.urls[*].expanded_url` or Markdown `External links:` lines.
@@ -35,7 +35,7 @@ description: Summarize X/Twitter intelligence digests for ML, AI, frontier/found
 ## Useful Commands
 
 ```bash
-./scripts/daily_x_intel.sh
+make daily-x-intel
 PYTHONPATH=src python -m loopcraft.x_intel.cli snapshot-following
 PYTHONPATH=src python -m loopcraft.x_intel.cli discover-follows --config config/x_intel.json
 PYTHONPATH=src python -m pytest -q

@@ -28,11 +28,11 @@ With `X_API_OAUTH2_ACCESS_TOKEN` from an OAuth 2.0 user-context flow, `snapshot-
 ## Manual Run
 
 ```bash
-./scripts/daily_x_intel.sh
+make daily-x-intel
 python -m loopcraft.x_intel.cli discover-follows --config config/x_intel.json
 ```
 
-The script prints the generated digest path and writes Markdown plus JSON files under `var/x_intel/digests/`.
+The command prints the generated digest path and writes Markdown plus JSON files under `var/x_intel/digests/`.
 Follow recommendations are written under `var/x_intel/follow_candidates/`.
 
 ## Suggested Codex Recurring Instruction
@@ -40,7 +40,7 @@ Follow recommendations are written under `var/x_intel/follow_candidates/`.
 Run this daily in `/Users/dpickem/workspace/loopcraft`:
 
 ```text
-Run ./scripts/daily_x_intel.sh. Then run python -m loopcraft.x_intel.cli discover-follows --config config/x_intel.json. Read the generated Markdown digest and follow-candidate paths printed by the commands. Summarize the most important posts for ML, AI, foundation/frontier model practice, harness engineering, loop engineering, loopcraft, agents, evals, and tool use. Highlight posts from frontier-lab authors separately. Include promising new people or organizations to follow, with evidence links. If either command reports X API rate limits, auth failures, or other errors, report those first and include the raw error summary.
+Run make daily-x-intel. Then run python -m loopcraft.x_intel.cli discover-follows --config config/x_intel.json. Read the generated Markdown digest and follow-candidate paths printed by the commands. Summarize the most important posts for ML, AI, foundation/frontier model practice, harness engineering, loop engineering, loopcraft, agents, evals, and tool use. Highlight posts from frontier-lab authors separately. Include promising new people or organizations to follow, with evidence links. If either command reports X API rate limits, auth failures, or other errors, report those first and include the raw error summary.
 ```
 
 ## Notes
@@ -55,5 +55,5 @@ Run ./scripts/daily_x_intel.sh. Then run python -m loopcraft.x_intel.cli discove
 For daily paper discovery, run this in the same workspace:
 
 ```text
-Run ./scripts/daily_arxiv_intel.sh. Read the generated Markdown digest path printed by the command. Summarize the 5-10 most interesting papers for ML, foundation models, LLMs, post-training, harness/loop engineering, agentic workflows and use-cases, recursive self-improvement, and self-improving systems. Include arXiv abstract and PDF links. Report arXiv API errors first.
+Run make daily-arxiv-intel. Read the generated Markdown digest path printed by the command. Summarize the 5-10 most interesting papers for ML, foundation models, LLMs, post-training, harness/loop engineering, agentic workflows and use-cases, recursive self-improvement, and self-improving systems. Include arXiv abstract and PDF links. Report arXiv API errors first.
 ```

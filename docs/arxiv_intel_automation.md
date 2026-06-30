@@ -11,7 +11,7 @@ The arXiv workflow fetches abstract metadata from the official arXiv API, ranks 
 3. Run:
 
 ```bash
-./scripts/daily_arxiv_intel.sh
+make daily-arxiv-intel
 ```
 
 ## Suggested Codex Recurring Instruction
@@ -19,7 +19,7 @@ The arXiv workflow fetches abstract metadata from the official arXiv API, ranks 
 Run this daily in `/Users/dpickem/workspace/loopcraft`:
 
 ```text
-Run ./scripts/daily_arxiv_intel.sh. Read the generated Markdown digest path printed by the command. Summarize the 5-10 most interesting papers for ML, foundation models, LLMs, post-training, harness/loop engineering, agentic workflows and use-cases, recursive self-improvement, and self-improving systems. Include arXiv abstract and PDF links, and mention code/model/data links from arXiv comments when present. Report arXiv API errors first.
+Run make daily-arxiv-intel. Read the generated Markdown digest path printed by the command. Summarize the 5-10 most interesting papers for ML, foundation models, LLMs, post-training, harness/loop engineering, agentic workflows and use-cases, recursive self-improvement, and self-improving systems. Include arXiv abstract and PDF links, and mention code/model/data links from arXiv comments when present. Report arXiv API errors first.
 ```
 
 ## Notes
