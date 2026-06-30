@@ -15,10 +15,10 @@ improvements. All three are addressed below, each with a regression test.
 The three fixes are in one commit on `main`:
 
 ```text
-a0db056 fix: address M1 review 03 clarity findings
+c1d5906 fix: address M1 review 03 clarity findings
 ```
 
-Inspect with `git show a0db056 -- <file>` using the file lists below.
+Inspect with `git show c1d5906 -- <file>` using the file lists below.
 
 ## Status
 

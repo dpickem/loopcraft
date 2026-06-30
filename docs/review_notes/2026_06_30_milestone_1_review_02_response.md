@@ -14,10 +14,10 @@ The M1 code was reviewed before its first commit, so the review 01 and review 02
 into the M1 implementation commit on `main`:
 
 ```text
-04ff46e feat: add M1 loopcraft control plane
+9a0f311 feat: add M1 loopcraft control plane
 ```
 
-Inspect a finding's fix with `git show 04ff46e -- <file>` using the file lists below.
+Inspect a finding's fix with `git show 9a0f311 -- <file>` using the file lists below.
 
 ## Status
 
