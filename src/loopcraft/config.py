@@ -17,14 +17,6 @@ RUNS_DIRNAME = "runs"
 DB_FILENAME = "loopcraft.db"
 DEFAULT_WORKTREE_KEEP_LAST = 100
 MAX_WORKTREE_KEEP_LAST = 100
-DEFAULT_DEPENDENCIES = {
-    "python": "python",
-    "git": "git",
-    "codex": "codex",
-    "claude": "claude",
-    "cursor-agent": "cursor-agent",
-    "nv-tools": "nv-tools",
-}
 
 #: Prefixes that mark a declared path as a ledger/state file the store owns.
 #: Anything else (``linear:...``, ``s3://...``) is a non-file target the store
@@ -127,7 +119,7 @@ class LoopcraftConfig:
     default_vendor: str = "codex"
     host: str = "vm"
     worktree_keep_last: int = DEFAULT_WORKTREE_KEEP_LAST
-    dependencies: dict[str, str] = field(default_factory=lambda: dict(DEFAULT_DEPENDENCIES))
+    dependencies: dict[str, str] = field(default_factory=dict)
     artifact_store: str | None = None
     extra: dict[str, object] = field(default_factory=dict)
 
@@ -275,10 +267,9 @@ def _find_source_root() -> Path:
 
 def _load_project_dependencies(source: Path) -> dict[str, str]:
     """Load external Loopcraft binary dependencies from pyproject.toml."""
-    dependencies = dict(DEFAULT_DEPENDENCIES)
     pyproject_file = source / PYPROJECT_FILENAME
     if not pyproject_file.exists():
-        return dependencies
+        return {}
     raw = tomllib.loads(pyproject_file.read_text(encoding="utf-8"))
     declared = (
         raw.get("tool", {})
@@ -286,5 +277,5 @@ def _load_project_dependencies(source: Path) -> dict[str, str]:
         .get("dependencies", {})
     )
     if isinstance(declared, dict):
-        dependencies.update({str(k): str(v) for k, v in declared.items()})
-    return dependencies
+        return {str(k): str(v) for k, v in declared.items()}
+    return {}

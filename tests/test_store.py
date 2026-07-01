@@ -145,5 +145,4 @@ def test_config_loads_cli_dependency_table(tmp_path: Path, monkeypatch) -> None:
 
     assert config.dependencies["codex"] == "/opt/codex/bin/codex"
     assert config.dependencies["custom-tool"] == "custom-tool"
-    # Defaults are retained unless overridden.
-    assert config.dependencies["git"] == "git"
+    assert "git" not in config.dependencies
