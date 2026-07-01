@@ -19,8 +19,8 @@ from .base import (
 #: Tool collections map to a CLI binary that must be on PATH for preflight.
 _TOOL_BINARIES = {"nv-tools": "nv-tools"}
 
-#: Seconds allowed for a bounded local capability probe (e.g. ``nv-tools health``).
-_PROBE_TIMEOUT_S = 15
+#: Seconds allowed for a bounded capability probe (a single targeted API read).
+_PROBE_TIMEOUT_S = 30
 
 #: Model id prefixes Codex is expected to accept. Kept deliberately broad; the
 #: goal is to flag an obviously wrong vendor model (e.g. ``opus``) locally, not
@@ -48,21 +48,36 @@ def _run_probe(cmd: list[str]) -> int | None:
 
 
 def _probe_nv_tools_auth() -> str | None:
-    """Bounded, offline check that nv-tools auth is usable (``nv-tools health``)."""
+    """Check the nv-tools connector is installed.
+
+    The auth *bundle* is verified by presence of the CLI; the live credential
+    check happens per declared API (e.g. the Slack probe below), so we avoid the
+    slow, all-services ``nv-tools health`` that fails on unrelated services.
+    """
     if shutil.which("nv-tools") is None:
         return "auth bundle 'nv-tools': nv-tools CLI not found on PATH"
-    rc = _run_probe(["nv-tools", "health"])
-    if rc is None:
-        return "auth bundle 'nv-tools': could not run 'nv-tools health'"
-    if rc != 0:
-        return "auth bundle 'nv-tools': 'nv-tools health' reported a problem (run it for details)"
     return None
 
 
 def _probe_slack_api() -> str | None:
-    """Slack is reached through nv-tools; require that connector to be present."""
+    """Verify Slack access with a bounded, read-only, single-service probe.
+
+    Uses ``nv-tools slack list-channels --limit 1`` rather than ``nv-tools
+    health`` so the check is fast and scoped to the one service the loop needs,
+    instead of failing when some other nv-tools service is unhealthy.
+    """
     if shutil.which("nv-tools") is None:
         return "api 'slack': requires the nv-tools connector on PATH"
+    rc = _run_probe(
+        ["nv-tools", "slack", "list-channels", "--limit", "1", "--format", "json"]
+    )
+    if rc is None:
+        return "api 'slack': could not run the Slack read probe (nv-tools slack list-channels)"
+    if rc != 0:
+        return (
+            "api 'slack': Slack read probe failed — check `nv-tools slack list-channels` "
+            "(auth/config)"
+        )
     return None
 
 
