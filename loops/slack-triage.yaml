@@ -7,9 +7,8 @@ description: >-
 
 runtime:
   vendor: codex
-  # model omitted -> uses the operator's configured Codex default (portable across
-  # hosts). Pin a specific model here only if the loop requires one.
-  reasoning_effort: medium
+  model: gpt-5.5           # valid Codex model slug (list them with `codex debug models`)
+  reasoning_effort: medium # low | medium | high | xhigh (per the model's catalog)
 
 locus: vm
 cadence:
