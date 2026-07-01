@@ -33,13 +33,15 @@ inputs:
 outputs:
   - state/research/arxiv/latest.md
   - state/research/arxiv/latest.json
+  - state/research/arxiv/history/{{run_id}}.md
+  - state/research/arxiv/history/{{run_id}}.json
   - state/research/arxiv/seen.json
   - state/research/arxiv/papers.jsonl
 artifacts: []
 
 logic:
   skill: skills/arxiv-intelligence-reporting/SKILL.md
-  verify: "state/research/arxiv/latest.md and latest.json exist; seen.json updated"
+  verify: "latest.md/latest.json and run-scoped history digest files exist; seen.json updated"
 
 approval:
   required: false

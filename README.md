@@ -115,7 +115,8 @@ Fill in `X_API_BEARER_TOKEN` in `.env` before running. Tune the committed public
 defaults in `config/x_intel.json`, or create a gitignored
 `config/x_intel.local.json` for private/local overrides. Outputs are written to
 `~/workspace/loopcraft_memory/ledger/research/x/` by default (`latest.md`,
-`latest.json`, `seen.json`, `source-state.json`, `posts.jsonl`).
+`latest.json`, archived `history/*.md/json`, `seen.json`, `source-state.json`,
+`posts.jsonl`).
 
 For `snapshot-following`, set `X_API_OAUTH2_ACCESS_TOKEN` from X's OAuth 2.0 Authorization Code with PKCE flow. Client ID/secret alone are not enough for `/2/users/me`.
 
@@ -132,7 +133,8 @@ make run LOOP=arxiv-intel
 Tune the committed public defaults in `config/arxiv_intel.json`, or create a
 gitignored `config/arxiv_intel.local.json` for private/local overrides. Outputs
 are written to `~/workspace/loopcraft_memory/ledger/research/arxiv/` by default
-(`latest.md`, `latest.json`, `seen.json`, `papers.jsonl`).
+(`latest.md`, `latest.json`, archived `history/*.md/json`, `seen.json`,
+`papers.jsonl`).
 
 See [docs/arxiv_intel_automation.md](docs/arxiv_intel_automation.md) for Codex automation setup notes.
 

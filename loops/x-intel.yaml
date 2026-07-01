@@ -35,6 +35,8 @@ inputs:
 outputs:
   - state/research/x/latest.md
   - state/research/x/latest.json
+  - state/research/x/history/{{run_id}}.md
+  - state/research/x/history/{{run_id}}.json
   - state/research/x/seen.json
   - state/research/x/source-state.json
   - state/research/x/posts.jsonl
@@ -42,7 +44,7 @@ artifacts: []
 
 logic:
   skill: skills/x-intelligence-reporting/SKILL.md
-  verify: "state/research/x/latest.md and latest.json exist; seen/source-state updated"
+  verify: "latest.md/latest.json and run-scoped history digest files exist; seen/source-state updated"
 
 approval:
   required: false

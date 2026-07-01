@@ -94,6 +94,7 @@
     "posts_path": "state/research/x/posts.jsonl",
     "source_state_path": "state/research/x/source-state.json",
     "digest_dir": "state/research/x/digests",
+    "history_dir": "state/research/x/history",
     "latest_markdown": "state/research/x/latest.md",
     "latest_json": "state/research/x/latest.json",
     "follow_candidates_dir": "state/research/x/follow-candidates"

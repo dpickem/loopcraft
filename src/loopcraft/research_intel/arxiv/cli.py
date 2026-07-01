@@ -62,8 +62,13 @@ def run(config_path: str, *, dry_run: bool = False, include_seen: bool = False) 
     digest_dir = _resolve_path(loopcraft, config.output.digest_dir)
     digest_dir.mkdir(parents=True, exist_ok=True)
     stamp = now.strftime("%Y-%m-%d")
+    run_stamp = now.strftime("%Y%m%dT%H%M%SZ")
     markdown_path = digest_dir / f"{stamp}.md"
     json_path = digest_dir / f"{stamp}.json"
+    history_dir = _resolve_path(loopcraft, config.output.history_dir)
+    history_dir.mkdir(parents=True, exist_ok=True)
+    history_markdown = history_dir / f"{run_stamp}.md"
+    history_json = history_dir / f"{run_stamp}.json"
     latest_markdown = _resolve_path(loopcraft, config.output.latest_markdown)
     latest_json = _resolve_path(loopcraft, config.output.latest_json)
     latest_markdown.parent.mkdir(parents=True, exist_ok=True)
@@ -83,6 +88,8 @@ def run(config_path: str, *, dry_run: bool = False, include_seen: bool = False) 
     )
     markdown_path.write_text(markdown, encoding="utf-8")
     json_path.write_text(payload, encoding="utf-8")
+    history_markdown.write_text(markdown, encoding="utf-8")
+    history_json.write_text(payload, encoding="utf-8")
     latest_markdown.write_text(markdown, encoding="utf-8")
     latest_json.write_text(payload, encoding="utf-8")
 

@@ -51,7 +51,7 @@ Run make run LOOP=x-intel. Then run python -m loopcraft.research_intel.x.cli dis
 
 - The workflow uses the official X API. It does not scrape the browser.
 - State is stored in the loopcraft memory ledger (`state/research/x/seen.json`,
-  `source-state.json`, and `posts.jsonl`) so repeats avoid already-seen posts when the X API returns stable IDs.
+  `source-state.json`, and `posts.jsonl`) so repeats avoid already-seen posts when the X API returns stable IDs. Each run writes an archived digest under `state/research/x/history/`, while `latest.md` / `latest.json` point at the newest digest.
 - `X_API_BEARER_TOKEN` is the only required credential for the default app-only fetch path. `X_API_OAUTH2_ACCESS_TOKEN` is only needed if you want `/2/users/me` support. Codex provides the reasoning/summarization layer when the recurring automation runs; no OpenAI API key is needed in this repo for that path.
 - The default config searches posts from `config/x_following_snapshot.json`, then applies an AI/model/evals/tool-use topic clause and local ranker filters.
 

@@ -27,5 +27,5 @@ Run make run LOOP=arxiv-intel. Read state/research/arxiv/latest.md from the loop
 ## Notes
 
 - The workflow fetches metadata and abstracts only. It does not download PDFs.
-- State is stored in the loopcraft memory ledger (`state/research/arxiv/seen.json` and `papers.jsonl`) so daily runs avoid repeating already-seen papers.
+- State is stored in the loopcraft memory ledger (`state/research/arxiv/seen.json` and `papers.jsonl`) so daily runs avoid repeating already-seen papers. Each run writes an archived digest under `state/research/arxiv/history/`, while `latest.md` / `latest.json` point at the newest digest.
 - arXiv API docs: https://info.arxiv.org/help/api/user-manual.html

@@ -241,6 +241,7 @@ def test_x_output_defaults_are_memory_state_paths() -> None:
     assert config.output.seen_path.as_posix() == "state/research/x/seen.json"
     assert config.output.posts_path.as_posix() == "state/research/x/posts.jsonl"
     assert config.output.source_state_path.as_posix() == "state/research/x/source-state.json"
+    assert config.output.history_dir.as_posix() == "state/research/x/history"
     assert config.output.latest_markdown.as_posix() == "state/research/x/latest.md"
 
 

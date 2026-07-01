@@ -43,6 +43,7 @@ class OutputConfig:
     posts_path: Path
     source_state_path: Path
     digest_dir: Path
+    history_dir: Path
     latest_markdown: Path
     latest_json: Path
     follow_candidates_dir: Path
@@ -124,6 +125,7 @@ class IntelConfig:
                 posts_path=Path(output.get("posts_path", "state/research/x/posts.jsonl")),
                 source_state_path=Path(output.get("source_state_path", "state/research/x/source-state.json")),
                 digest_dir=Path(output.get("digest_dir", "state/research/x/digests")),
+                history_dir=Path(output.get("history_dir", "state/research/x/history")),
                 latest_markdown=Path(output.get("latest_markdown", "state/research/x/latest.md")),
                 latest_json=Path(output.get("latest_json", "state/research/x/latest.json")),
                 follow_candidates_dir=Path(

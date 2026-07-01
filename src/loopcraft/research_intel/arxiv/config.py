@@ -27,6 +27,7 @@ class OutputConfig:
     seen_path: Path
     papers_path: Path
     digest_dir: Path
+    history_dir: Path
     latest_markdown: Path
     latest_json: Path
 
@@ -65,6 +66,7 @@ class ArxivIntelConfig:
                 seen_path=Path(output.get("seen_path", "state/research/arxiv/seen.json")),
                 papers_path=Path(output.get("papers_path", "state/research/arxiv/papers.jsonl")),
                 digest_dir=Path(output.get("digest_dir", "state/research/arxiv/digests")),
+                history_dir=Path(output.get("history_dir", "state/research/arxiv/history")),
                 latest_markdown=Path(output.get("latest_markdown", "state/research/arxiv/latest.md")),
                 latest_json=Path(output.get("latest_json", "state/research/arxiv/latest.json")),
             ),

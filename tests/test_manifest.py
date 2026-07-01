@@ -77,6 +77,8 @@ def test_repo_slack_triage_manifest_is_valid() -> None:
     manifests, problems = load_all(REPO_ROOT / "loops")
     assert problems == []
     assert any(m.id == "slack-triage" for m in manifests)
+    assert any(m.id == "arxiv-intel" for m in manifests)
+    assert any(m.id == "x-intel" for m in manifests)
 
 
 def test_slack_triage_declares_seen_cursor() -> None:
@@ -87,6 +89,16 @@ def test_slack_triage_declares_seen_cursor() -> None:
     assert "state/slack/seen.json" in slack.outputs
     assert "state/slack/triage-latest.md" in slack.outputs
     assert "state/slack/history/{{run_id}}.md" in slack.outputs
+
+
+def test_research_intel_manifests_archive_latest_outputs() -> None:
+    manifests, _ = load_all(REPO_ROOT / "loops")
+    arxiv = next(m for m in manifests if m.id == "arxiv-intel")
+    x_intel = next(m for m in manifests if m.id == "x-intel")
+    assert "state/research/arxiv/history/{{run_id}}.md" in arxiv.outputs
+    assert "state/research/arxiv/history/{{run_id}}.json" in arxiv.outputs
+    assert "state/research/x/history/{{run_id}}.md" in x_intel.outputs
+    assert "state/research/x/history/{{run_id}}.json" in x_intel.outputs
 
 
 def test_self_cursor_is_not_a_cycle() -> None:

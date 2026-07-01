@@ -119,6 +119,7 @@ def test_arxiv_output_defaults_are_memory_state_paths() -> None:
     config = ArxivIntelConfig.from_dict({})
     assert config.output.seen_path.as_posix() == "state/research/arxiv/seen.json"
     assert config.output.papers_path.as_posix() == "state/research/arxiv/papers.jsonl"
+    assert config.output.history_dir.as_posix() == "state/research/arxiv/history"
     assert config.output.latest_markdown.as_posix() == "state/research/arxiv/latest.md"
 
 
