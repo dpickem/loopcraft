@@ -38,6 +38,32 @@ Override the memory location at runtime with `LOOPCRAFT_MEMORY`.
 > Claude/Cursor adapters, the scheduler, harvester, and UI arrive in later
 > milestones (M2+).
 
+### Runtime Models
+
+Loop manifests specify a runtime in `runtime.vendor`, and may pin a model in
+`runtime.model`. Keep reasoning effort separate in `runtime.reasoning_effort`;
+do not bake it into the model slug (for example, use `model: gpt-5.5` plus
+`reasoning_effort: medium`, not `gpt-5.5-medium`).
+
+Codex model slugs available on this account (`codex debug models`):
+
+| Model slug | Default effort | Supported efforts |
+| --- | --- | --- |
+| `gpt-5.6-sol` (account default) | `medium` | `low`, `medium`, `high`, `xhigh`, `max`, `ultra` |
+| `gpt-5.6-terra` | `medium` | `low`, `medium`, `high`, `xhigh`, `max`, `ultra` |
+| `gpt-5.6-luna` | `medium` | `low`, `medium`, `high`, `xhigh`, `max` |
+| `gpt-5.5` | `xhigh` | `low`, `medium`, `high`, `xhigh` |
+| `gpt-5.4` | `medium` | `low`, `medium`, `high`, `xhigh` |
+| `gpt-5.4-mini` | `medium` | `low`, `medium`, `high`, `xhigh` |
+
+Claude Code model values (`claude --help`):
+
+| Model value | Meaning | Effort flag |
+| --- | --- | --- |
+| `sonnet` | Alias for the latest Sonnet available to Claude Code. Prefer this unless a loop needs a pinned version. | `--effort low|medium|high|xhigh|max` |
+| `opus` | Alias for the latest Opus available to Claude Code. Use for review/checker-heavy loops. | `--effort low|medium|high|xhigh|max` |
+| `claude-opus-4-8` | Example full model name accepted by Claude Code. Full model names are for reproducible pinning and may change as providers update catalogs. | `--effort low|medium|high|xhigh|max` |
+
 ### Layout
 
 ```
