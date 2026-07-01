@@ -161,6 +161,10 @@ class CodexRunner:
         cmd = self._build_command(loop, ctx)
 
         ctx.log_path.parent.mkdir(parents=True, exist_ok=True)
+        # Ensure each declared output's parent exists so it can be a sandbox
+        # writable root and the agent can create the file there.
+        for output in ctx.resolved_outputs:
+            output.parent.mkdir(parents=True, exist_ok=True)
         env = {**os.environ, **ctx.env}
 
         # Snapshot declared outputs before the run so a successful exit that did
@@ -255,12 +259,40 @@ class CodexRunner:
             problems=problems,
         )
 
+    def _writable_roots(self, ctx: RunContext) -> list[str]:
+        """Directories the loop is allowed to write to, beyond the worktree.
+
+        Scoped to exactly the parent directories of the loop's declared outputs
+        (e.g. ``<memory>/ledger/slack``) — not the whole memory tree — so a run
+        can persist its outputs without broad filesystem write access.
+        """
+        roots = {str(p.parent.resolve()) for p in ctx.resolved_outputs}
+        return sorted(roots)
+
     def _build_command(self, loop: LoopManifest, ctx: RunContext) -> list[str]:
         # The run directory is an isolated asset bundle (manifest + skill assets),
-        # not a git checkout, so --skip-git-repo-check is intentional here.
-        cmd = ["codex", "exec", "--skip-git-repo-check"]
+        # not a git checkout, so --skip-git-repo-check is intentional.
+        #
+        # Sandbox is scoped, not bypassed: workspace-write confines writes to the
+        # worktree plus the explicit --add-dir roots (the loop's declared output
+        # dirs), and network access is enabled so declared tools like nv-tools can
+        # reach their APIs. Approvals stay off (exec is non-interactive): anything
+        # outside the writable roots is denied, never escalated.
+        cmd = [
+            "codex",
+            "exec",
+            "--skip-git-repo-check",
+            "-s",
+            "workspace-write",
+            "-c",
+            "sandbox_workspace_write.network_access=true",
+        ]
+        for root in self._writable_roots(ctx):
+            cmd += ["--add-dir", root]
         if loop.runtime.model:
             cmd += ["--model", loop.runtime.model]
+        if loop.runtime.reasoning_effort:
+            cmd += ["-c", f'model_reasoning_effort="{loop.runtime.reasoning_effort}"']
         cmd.append("-")  # read the prompt from stdin
         return cmd
 

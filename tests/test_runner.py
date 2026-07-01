@@ -181,6 +181,25 @@ def test_build_command_includes_model(tmp_path: Path) -> None:
     assert "--model" in cmd and "gpt-5.5-medium" in cmd
 
 
+def test_build_command_scopes_sandbox_not_bypass(tmp_path: Path) -> None:
+    """Hardening: writes are confined to workspace-write + the output dirs."""
+    config = _config(tmp_path)
+    manifest = _manifest()
+    out = config.resolve_state_path("state/demo/out.md")
+    ctx = RunContext(
+        config=config,
+        workdir=tmp_path / "wt",
+        log_path=tmp_path / "l",
+        resolved_outputs=[out],
+    )
+    cmd = CodexRunner()._build_command(manifest, ctx)
+    assert "--dangerously-bypass-approvals-and-sandbox" not in cmd
+    assert cmd[cmd.index("-s") + 1] == "workspace-write"
+    assert "sandbox_workspace_write.network_access=true" in cmd
+    assert "--add-dir" in cmd
+    assert str(out.parent.resolve()) in cmd
+
+
 # --- Finding 2: preflight validates declared auth / apis / model -------------
 
 
