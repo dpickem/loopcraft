@@ -95,11 +95,36 @@ def test_record_and_read_runs(tmp_path: Path) -> None:
     )
     out = store.record_run(record)
     assert out.exists()
+    assert out.name.startswith("slack-triage__")
+    assert out.name.endswith(f"{rid}.json")
     latest = store.latest_run("slack-triage")
     assert latest is not None
     assert latest.run_id == rid
     assert latest.status == "done"
     assert store.latest_run("other") is None
+
+
+def test_reads_legacy_run_record_filenames(tmp_path: Path) -> None:
+    store = Store(_config(tmp_path))
+    rid = "20260701T120000Z-legacy"
+    store.config.runs_dir.mkdir(parents=True)
+    legacy = store.config.runs_dir / f"{rid}.json"
+    legacy.write_text(
+        """{
+  "run_id": "20260701T120000Z-legacy",
+  "loop": "arxiv-intel",
+  "vendor": "codex",
+  "model": null,
+  "status": "done",
+  "started_at": "2026-07-01T12:00:00+00:00"
+}
+""",
+        encoding="utf-8",
+    )
+
+    latest = store.latest_run("arxiv-intel")
+    assert latest is not None
+    assert latest.run_id == rid
 
 
 def test_config_worktree_keep_last_defaults_and_clamps(tmp_path: Path, monkeypatch) -> None:

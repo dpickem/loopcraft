@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import uuid
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
@@ -59,7 +60,7 @@ class Store:
 
     def record_run(self, record: RunRecord) -> Path:
         self.config.runs_dir.mkdir(parents=True, exist_ok=True)
-        path = self.config.runs_dir / f"{record.run_id}.json"
+        path = self.config.runs_dir / _run_record_filename(record.loop, record.run_id)
         path.write_text(
             json.dumps(record.to_dict(), indent=2, ensure_ascii=False) + "\n",
             encoding="utf-8",
@@ -111,3 +112,9 @@ class Store:
 
 
 _RUN_FIELDS = tuple(RunRecord.__dataclass_fields__.keys())
+
+
+def _run_record_filename(loop_id: str, run_id: str) -> str:
+    """Return a readable run-record filename that includes the producing loop."""
+    safe_loop = re.sub(r"[^0-9A-Za-z_.-]+", "-", loop_id).strip("-") or "loop"
+    return f"{safe_loop}__{run_id}.json"
