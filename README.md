@@ -77,8 +77,8 @@ src/loopcraft/
   manifest.py     # LoopManifest schema, validator, dependency DAG check
   store.py        # the single sanctioned persistence path (ledger + run records)
   runners/        # the portability seam: base protocol + codex adapter
-  arxiv_intel/    # arXiv intelligence loop implementation
-  x_intel/        # X intelligence loop implementation
+  research_intel/arxiv/    # arXiv intelligence loop implementation
+  research_intel/x/        # X intelligence loop implementation
 ```
 
 ## Codex Setup
@@ -98,16 +98,16 @@ This repo includes a Loopcraft loop plus a direct CLI that uses the official X A
 ```bash
 cp config/x_intel.example.json config/x_intel.json
 cp .env.example .env
-python -m loopcraft.x_intel.cli snapshot-following
+python -m loopcraft.research_intel.x.cli snapshot-following
 make run LOOP=x-intel
-python -m loopcraft.x_intel.cli discover-follows --config config/x_intel.json
+python -m loopcraft.research_intel.x.cli discover-follows --config config/x_intel.json
 ```
 
 Fill in `X_API_BEARER_TOKEN` in `.env` before running. Outputs are written to `~/workspace/loopcraft_memory/ledger/research/x/` by default (`latest.md`, `latest.json`, `seen.json`, `source-state.json`, `posts.jsonl`).
 
 For `snapshot-following`, set `X_API_OAUTH2_ACCESS_TOKEN` from X's OAuth 2.0 Authorization Code with PKCE flow. Client ID/secret alone are not enough for `/2/users/me`.
 
-`discover-follows` reads the latest digest, filters out accounts already in `config/x_following_snapshot.json`, hydrates candidate profiles through X, and writes follow recommendations under `var/x_intel/follow_candidates/`.
+`discover-follows` reads the latest digest, filters out accounts already in `config/x_following_snapshot.json`, hydrates candidate profiles through X, and writes follow recommendations under `~/workspace/loopcraft_memory/ledger/research/x/follow-candidates/`.
 
 ## Daily arXiv Intelligence
 

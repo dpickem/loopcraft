@@ -2,11 +2,11 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from loopcraft.arxiv_intel.client import build_search_query, parse_feed
-from loopcraft.arxiv_intel.config import ArxivIntelConfig
-from loopcraft.arxiv_intel.digest import render_digest
-from loopcraft.arxiv_intel.ranking import rank_papers, score_paper
-from loopcraft.arxiv_intel.store import ArxivStore
+from loopcraft.research_intel.arxiv.client import build_search_query, parse_feed
+from loopcraft.research_intel.arxiv.config import ArxivIntelConfig
+from loopcraft.research_intel.arxiv.digest import render_digest
+from loopcraft.research_intel.arxiv.ranking import rank_papers, score_paper
+from loopcraft.research_intel.arxiv.store import ArxivStore
 
 
 def _config() -> ArxivIntelConfig:

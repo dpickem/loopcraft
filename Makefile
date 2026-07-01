@@ -68,13 +68,13 @@ ARXIV_CONFIG ?= $(if $(wildcard config/arxiv_intel.json),config/arxiv_intel.json
 X_CONFIG ?= $(if $(wildcard config/x_intel.json),config/x_intel.json,config/x_intel.example.json)
 
 snapshot-following:
-	PYTHONPATH=src $(PYTHON) -m loopcraft.x_intel.cli snapshot-following
+	PYTHONPATH=src $(PYTHON) -m loopcraft.research_intel.x.cli snapshot-following
 
 daily-x-intel:  ## fetch + rank a daily X digest into the memory ledger
-	PYTHONPATH=src $(PYTHON) -m loopcraft.x_intel.cli run --config $(X_CONFIG)
+	PYTHONPATH=src $(PYTHON) -m loopcraft.research_intel.x.cli run --config $(X_CONFIG)
 
 discover-follows:
-	PYTHONPATH=src $(PYTHON) -m loopcraft.x_intel.cli discover-follows --config $(X_CONFIG)
+	PYTHONPATH=src $(PYTHON) -m loopcraft.research_intel.x.cli discover-follows --config $(X_CONFIG)
 
 daily-arxiv-intel:  ## fetch + rank a daily arXiv digest into the memory ledger
-	PYTHONPATH=src $(PYTHON) -m loopcraft.arxiv_intel.cli run --config $(ARXIV_CONFIG)
+	PYTHONPATH=src $(PYTHON) -m loopcraft.research_intel.arxiv.cli run --config $(ARXIV_CONFIG)

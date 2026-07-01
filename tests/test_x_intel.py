@@ -5,11 +5,11 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from loopcraft.env import load_dotenv
-from loopcraft.x_intel.config import IntelConfig
-from loopcraft.x_intel.digest import render_digest
-from loopcraft.x_intel.follow_discovery import discover_candidates, render_follow_candidates
-from loopcraft.x_intel.ranking import rank_posts, score_post
-from loopcraft.x_intel.store import IntelStore
+from loopcraft.research_intel.x.config import IntelConfig
+from loopcraft.research_intel.x.digest import render_digest
+from loopcraft.research_intel.x.follow_discovery import discover_candidates, render_follow_candidates
+from loopcraft.research_intel.x.ranking import rank_posts, score_post
+from loopcraft.research_intel.x.store import IntelStore
 
 
 def _config() -> IntelConfig:

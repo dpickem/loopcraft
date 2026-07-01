@@ -16,8 +16,8 @@ dependencies = [
 
 [project.scripts]
 loopctl = "loopcraft.cli:main"
-loopcraft-x-intel = "loopcraft.x_intel.cli:main"
-loopcraft-arxiv-intel = "loopcraft.arxiv_intel.cli:main"
+loopcraft-x-intel = "loopcraft.research_intel.x.cli:main"
+loopcraft-arxiv-intel = "loopcraft.research_intel.arxiv.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

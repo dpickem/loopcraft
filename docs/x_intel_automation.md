@@ -21,7 +21,7 @@ cp .env.example .env
 4. Generate or refresh the followed-account snapshot:
 
 ```bash
-python -m loopcraft.x_intel.cli snapshot-following
+python -m loopcraft.research_intel.x.cli snapshot-following
 ```
 
 With `X_API_OAUTH2_ACCESS_TOKEN` from an OAuth 2.0 user-context flow, `snapshot-following` infers the current account from `/2/users/me`. `X_API_OAUTH2_CLIENT_ID` and `X_API_OAUTH2_CLIENT_SECRET` only identify the app; they do not authenticate your X user by themselves.
@@ -31,7 +31,7 @@ With `X_API_OAUTH2_ACCESS_TOKEN` from an OAuth 2.0 user-context flow, `snapshot-
 ```bash
 make run LOOP=x-intel
 make daily-x-intel
-python -m loopcraft.x_intel.cli discover-follows --config config/x_intel.json
+python -m loopcraft.research_intel.x.cli discover-follows --config config/x_intel.json
 ```
 
 The command prints the generated digest path and writes Markdown plus JSON files into the
@@ -43,7 +43,7 @@ loopcraft memory ledger under `state/research/x/`. Follow recommendations are wr
 Run this daily in `/Users/dpickem/workspace/loopcraft`:
 
 ```text
-Run make run LOOP=x-intel. Then run python -m loopcraft.x_intel.cli discover-follows --config config/x_intel.json. Read state/research/x/latest.md and any follow-candidate paths printed by the commands. Summarize the most important posts for ML, AI, foundation/frontier model practice, harness engineering, loop engineering, loopcraft, agents, evals, and tool use. Highlight posts from frontier-lab authors separately. Include promising new people or organizations to follow, with evidence links. If either command reports X API rate limits, auth failures, or other errors, report those first and include the raw error summary.
+Run make run LOOP=x-intel. Then run python -m loopcraft.research_intel.x.cli discover-follows --config config/x_intel.json. Read state/research/x/latest.md and any follow-candidate paths printed by the commands. Summarize the most important posts for ML, AI, foundation/frontier model practice, harness engineering, loop engineering, loopcraft, agents, evals, and tool use. Highlight posts from frontier-lab authors separately. Include promising new people or organizations to follow, with evidence links. If either command reports X API rate limits, auth failures, or other errors, report those first and include the raw error summary.
 ```
 
 ## Notes
