@@ -40,6 +40,15 @@ Override the memory location at runtime with `LOOPCRAFT_MEMORY`.
 > Claude/Cursor adapters, the scheduler, harvester, and UI arrive in later
 > milestones (M2+).
 
+### M2 Tasks
+
+- Add scheduler/auth/apply: bootstrap the host, validate auth/env/tool
+  dependencies, and render the loop manifests into deployable timers/services.
+- Reorganize core control-plane plumbing into `loopcraft/control/` once the M2
+  scheduler/auth/apply boundary lands. Keep this separate from research-loop
+  cleanup so the control-plane refactor follows the new scheduler shape instead
+  of pre-optimizing M1 modules.
+
 ### Runtime Models
 
 Loop manifests specify a runtime in `runtime.vendor`, and may pin a model in
