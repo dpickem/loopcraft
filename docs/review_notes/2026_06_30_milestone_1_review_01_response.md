@@ -12,16 +12,16 @@ The M1 code was reviewed before its first commit, so all five fixes are folded i
 implementation commit on `main`:
 
 ```text
-9a0f311 feat: add M1 loopcraft control plane
+b5911bd feat: add M1 loopcraft control plane
 ```
 
 The related shell-script cleanup noted under healthy areas is:
 
 ```text
-86c6815 chore: replace daily-intel shell scripts with Makefile targets
+c310028 chore: replace daily-intel shell scripts with Makefile targets
 ```
 
-Inspect a finding's fix with `git show 9a0f311 -- <file>` using the file lists below.
+Inspect a finding's fix with `git show b5911bd -- <file>` using the file lists below.
 
 ## Status
 

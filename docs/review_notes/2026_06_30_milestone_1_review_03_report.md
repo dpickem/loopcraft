@@ -2,12 +2,11 @@
 
 Review target: committed local branch at `/Users/dpickem/workspace/loopcraft`.
 
-Reviewed commits (hashes updated after the later history scrub that removed the
-confidential channel list; originally 04ff46e / 0888646 / 80b0083):
+Reviewed commits (hashes after rebasing this feature branch onto `origin/main`):
 
-- `9a0f311 feat: add M1 loopcraft control plane`
-- `20c0e34 docs: add CONTRIBUTING guide`
-- `1d0cdf1 docs: add M1 review notes (reviews 01 and 02)`
+- `b5911bd feat: add M1 loopcraft control plane`
+- `685eab4 docs: add CONTRIBUTING guide`
+- `418ff4c docs: add M1 review notes (reviews 01 and 02)`
 
 Reference baseline:
 
