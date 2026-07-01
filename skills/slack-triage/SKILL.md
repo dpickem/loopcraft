@@ -3,10 +3,11 @@ name: slack-triage
 description: >-
   Triage and summarize everything aimed at the operator on Slack — @mentions,
   DMs, group DMs, and a configured list of high-signal channels — into a single
-  categorized digest. Observe-only: never send a message.
+  digest grouped by theme, led by a high-level topic overview. Observe-only:
+  never send a message.
 readonly: true
 tools: [nv-tools.slack]
-verify: "state/slack/triage-latest.md exists and lists >=1 categorized item; state/slack/seen.json updated"
+verify: "state/slack/triage-latest.md exists with a 'Themes at a glance' overview and theme-grouped items; state/slack/seen.json updated"
 ---
 
 # Slack triage & summarizer
@@ -35,34 +36,56 @@ markdown digest (`state/slack/triage-latest.md`) and the JSON cursor
 
 1. Use `nv-tools slack` to fetch mentions, DMs, group DMs, and the configured
    channels within the window. Deduplicate by thread.
-2. Categorize every item as exactly one of:
-   - **ACTION** — needs a reply or a decision from the operator
-   - **REVIEW** — FYI that the operator should read but likely won't act on
+2. Tag every item with an urgency:
+   - **ACTION** — needs a reply or a decision from you
+   - **REVIEW** — worth reading, but you likely won't act
    - **INFO** — purely informational / ambient
-3. Write the digest to the absolute output path given in the I/O contract
+3. Group the items into a small set of **themes** (aim for 3–8) by *topic* — the
+   subject under discussion (a model/release, a data pipeline, an eval, a
+   decision, an incident, team logistics, …), **not** the channel. A theme may
+   span multiple channels; a busy channel may split into multiple themes. Give
+   each theme a short, specific title. Order themes by importance: ones with open
+   actions first, then by activity/volume.
+4. Write the digest to the absolute output path given in the I/O contract
    (`state/slack/triage-latest.md`), using the structure below.
 
 ## Output format (`state/slack/triage-latest.md`)
 
+Lead with a high-level **thematic overview** (so the topics are visible at a
+glance), then the theme-grouped detail, then one consolidated action list.
+
 ```markdown
 # Slack triage — <YYYY-MM-DD HH:MM>
 
+## Themes at a glance
+- **<Theme title>** — <one line on what's being discussed> (<N> items[, <X> action])
+- **<Theme title>** — <one line> (<N> items)
+
+## By theme
+
+### <Theme title>  (<N> items)
+- **ACTION** — <one line>: who · #channel ([link](...)) — why it needs you
+- **REVIEW** — <one line>: who · #channel ([link](...))
+- **INFO** — <one line>: who · #channel ([link](...))
+
+### <Theme title>  (<N> items)
+- **REVIEW** — <one line>: who · #channel ([link](...))
+
 ## Action required
-- [ ] <one line>: who / where (link) — why it needs you
-
-## Review / FYI
-- <one line>: who / where (link)
-
-## Informational
-- <one line>: who / where (link)
-
-## Prioritized checklist
-1. <highest-priority action item>
-2. ...
+- [ ] <highest-priority action>: who · #channel ([link](...))
+- [ ] <next action>: who · #channel ([link](...))
 ```
 
-Lead with **Action required**; end with the prioritized checklist. If a section
-is empty, write `- none`.
+Rules:
+
+- The **Themes at a glance** section is the headline — keep each theme to one
+  scannable line so the operator sees the day's topics immediately.
+- Every detail bullet starts with its urgency tag (**ACTION** / **REVIEW** /
+  **INFO**) and names the theme's items with who + channel + a permalink.
+- **Action required** re-lists every ACTION item across all themes, most urgent
+  first, as a checklist. If there are none, write `- none`.
+- If there is no new activity at all since the last run, write a single line:
+  `No new activity since the last run.`
 
 ## Hard rules
 
