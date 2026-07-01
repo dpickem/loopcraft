@@ -82,6 +82,22 @@ def test_run_end_to_end_with_stub_runner(monkeypatch, tmp_path: Path, capsys) ->
     assert str(cursor) in data["outputs"]
 
 
+def test_run_prunes_old_worktrees(monkeypatch, tmp_path: Path) -> None:
+    _env(monkeypatch, tmp_path)
+    monkeypatch.setenv("LOOPCRAFT_WORKTREE_KEEP_LAST", "2")
+    register_runner("stub", StubRunner)
+
+    for _ in range(4):
+        assert cli.main(["run", "slack-triage", "--vendor", "stub"]) == 0
+
+    worktrees = sorted((tmp_path / "mem" / "var" / "worktrees" / "slack-triage").iterdir())
+    assert len(worktrees) == 2
+
+    # Durable run records are not pruned with scratch worktrees.
+    records = list((tmp_path / "mem" / "ledger" / "runs").glob("*.json"))
+    assert len(records) == 4
+
+
 def test_run_records_failure_on_preflight(monkeypatch, tmp_path: Path) -> None:
     _env(monkeypatch, tmp_path)
 

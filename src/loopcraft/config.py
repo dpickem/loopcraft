@@ -14,6 +14,8 @@ LEDGER_DIRNAME = "ledger"
 ARTIFACTS_DIRNAME = "artifacts"
 RUNS_DIRNAME = "runs"
 DB_FILENAME = "loopcraft.db"
+DEFAULT_WORKTREE_KEEP_LAST = 100
+MAX_WORKTREE_KEEP_LAST = 100
 
 #: Prefixes that mark a declared path as a ledger/state file the store owns.
 #: Anything else (``linear:...``, ``s3://...``) is a non-file target the store
@@ -115,6 +117,7 @@ class LoopcraftConfig:
     memory_path: Path
     default_vendor: str = "codex"
     host: str = "vm"
+    worktree_keep_last: int = DEFAULT_WORKTREE_KEEP_LAST
     artifact_store: str | None = None
     extra: dict[str, object] = field(default_factory=dict)
 
@@ -206,7 +209,16 @@ class LoopcraftConfig:
         )
         memory = Path(memory_raw).expanduser().resolve()
 
-        known = {"default_vendor", "host", "memory_path", "artifact_store"}
+        keep_last_raw = os.environ.get("LOOPCRAFT_WORKTREE_KEEP_LAST") or str(
+            raw.get("worktree_keep_last", DEFAULT_WORKTREE_KEEP_LAST)
+        )
+        try:
+            keep_last = int(keep_last_raw)
+        except ValueError:
+            keep_last = DEFAULT_WORKTREE_KEEP_LAST
+        keep_last = max(0, min(keep_last, MAX_WORKTREE_KEEP_LAST))
+
+        known = {"default_vendor", "host", "memory_path", "artifact_store", "worktree_keep_last"}
         extra = {k: v for k, v in raw.items() if k not in known}
 
         return cls(
@@ -215,6 +227,7 @@ class LoopcraftConfig:
             default_vendor=os.environ.get("LOOPCRAFT_VENDOR")
             or str(raw.get("default_vendor", "codex")),
             host=str(raw.get("host", "vm")),
+            worktree_keep_last=keep_last,
             artifact_store=(
                 str(raw["artifact_store"]) if raw.get("artifact_store") else None
             ),

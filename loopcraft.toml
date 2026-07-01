@@ -14,5 +14,10 @@ host = "vm"
 # Override at runtime with the LOOPCRAFT_MEMORY environment variable.
 memory_path = "~/workspace/loopcraft_memory"
 
+# Per-loop scratch worktree retention. Run records and durable outputs stay in
+# ledger/; only <memory>/var/worktrees/<loop>/<run_id>/ scratch dirs are pruned.
+# Override with LOOPCRAFT_WORKTREE_KEEP_LAST. Clamped to 0..100.
+worktree_keep_last = 100
+
 # Optional: offload large/binary artifacts to an external object store.
 # artifact_store = "s3://..."

@@ -83,3 +83,20 @@ def test_record_and_read_runs(tmp_path: Path) -> None:
     assert latest.run_id == rid
     assert latest.status == "done"
     assert store.latest_run("other") is None
+
+
+def test_config_worktree_keep_last_defaults_and_clamps(tmp_path: Path, monkeypatch) -> None:
+    source = tmp_path / "src"
+    source.mkdir()
+    (source / "loopcraft.toml").write_text(
+        'memory_path = "mem"\nworktree_keep_last = 500\n', encoding="utf-8"
+    )
+    monkeypatch.delenv("LOOPCRAFT_WORKTREE_KEEP_LAST", raising=False)
+    config = LoopcraftConfig.load(source)
+    assert config.worktree_keep_last == 100
+
+    monkeypatch.setenv("LOOPCRAFT_WORKTREE_KEEP_LAST", "2")
+    assert LoopcraftConfig.load(source).worktree_keep_last == 2
+
+    monkeypatch.setenv("LOOPCRAFT_WORKTREE_KEEP_LAST", "-5")
+    assert LoopcraftConfig.load(source).worktree_keep_last == 0

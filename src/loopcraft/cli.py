@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import shutil
 import sys
 import time
 from datetime import UTC, datetime
@@ -164,6 +165,7 @@ def _cmd_run(config: LoopcraftConfig, loop_id: str, *, vendor: str | None, dry_r
         problems=result.problems,
     )
     record_path = store.record_run(record)
+    _prune_loop_worktrees(config, manifest.id, keep_last=config.worktree_keep_last)
 
     print(f"loop:   {manifest.id}")
     print(f"status: {result.status}")
@@ -174,6 +176,27 @@ def _cmd_run(config: LoopcraftConfig, loop_id: str, *, vendor: str | None, dry_r
     for problem in result.problems:
         print(f"  ! {problem}", file=sys.stderr)
     return 0 if result.status == STATUS_DONE else 1
+
+
+def _prune_loop_worktrees(config: LoopcraftConfig, loop_id: str, *, keep_last: int) -> list[Path]:
+    """Keep only the newest N per-run worktree directories for one loop.
+
+    The worktree area is scratch/debug state under ``<memory>/var/worktrees``;
+    durable run records and outputs live in ``ledger/``. Pruning therefore never
+    removes canonical loop state. ``keep_last`` is clamped by config to 0..100.
+    """
+    loop_dir = config.memory_path / "var" / "worktrees" / loop_id
+    if not loop_dir.exists():
+        return []
+
+    children = [p for p in loop_dir.iterdir() if p.is_dir()]
+    children.sort(key=lambda p: (p.stat().st_mtime_ns, p.name), reverse=True)
+    to_delete = children[keep_last:]
+    removed: list[Path] = []
+    for path in to_delete:
+        shutil.rmtree(path)
+        removed.append(path)
+    return removed
 
 
 def _cmd_validate(config: LoopcraftConfig, loops_dir: str | None) -> int:
