@@ -5,7 +5,8 @@ The X intelligence workflow is a first-class Loopcraft loop. It can be run throu
 
 ## Local Setup
 
-1. Copy `config/x_intel.example.json` to `config/x_intel.json`.
+1. Tune `config/x_intel.json` sources if needed. If the changes are private/local,
+   use gitignored `config/x_intel.local.json` instead.
 2. Add one or more official X API sources:
    - `sources.following_snapshot`: preferred local snapshot of accounts you follow.
    - `sources.list_ids`: preferred for curated feeds.

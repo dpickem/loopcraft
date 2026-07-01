@@ -64,8 +64,8 @@ install-codex-skills:
 	done
 
 # --- intelligence loops / direct CLI entry points -----------------------------
-ARXIV_CONFIG ?= $(if $(wildcard config/arxiv_intel.json),config/arxiv_intel.json,config/arxiv_intel.example.json)
-X_CONFIG ?= $(if $(wildcard config/x_intel.json),config/x_intel.json,config/x_intel.example.json)
+ARXIV_CONFIG ?= $(if $(wildcard config/arxiv_intel.local.json),config/arxiv_intel.local.json,config/arxiv_intel.json)
+X_CONFIG ?= $(if $(wildcard config/x_intel.local.json),config/x_intel.local.json,config/x_intel.json)
 
 snapshot-following:
 	PYTHONPATH=src $(PYTHON) -m loopcraft.research_intel.x.cli snapshot-following

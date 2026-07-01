@@ -105,14 +105,17 @@ This copies bundled skills from `skills/` into `${CODEX_HOME:-$HOME/.codex}/skil
 This repo includes a Loopcraft loop plus a direct CLI that uses the official X API, stores persistent state in the memory ledger, ranks posts for loopcraft/frontier-model relevance, and emits a Markdown digest.
 
 ```bash
-cp config/x_intel.example.json config/x_intel.json
 cp .env.example .env
 python -m loopcraft.research_intel.x.cli snapshot-following
 make run LOOP=x-intel
 python -m loopcraft.research_intel.x.cli discover-follows --config config/x_intel.json
 ```
 
-Fill in `X_API_BEARER_TOKEN` in `.env` before running. Outputs are written to `~/workspace/loopcraft_memory/ledger/research/x/` by default (`latest.md`, `latest.json`, `seen.json`, `source-state.json`, `posts.jsonl`).
+Fill in `X_API_BEARER_TOKEN` in `.env` before running. Tune the committed public
+defaults in `config/x_intel.json`, or create a gitignored
+`config/x_intel.local.json` for private/local overrides. Outputs are written to
+`~/workspace/loopcraft_memory/ledger/research/x/` by default (`latest.md`,
+`latest.json`, `seen.json`, `source-state.json`, `posts.jsonl`).
 
 For `snapshot-following`, set `X_API_OAUTH2_ACCESS_TOKEN` from X's OAuth 2.0 Authorization Code with PKCE flow. Client ID/secret alone are not enough for `/2/users/me`.
 
@@ -123,11 +126,13 @@ For `snapshot-following`, set `X_API_OAUTH2_ACCESS_TOKEN` from X's OAuth 2.0 Aut
 This repo also includes an arXiv abstract-first Loopcraft loop for ML, foundation models, LLMs, post-training, agentic workflows, harness/loop engineering, recursive self-improvement, and self-improving systems.
 
 ```bash
-cp config/arxiv_intel.example.json config/arxiv_intel.json
 make run LOOP=arxiv-intel
 ```
 
-Outputs are written to `~/workspace/loopcraft_memory/ledger/research/arxiv/` by default (`latest.md`, `latest.json`, `seen.json`, `papers.jsonl`).
+Tune the committed public defaults in `config/arxiv_intel.json`, or create a
+gitignored `config/arxiv_intel.local.json` for private/local overrides. Outputs
+are written to `~/workspace/loopcraft_memory/ledger/research/arxiv/` by default
+(`latest.md`, `latest.json`, `seen.json`, `papers.jsonl`).
 
 See [docs/arxiv_intel_automation.md](docs/arxiv_intel_automation.md) for Codex automation setup notes.
 
