@@ -269,16 +269,8 @@ def _cmd_logs(config: LoopcraftConfig, loop_id: str) -> int:
 def _cmd_deps_check(config: LoopcraftConfig, *, loop_id: str | None = None) -> int:
     import shutil
 
-    probes = {
-        "codex": "codex",
-        "claude": "claude",
-        "cursor-agent": "cursor-agent",
-        "nv-tools": "nv-tools",
-        "git": "git",
-        "python": sys.executable,
-    }
     missing = []
-    for name, binary in probes.items():
+    for name, binary in config.dependencies.items():
         found = shutil.which(binary) if not binary.startswith("/") else binary
         mark = "ok " if found else "MISSING"
         print(f"[{mark}] {name}")

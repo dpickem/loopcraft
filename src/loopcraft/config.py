@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 
 CONFIG_FILENAME = "loopcraft.toml"
+PYPROJECT_FILENAME = "pyproject.toml"
 
 # Loop-facing state paths are declared with this prefix (e.g. ``state/slack/x.md``)
 # and resolve into the ledger directory of the memory tree.
@@ -16,6 +17,14 @@ RUNS_DIRNAME = "runs"
 DB_FILENAME = "loopcraft.db"
 DEFAULT_WORKTREE_KEEP_LAST = 100
 MAX_WORKTREE_KEEP_LAST = 100
+DEFAULT_DEPENDENCIES = {
+    "python": "python",
+    "git": "git",
+    "codex": "codex",
+    "claude": "claude",
+    "cursor-agent": "cursor-agent",
+    "nv-tools": "nv-tools",
+}
 
 #: Prefixes that mark a declared path as a ledger/state file the store owns.
 #: Anything else (``linear:...``, ``s3://...``) is a non-file target the store
@@ -118,6 +127,7 @@ class LoopcraftConfig:
     default_vendor: str = "codex"
     host: str = "vm"
     worktree_keep_last: int = DEFAULT_WORKTREE_KEEP_LAST
+    dependencies: dict[str, str] = field(default_factory=lambda: dict(DEFAULT_DEPENDENCIES))
     artifact_store: str | None = None
     extra: dict[str, object] = field(default_factory=dict)
 
@@ -228,7 +238,15 @@ class LoopcraftConfig:
             keep_last = DEFAULT_WORKTREE_KEEP_LAST
         keep_last = max(0, min(keep_last, MAX_WORKTREE_KEEP_LAST))
 
-        known = {"default_vendor", "host", "memory_path", "artifact_store", "worktree_keep_last"}
+        dependencies = _load_project_dependencies(source)
+
+        known = {
+            "default_vendor",
+            "host",
+            "memory_path",
+            "artifact_store",
+            "worktree_keep_last",
+        }
         extra = {k: v for k, v in raw.items() if k not in known}
 
         return cls(
@@ -238,6 +256,7 @@ class LoopcraftConfig:
             or str(raw.get("default_vendor", "codex")),
             host=str(raw.get("host", "vm")),
             worktree_keep_last=keep_last,
+            dependencies=dependencies,
             artifact_store=(
                 str(raw["artifact_store"]) if raw.get("artifact_store") else None
             ),
@@ -252,3 +271,20 @@ def _find_source_root() -> Path:
         if (candidate / CONFIG_FILENAME).exists():
             return candidate
     return here
+
+
+def _load_project_dependencies(source: Path) -> dict[str, str]:
+    """Load external Loopcraft binary dependencies from pyproject.toml."""
+    dependencies = dict(DEFAULT_DEPENDENCIES)
+    pyproject_file = source / PYPROJECT_FILENAME
+    if not pyproject_file.exists():
+        return dependencies
+    raw = tomllib.loads(pyproject_file.read_text(encoding="utf-8"))
+    declared = (
+        raw.get("tool", {})
+        .get("loopcraft", {})
+        .get("dependencies", {})
+    )
+    if isinstance(declared, dict):
+        dependencies.update({str(k): str(v) for k, v in declared.items()})
+    return dependencies

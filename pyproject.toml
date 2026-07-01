@@ -19,5 +19,15 @@ loopctl = "loopcraft.cli:main"
 loopcraft-x-intel = "loopcraft.research_intel.x.cli:main"
 loopcraft-arxiv-intel = "loopcraft.research_intel.arxiv.cli:main"
 
+[tool.loopcraft.dependencies]
+# External runtime/tool dependencies checked by `loopctl deps check`.
+# Python package dependencies live in [project].dependencies above.
+python = "python"
+git = "git"
+codex = "codex"
+claude = "claude"
+cursor-agent = "cursor-agent"
+nv-tools = "nv-tools"
+
 [tool.setuptools.packages.find]
 where = ["src"]

@@ -117,3 +117,33 @@ def test_config_worktree_keep_last_defaults_and_clamps(tmp_path: Path, monkeypat
 
     monkeypatch.setenv("LOOPCRAFT_WORKTREE_KEEP_LAST", "-5")
     assert LoopcraftConfig.load(source).worktree_keep_last == 0
+
+
+def test_config_loads_cli_dependency_table(tmp_path: Path, monkeypatch) -> None:
+    source = tmp_path / "src"
+    source.mkdir()
+    (source / "loopcraft.toml").write_text(
+        'memory_path = "mem"\n',
+        encoding="utf-8",
+    )
+    (source / "pyproject.toml").write_text(
+        "\n".join(
+            [
+                "[project]",
+                'name = "loopcraft"',
+                'version = "0.1.0"',
+                "",
+                "[tool.loopcraft.dependencies]",
+                'codex = "/opt/codex/bin/codex"',
+                'custom-tool = "custom-tool"',
+            ]
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.delenv("LOOPCRAFT_WORKTREE_KEEP_LAST", raising=False)
+    config = LoopcraftConfig.load(source)
+
+    assert config.dependencies["codex"] == "/opt/codex/bin/codex"
+    assert config.dependencies["custom-tool"] == "custom-tool"
+    # Defaults are retained unless overridden.
+    assert config.dependencies["git"] == "git"
