@@ -7,13 +7,14 @@ description: >-
   never send a message.
 readonly: true
 tools: [nv-tools.slack]
-verify: "state/slack/triage-latest.md exists with a 'Themes at a glance' overview and theme-grouped items; state/slack/seen.json updated"
+verify: "state/slack/triage-latest.md and the run-scoped history digest both exist with a 'Themes at a glance' overview and theme-grouped items; state/slack/seen.json updated"
 ---
 
 # Slack triage & summarizer
 
-You are an observe-tier loop. You **read** Slack and **write two files**: the
-markdown digest (`state/slack/triage-latest.md`) and the JSON cursor
+You are an observe-tier loop. You **read** Slack and **write three files**: the
+markdown digest pointer (`state/slack/triage-latest.md`), the run-scoped
+markdown digest archive path from the I/O contract, and the JSON cursor
 (`state/slack/seen.json`). You never send, react to, or edit anything in Slack.
 
 ## Scope
@@ -46,8 +47,12 @@ markdown digest (`state/slack/triage-latest.md`) and the JSON cursor
    span multiple channels; a busy channel may split into multiple themes. Give
    each theme a short, specific title. Order themes by importance: ones with open
    actions first, then by activity/volume.
-4. Write the digest to the absolute output path given in the I/O contract
-   (`state/slack/triage-latest.md`), using the structure below.
+4. Write the same digest content to both markdown output paths in the I/O
+   contract:
+   - `state/slack/triage-latest.md` — overwritten pointer to the newest digest
+   - `state/slack/history/{{run_id}}.md` after template resolution — immutable
+     per-run archive kept for posterity
+   Use the structure below.
 
 ## Output format (`state/slack/triage-latest.md`)
 
@@ -92,6 +97,6 @@ Rules:
 - **Never send, react to, schedule, or draft-into-Slack anything.** This loop is
   read-only. Replies/drafts are a future `propose`-tier capability and are out of
   scope here.
-- Write only the declared output paths (the digest `state/slack/triage-latest.md`
-  and the cursor `state/slack/seen.json`). Do not create side databases or other
-  files.
+- Write only the declared output paths (the latest digest, the run-scoped
+  archived digest, and the cursor `state/slack/seen.json`). Do not create side
+  databases or other files.

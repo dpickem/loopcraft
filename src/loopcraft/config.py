@@ -170,6 +170,16 @@ class LoopcraftConfig:
             raise StatePathError(f"state path escapes the ledger tree: {declared!r}")
         return resolved
 
+    def resolve_state_template(self, declared: str, *, run_id: str, date: str) -> Path:
+        """Resolve a state path that may contain run/date template variables.
+
+        Supported variables:
+        - ``{{run_id}}`` — durable run identifier (timestamp + short UUID)
+        - ``{{date}}`` — UTC date as ``YYYY-MM-DD``
+        """
+        rendered = declared.replace("{{run_id}}", run_id).replace("{{date}}", date)
+        return self.resolve_state_path(rendered)
+
     def resolve_source_path(self, declared: str) -> Path:
         """Resolve a source-relative path under the source tree, safely.
 

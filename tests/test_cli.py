@@ -63,6 +63,9 @@ def test_run_end_to_end_with_stub_runner(monkeypatch, tmp_path: Path, capsys) ->
     cursor = tmp_path / "mem" / "ledger" / "slack" / "seen.json"
     assert cursor.exists()
 
+    archive_outputs = list((tmp_path / "mem" / "ledger" / "slack" / "history").glob("*.md"))
+    assert len(archive_outputs) == 1
+
     # Finding 3: the run worktree contains the loop's skill assets.
     staged_channels = list(
         (tmp_path / "mem" / "var" / "worktrees" / "slack-triage").glob(
@@ -80,6 +83,7 @@ def test_run_end_to_end_with_stub_runner(monkeypatch, tmp_path: Path, capsys) ->
     assert data["status"] == "done"
     assert data["vendor"] == "stub"
     assert str(cursor) in data["outputs"]
+    assert str(archive_outputs[0]) in data["outputs"]
 
 
 def test_run_prunes_old_worktrees(monkeypatch, tmp_path: Path) -> None:

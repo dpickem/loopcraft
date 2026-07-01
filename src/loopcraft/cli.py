@@ -95,9 +95,12 @@ def _cmd_run(config: LoopcraftConfig, loop_id: str, *, vendor: str | None, dry_r
         return 2
 
     preflight = runner.preflight(manifest, config)
-    resolved_outputs = [config.resolve_state_path(o) for o in manifest.outputs]
 
     if dry_run:
+        resolved_outputs = [
+            config.resolve_state_template(o, run_id="<run_id>", date="<date>")
+            for o in manifest.outputs
+        ]
         print(f"loop:    {manifest.id}")
         print(f"vendor:  {effective_vendor}  model: {manifest.runtime.model or '(default)'}")
         print(f"outputs: {[str(p) for p in resolved_outputs] or '(none)'}")
@@ -110,6 +113,10 @@ def _cmd_run(config: LoopcraftConfig, loop_id: str, *, vendor: str | None, dry_r
     run_id = store.new_run_id()
     started = datetime.now(UTC)
     start_perf = time.perf_counter()
+    resolved_outputs = [
+        config.resolve_state_template(o, run_id=run_id, date=started.date().isoformat())
+        for o in manifest.outputs
+    ]
 
     if not preflight.ok:
         record = RunRecord(

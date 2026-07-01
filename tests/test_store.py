@@ -65,6 +65,23 @@ def test_safe_state_relpath_strips_prefixes() -> None:
     assert safe_state_relpath("research/themes.md") == "research/themes.md"
 
 
+def test_resolve_state_template_expands_run_id_and_date(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+    path = config.resolve_state_template(
+        "state/slack/history/{{date}}/{{run_id}}.md",
+        run_id="20260701T120000Z-abc12345",
+        date="2026-07-01",
+    )
+    assert path == (
+        config.memory_path
+        / "ledger"
+        / "slack"
+        / "history"
+        / "2026-07-01"
+        / "20260701T120000Z-abc12345.md"
+    )
+
+
 def test_record_and_read_runs(tmp_path: Path) -> None:
     store = Store(_config(tmp_path))
     rid = store.new_run_id()

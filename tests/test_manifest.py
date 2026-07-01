@@ -86,6 +86,7 @@ def test_slack_triage_declares_seen_cursor() -> None:
     assert "state/slack/seen.json" in slack.inputs
     assert "state/slack/seen.json" in slack.outputs
     assert "state/slack/triage-latest.md" in slack.outputs
+    assert "state/slack/history/{{run_id}}.md" in slack.outputs
 
 
 def test_self_cursor_is_not_a_cycle() -> None:

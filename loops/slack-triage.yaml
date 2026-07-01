@@ -37,12 +37,13 @@ inputs:
   - state/slack/seen.json
 outputs:
   - state/slack/triage-latest.md
+  - state/slack/history/{{run_id}}.md
   - state/slack/seen.json
 artifacts: []
 
 logic:
   skill: skills/slack-triage/SKILL.md
-  verify: "state/slack/triage-latest.md exists and lists >=1 categorized item; state/slack/seen.json updated"
+  verify: "state/slack/triage-latest.md and state/slack/history/{{run_id}}.md exist and list >=1 categorized item; state/slack/seen.json updated"
 
 approval:
   required: false            # observe-tier: read-only, no approval needed
