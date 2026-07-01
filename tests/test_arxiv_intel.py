@@ -6,6 +6,7 @@ from loopcraft.arxiv_intel.client import build_search_query, parse_feed
 from loopcraft.arxiv_intel.config import ArxivIntelConfig
 from loopcraft.arxiv_intel.digest import render_digest
 from loopcraft.arxiv_intel.ranking import rank_papers, score_paper
+from loopcraft.arxiv_intel.store import ArxivStore
 
 
 def _config() -> ArxivIntelConfig:
@@ -112,3 +113,30 @@ def test_render_digest_links_abstract_and_pdf() -> None:
     assert "https://arxiv.org/abs/2606.12345v1" in markdown
     assert "https://arxiv.org/pdf/2606.12345v1" in markdown
     assert "https://github.com/example/agent-harnesses" in markdown
+
+
+def test_arxiv_output_defaults_are_memory_state_paths() -> None:
+    config = ArxivIntelConfig.from_dict({})
+    assert config.output.seen_path.as_posix() == "state/research/arxiv/seen.json"
+    assert config.output.papers_path.as_posix() == "state/research/arxiv/papers.jsonl"
+    assert config.output.latest_markdown.as_posix() == "state/research/arxiv/latest.md"
+
+
+def test_arxiv_store_uses_json_ledger_files(tmp_path) -> None:
+    store = ArxivStore(
+        seen_path=tmp_path / "seen.json",
+        papers_path=tmp_path / "papers.jsonl",
+    )
+    store.save_papers(
+        [
+            {"id": "1", "title": "Old"},
+            {"id": "2", "title": "New"},
+        ]
+    )
+    store.save_papers([{"id": "1", "title": "Updated"}])
+    store.mark_seen(["1", "2"])
+
+    assert store.seen_ids() == {"1", "2"}
+    lines = (tmp_path / "papers.jsonl").read_text(encoding="utf-8").splitlines()
+    assert len(lines) == 2
+    assert "Updated" in "\n".join(lines)

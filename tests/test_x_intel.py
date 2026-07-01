@@ -9,6 +9,7 @@ from loopcraft.x_intel.config import IntelConfig
 from loopcraft.x_intel.digest import render_digest
 from loopcraft.x_intel.follow_discovery import discover_candidates, render_follow_candidates
 from loopcraft.x_intel.ranking import rank_posts, score_post
+from loopcraft.x_intel.store import IntelStore
 
 
 def _config() -> IntelConfig:
@@ -233,3 +234,30 @@ def test_discover_candidates_drops_irrelevant_mention_only_profiles() -> None:
     )
 
     assert candidates == []
+
+
+def test_x_output_defaults_are_memory_state_paths() -> None:
+    config = IntelConfig.from_dict({})
+    assert config.output.seen_path.as_posix() == "state/research/x/seen.json"
+    assert config.output.posts_path.as_posix() == "state/research/x/posts.jsonl"
+    assert config.output.source_state_path.as_posix() == "state/research/x/source-state.json"
+    assert config.output.latest_markdown.as_posix() == "state/research/x/latest.md"
+
+
+def test_x_store_uses_json_ledger_files(tmp_path) -> None:
+    store = IntelStore(
+        seen_path=tmp_path / "seen.json",
+        posts_path=tmp_path / "posts.jsonl",
+        source_state_path=tmp_path / "source-state.json",
+    )
+    assert store.latest_seen_id("query:test") is None
+    store.remember_source_highwater(
+        "query:test",
+        [{"id": "10", "text": "old"}, {"id": "12", "text": "new"}],
+    )
+    assert store.latest_seen_id("query:test") == "12"
+
+    store.save_posts([{"id": "10", "text": "old"}, {"id": "10", "text": "updated"}])
+    store.mark_seen(["10", "12"])
+    assert store.seen_ids() == {"10", "12"}
+    assert len((tmp_path / "posts.jsonl").read_text(encoding="utf-8").splitlines()) == 1

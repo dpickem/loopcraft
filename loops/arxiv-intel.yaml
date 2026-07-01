@@ -1,0 +1,45 @@
+# loops/arxiv-intel.yaml — arXiv paper intelligence as a first-class loop.
+id: arxiv-intel
+name: "Daily arXiv intelligence"
+description: >-
+  Fetch recent arXiv paper metadata, rank it against loopcraft interests, and
+  write a daily digest plus durable seen/raw-paper state into the memory ledger.
+
+runtime:
+  vendor: codex
+  model: gpt-5.5
+  reasoning_effort: medium
+
+locus: vm
+cadence:
+  type: cron
+  at: "0 7 * * 1-5"
+tier: observe
+budget:
+  max_turns: 20
+  max_tokens: 300000
+  max_runtime: 15m
+  max_consecutive_failures: 2
+
+depends_on:
+  apis: [arxiv]
+  tools: []
+  auth: []
+  env: []
+  loops: []
+
+inputs:
+  - state/research/arxiv/seen.json
+outputs:
+  - state/research/arxiv/latest.md
+  - state/research/arxiv/latest.json
+  - state/research/arxiv/seen.json
+  - state/research/arxiv/papers.jsonl
+artifacts: []
+
+logic:
+  skill: skills/arxiv-intelligence-reporting/SKILL.md
+  verify: "state/research/arxiv/latest.md and latest.json exist; seen.json updated"
+
+approval:
+  required: false

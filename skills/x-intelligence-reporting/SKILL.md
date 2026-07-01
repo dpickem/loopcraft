@@ -7,9 +7,10 @@ description: Summarize X/Twitter intelligence digests for ML, AI, frontier/found
 
 ## Workflow
 
-1. Work in the loopcraft repo unless the user gives another workspace.
-2. Run `make daily-x-intel` when the user wants a fresh fetch. If network access or X API credentials fail, report that first.
-3. Read the emitted `DIGEST_MARKDOWN=...` and `DIGEST_JSON=...` paths. Prefer JSON for exact fields and Markdown for human-readable ordering.
+1. Work in the loopcraft source tree from the runtime context (the repo with
+   `Makefile`, `config/`, and `src/`) unless the user gives another workspace.
+2. Run `make run LOOP=x-intel` when the user wants a fresh fetch through the control plane. Use `make daily-x-intel` only when debugging the direct CLI. If network access or X API credentials fail, report that first.
+3. Read `state/research/x/latest.md` and `latest.json` from the loopcraft memory ledger (or the emitted direct-CLI paths). Prefer JSON for exact fields and Markdown for human-readable ordering.
 4. When useful, run `PYTHONPATH=src python -m loopcraft.x_intel.cli discover-follows --config config/x_intel.json` and read the emitted follow-candidate Markdown/JSON paths.
 5. When summarizing, include both the X post permalink and any external links from `entities.urls[*].expanded_url` or Markdown `External links:` lines.
 6. Group findings by theme rather than only by score. Use these default themes:
@@ -36,6 +37,7 @@ description: Summarize X/Twitter intelligence digests for ML, AI, frontier/found
 
 ```bash
 make daily-x-intel
+PYTHONPATH=src python -m loopcraft.cli run x-intel
 PYTHONPATH=src python -m loopcraft.x_intel.cli snapshot-following
 PYTHONPATH=src python -m loopcraft.x_intel.cli discover-follows --config config/x_intel.json
 PYTHONPATH=src python -m pytest -q

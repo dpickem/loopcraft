@@ -39,8 +39,13 @@ class RankingConfig:
 
 @dataclass(frozen=True)
 class OutputConfig:
-    state_db: Path
+    seen_path: Path
+    posts_path: Path
+    source_state_path: Path
     digest_dir: Path
+    latest_markdown: Path
+    latest_json: Path
+    follow_candidates_dir: Path
 
 
 @dataclass(frozen=True)
@@ -115,8 +120,15 @@ class IntelConfig:
                 keywords={str(term).lower(): int(weight) for term, weight in ranking.get("keywords", {}).items()},
             ),
             output=OutputConfig(
-                state_db=Path(output.get("state_db", "var/x_intel/state.sqlite3")),
-                digest_dir=Path(output.get("digest_dir", "var/x_intel/digests")),
+                seen_path=Path(output.get("seen_path", "state/research/x/seen.json")),
+                posts_path=Path(output.get("posts_path", "state/research/x/posts.jsonl")),
+                source_state_path=Path(output.get("source_state_path", "state/research/x/source-state.json")),
+                digest_dir=Path(output.get("digest_dir", "state/research/x/digests")),
+                latest_markdown=Path(output.get("latest_markdown", "state/research/x/latest.md")),
+                latest_json=Path(output.get("latest_json", "state/research/x/latest.json")),
+                follow_candidates_dir=Path(
+                    output.get("follow_candidates_dir", "state/research/x/follow-candidates")
+                ),
             ),
         )
 

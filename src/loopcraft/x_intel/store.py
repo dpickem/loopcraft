@@ -1,95 +1,76 @@
 from __future__ import annotations
 
 import json
-import sqlite3
 from pathlib import Path
 from typing import Any, Iterable
 
 
 class IntelStore:
-    def __init__(self, db_path: Path) -> None:
-        self.db_path = db_path
-        self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        self._ensure_schema()
+    """Ledger-backed X intelligence state.
+
+    High-water marks, seen ids, and raw posts are stored as JSON/JSONL in the
+    loopcraft memory tree instead of a per-tool SQLite database.
+    """
+
+    def __init__(self, *, seen_path: Path, posts_path: Path, source_state_path: Path) -> None:
+        self.seen_path = seen_path
+        self.posts_path = posts_path
+        self.source_state_path = source_state_path
+        for path in (self.seen_path, self.posts_path, self.source_state_path):
+            path.parent.mkdir(parents=True, exist_ok=True)
 
     def latest_seen_id(self, source_key: str) -> str | None:
-        with self._connect() as conn:
-            row = conn.execute("SELECT latest_id FROM source_state WHERE source_key = ?", (source_key,)).fetchone()
-        return str(row[0]) if row and row[0] else None
+        state = self._source_state()
+        value = state.get(source_key)
+        return str(value) if value else None
 
     def remember_source_highwater(self, source_key: str, posts: list[dict[str, Any]]) -> None:
         ids = [int(post["id"]) for post in posts if str(post.get("id", "")).isdigit()]
         if not ids:
             return
         latest_id = str(max(ids))
-        with self._connect() as conn:
-            conn.execute(
-                """
-                INSERT INTO source_state(source_key, latest_id)
-                VALUES(?, ?)
-                ON CONFLICT(source_key) DO UPDATE SET latest_id = excluded.latest_id
-                """,
-                (source_key, latest_id),
-            )
+        state = self._source_state()
+        state[source_key] = latest_id
+        self.source_state_path.write_text(
+            json.dumps(state, indent=2, sort_keys=True, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
 
     def save_posts(self, posts: list[dict[str, Any]]) -> None:
-        with self._connect() as conn:
-            for post in posts:
-                post_id = post.get("id")
-                if not post_id:
+        existing: dict[str, dict[str, Any]] = {}
+        if self.posts_path.exists():
+            for line in self.posts_path.read_text(encoding="utf-8").splitlines():
+                if not line.strip():
                     continue
-                author = post.get("author") or {}
-                conn.execute(
-                    """
-                    INSERT INTO posts(id, author_id, author_username, created_at, text, raw_json)
-                    VALUES(?, ?, ?, ?, ?, ?)
-                    ON CONFLICT(id) DO UPDATE SET
-                      author_id = excluded.author_id,
-                      author_username = excluded.author_username,
-                      created_at = excluded.created_at,
-                      text = excluded.text,
-                      raw_json = excluded.raw_json
-                    """,
-                    (
-                        str(post_id),
-                        post.get("author_id"),
-                        author.get("username"),
-                        post.get("created_at"),
-                        post.get("text"),
-                        json.dumps(post, ensure_ascii=False),
-                    ),
-                )
+                record = json.loads(line)
+                if record.get("id"):
+                    existing[str(record["id"])] = record
+        for post in posts:
+            post_id = post.get("id")
+            if post_id:
+                existing[str(post_id)] = post
+        self.posts_path.write_text(
+            "".join(json.dumps(v, ensure_ascii=False) + "\n" for v in existing.values()),
+            encoding="utf-8",
+        )
 
     def mark_seen(self, post_ids: Iterable[str]) -> None:
-        with self._connect() as conn:
-            for post_id in post_ids:
-                conn.execute("INSERT OR IGNORE INTO seen_posts(id) VALUES(?)", (str(post_id),))
+        seen = self.seen_ids()
+        seen.update(str(post_id) for post_id in post_ids)
+        self.seen_path.write_text(
+            json.dumps(sorted(seen), indent=2, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
 
-    def _ensure_schema(self) -> None:
-        with self._connect() as conn:
-            conn.executescript(
-                """
-                CREATE TABLE IF NOT EXISTS posts (
-                  id TEXT PRIMARY KEY,
-                  author_id TEXT,
-                  author_username TEXT,
-                  created_at TEXT,
-                  text TEXT,
-                  raw_json TEXT NOT NULL
-                );
+    def seen_ids(self) -> set[str]:
+        if not self.seen_path.exists():
+            return set()
+        raw = json.loads(self.seen_path.read_text(encoding="utf-8"))
+        return {str(value) for value in raw}
 
-                CREATE TABLE IF NOT EXISTS seen_posts (
-                  id TEXT PRIMARY KEY,
-                  seen_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-                );
-
-                CREATE TABLE IF NOT EXISTS source_state (
-                  source_key TEXT PRIMARY KEY,
-                  latest_id TEXT NOT NULL
-                );
-                """
-            )
-
-    def _connect(self) -> sqlite3.Connection:
-        return sqlite3.connect(self.db_path)
+    def _source_state(self) -> dict[str, str]:
+        if not self.source_state_path.exists():
+            return {}
+        raw = json.loads(self.source_state_path.read_text(encoding="utf-8"))
+        return {str(k): str(v) for k, v in raw.items()}
 

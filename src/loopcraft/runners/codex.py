@@ -81,12 +81,36 @@ def _probe_slack_api() -> str | None:
     return None
 
 
+def _probe_x_api_auth() -> str | None:
+    """Verify X API credentials are present for X intelligence loops."""
+    if not os.environ.get("X_API_BEARER_TOKEN") and not os.environ.get("X_API_OAUTH2_ACCESS_TOKEN"):
+        return "auth bundle 'x-api': X_API_BEARER_TOKEN or X_API_OAUTH2_ACCESS_TOKEN is required"
+    return None
+
+
+def _probe_x_api() -> str | None:
+    """X access is validated by the x-api auth/env checks; avoid live preflight calls."""
+    return None
+
+
+def _probe_arxiv_api() -> str | None:
+    """arXiv is public/no-auth; the loop handles API errors in its run output."""
+    return None
+
+
 #: Auth-bundle probes: bundle name -> callable returning a problem string or None.
 #: Injectable so tests (and later milestones) can substitute probes.
-AUTH_PROBES: dict[str, Callable[[], str | None]] = {"nv-tools": _probe_nv_tools_auth}
+AUTH_PROBES: dict[str, Callable[[], str | None]] = {
+    "nv-tools": _probe_nv_tools_auth,
+    "x-api": _probe_x_api_auth,
+}
 
 #: Declared-API probes: api name -> callable returning a problem string or None.
-API_PROBES: dict[str, Callable[[], str | None]] = {"slack": _probe_slack_api}
+API_PROBES: dict[str, Callable[[], str | None]] = {
+    "slack": _probe_slack_api,
+    "x": _probe_x_api,
+    "arxiv": _probe_arxiv_api,
+}
 
 
 def _probe_codex_model(model: str) -> str | None:
@@ -309,6 +333,13 @@ class CodexRunner:
 
         lines.append(f"# Loop: {loop.name} ({loop.id})")
         lines.append(loop.description)
+        lines.append("")
+        lines.append("## Runtime context")
+        lines.append(f"- source tree (repo with Makefile/config/src): {ctx.config.source_path}")
+        lines.append(f"- run worktree (staged loop assets, current cwd): {ctx.workdir}")
+        lines.append(
+            "- If the skill invokes a repo-local CLI or Makefile target, run it from the source tree."
+        )
         lines.append("")
         if skill_text:
             lines.append("## Skill")

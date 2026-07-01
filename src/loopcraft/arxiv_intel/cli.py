@@ -6,6 +6,8 @@ import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
+from loopcraft.config import LoopcraftConfig, is_state_path
+
 from .client import ArxivApiError, ArxivClient
 from .config import ArxivIntelConfig
 from .digest import render_digest
@@ -29,8 +31,12 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def run(config_path: str, *, dry_run: bool = False, include_seen: bool = False) -> int:
+    loopcraft = LoopcraftConfig.load()
     config = ArxivIntelConfig.load(Path(config_path))
-    store = ArxivStore(config.output.state_db)
+    store = ArxivStore(
+        seen_path=_resolve_path(loopcraft, config.output.seen_path),
+        papers_path=_resolve_path(loopcraft, config.output.papers_path),
+    )
     client = ArxivClient()
     errors: list[str] = []
     raw_papers: list[dict] = []
@@ -53,27 +59,32 @@ def run(config_path: str, *, dry_run: bool = False, include_seen: bool = False) 
         store.save_papers(raw_papers)
         store.mark_seen([paper["id"] for paper in raw_papers if paper.get("id")])
 
-    digest_dir = config.output.digest_dir
+    digest_dir = _resolve_path(loopcraft, config.output.digest_dir)
     digest_dir.mkdir(parents=True, exist_ok=True)
     stamp = now.strftime("%Y-%m-%d")
     markdown_path = digest_dir / f"{stamp}.md"
     json_path = digest_dir / f"{stamp}.json"
+    latest_markdown = _resolve_path(loopcraft, config.output.latest_markdown)
+    latest_json = _resolve_path(loopcraft, config.output.latest_json)
+    latest_markdown.parent.mkdir(parents=True, exist_ok=True)
+    latest_json.parent.mkdir(parents=True, exist_ok=True)
 
-    markdown_path.write_text(render_digest(top_papers, raw_papers, errors, generated_at=now), encoding="utf-8")
-    json_path.write_text(
-        json.dumps(
-            {
-                "generated_at": now.isoformat(),
-                "paper_count": len(raw_papers),
-                "ranked_count": len(ranked),
-                "top_papers": top_papers,
-                "errors": errors,
-            },
-            indent=2,
-            ensure_ascii=False,
-        ),
-        encoding="utf-8",
+    markdown = render_digest(top_papers, raw_papers, errors, generated_at=now)
+    payload = json.dumps(
+        {
+            "generated_at": now.isoformat(),
+            "paper_count": len(raw_papers),
+            "ranked_count": len(ranked),
+            "top_papers": top_papers,
+            "errors": errors,
+        },
+        indent=2,
+        ensure_ascii=False,
     )
+    markdown_path.write_text(markdown, encoding="utf-8")
+    json_path.write_text(payload, encoding="utf-8")
+    latest_markdown.write_text(markdown, encoding="utf-8")
+    latest_json.write_text(payload, encoding="utf-8")
 
     print(f"ARXIV_DIGEST_MARKDOWN={markdown_path}")
     print(f"ARXIV_DIGEST_JSON={json_path}")
@@ -81,6 +92,14 @@ def run(config_path: str, *, dry_run: bool = False, include_seen: bool = False) 
         print("ERROR_SUMMARY=" + " | ".join(errors), file=sys.stderr)
         return 1
     return 0
+
+
+def _resolve_path(loopcraft: LoopcraftConfig, path: Path) -> Path:
+    """Resolve config paths through the loopcraft memory tree when they use state/."""
+    raw = path.as_posix()
+    if is_state_path(raw):
+        return loopcraft.resolve_state_path(raw)
+    return path
 
 
 if __name__ == "__main__":

@@ -24,8 +24,11 @@ class RankingConfig:
 
 @dataclass(frozen=True)
 class OutputConfig:
-    state_db: Path
+    seen_path: Path
+    papers_path: Path
     digest_dir: Path
+    latest_markdown: Path
+    latest_json: Path
 
 
 @dataclass(frozen=True)
@@ -59,8 +62,11 @@ class ArxivIntelConfig:
                 },
             ),
             output=OutputConfig(
-                state_db=Path(output.get("state_db", "var/arxiv_intel/state.sqlite3")),
-                digest_dir=Path(output.get("digest_dir", "var/arxiv_intel/digests")),
+                seen_path=Path(output.get("seen_path", "state/research/arxiv/seen.json")),
+                papers_path=Path(output.get("papers_path", "state/research/arxiv/papers.jsonl")),
+                digest_dir=Path(output.get("digest_dir", "state/research/arxiv/digests")),
+                latest_markdown=Path(output.get("latest_markdown", "state/research/arxiv/latest.md")),
+                latest_json=Path(output.get("latest_json", "state/research/arxiv/latest.json")),
             ),
         )
 

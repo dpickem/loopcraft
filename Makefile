@@ -63,18 +63,18 @@ install-codex-skills:
 		$(PYTHON) $(CODEX_HOME)/skills/.system/skill-creator/scripts/quick_validate.py $(CODEX_SKILLS_DIR)/$$skill; \
 	done
 
-# --- intel prototypes (L2 sources; migrated onto the unified store in M2) ------
-ARXIV_CONFIG ?= config/arxiv_intel.json
-X_CONFIG ?= config/x_intel.json
+# --- intelligence loops / direct CLI entry points -----------------------------
+ARXIV_CONFIG ?= $(if $(wildcard config/arxiv_intel.json),config/arxiv_intel.json,config/arxiv_intel.example.json)
+X_CONFIG ?= $(if $(wildcard config/x_intel.json),config/x_intel.json,config/x_intel.example.json)
 
 snapshot-following:
 	PYTHONPATH=src $(PYTHON) -m loopcraft.x_intel.cli snapshot-following
 
-daily-x-intel:  ## fetch + rank a daily X digest
+daily-x-intel:  ## fetch + rank a daily X digest into the memory ledger
 	PYTHONPATH=src $(PYTHON) -m loopcraft.x_intel.cli run --config $(X_CONFIG)
 
 discover-follows:
 	PYTHONPATH=src $(PYTHON) -m loopcraft.x_intel.cli discover-follows --config $(X_CONFIG)
 
-daily-arxiv-intel:  ## fetch + rank a daily arXiv digest
+daily-arxiv-intel:  ## fetch + rank a daily arXiv digest into the memory ledger
 	PYTHONPATH=src $(PYTHON) -m loopcraft.arxiv_intel.cli run --config $(ARXIV_CONFIG)

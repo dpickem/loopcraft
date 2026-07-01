@@ -1,74 +1,52 @@
 from __future__ import annotations
 
 import json
-import sqlite3
 from pathlib import Path
 from typing import Any, Iterable
 
 
 class ArxivStore:
-    def __init__(self, db_path: Path) -> None:
-        self.db_path = db_path
-        self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        self._ensure_schema()
+    """Ledger-backed arXiv state (seen ids + raw paper records).
+
+    Small durable state is kept as JSON/JSONL in the loopcraft memory tree,
+    rather than in a per-tool SQLite database.
+    """
+
+    def __init__(self, *, seen_path: Path, papers_path: Path) -> None:
+        self.seen_path = seen_path
+        self.papers_path = papers_path
+        self.seen_path.parent.mkdir(parents=True, exist_ok=True)
+        self.papers_path.parent.mkdir(parents=True, exist_ok=True)
 
     def save_papers(self, papers: list[dict[str, Any]]) -> None:
-        with self._connect() as conn:
-            for paper in papers:
-                paper_id = paper.get("id")
-                if not paper_id:
+        existing: dict[str, dict[str, Any]] = {}
+        if self.papers_path.exists():
+            for line in self.papers_path.read_text(encoding="utf-8").splitlines():
+                if not line.strip():
                     continue
-                conn.execute(
-                    """
-                    INSERT INTO papers(id, title, published, updated, abstract, raw_json)
-                    VALUES(?, ?, ?, ?, ?, ?)
-                    ON CONFLICT(id) DO UPDATE SET
-                      title = excluded.title,
-                      published = excluded.published,
-                      updated = excluded.updated,
-                      abstract = excluded.abstract,
-                      raw_json = excluded.raw_json
-                    """,
-                    (
-                        str(paper_id),
-                        paper.get("title"),
-                        paper.get("published"),
-                        paper.get("updated"),
-                        paper.get("abstract"),
-                        json.dumps(paper, ensure_ascii=False),
-                    ),
-                )
+                record = json.loads(line)
+                if record.get("id"):
+                    existing[str(record["id"])] = record
+        for paper in papers:
+            paper_id = paper.get("id")
+            if paper_id:
+                existing[str(paper_id)] = paper
+        self.papers_path.write_text(
+            "".join(json.dumps(v, ensure_ascii=False) + "\n" for v in existing.values()),
+            encoding="utf-8",
+        )
 
     def mark_seen(self, paper_ids: Iterable[str]) -> None:
-        with self._connect() as conn:
-            for paper_id in paper_ids:
-                conn.execute("INSERT OR IGNORE INTO seen_papers(id) VALUES(?)", (str(paper_id),))
+        seen = self.seen_ids()
+        seen.update(str(paper_id) for paper_id in paper_ids)
+        self.seen_path.write_text(
+            json.dumps(sorted(seen), indent=2, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
 
     def seen_ids(self) -> set[str]:
-        with self._connect() as conn:
-            rows = conn.execute("SELECT id FROM seen_papers").fetchall()
-        return {str(row[0]) for row in rows}
-
-    def _ensure_schema(self) -> None:
-        with self._connect() as conn:
-            conn.executescript(
-                """
-                CREATE TABLE IF NOT EXISTS papers (
-                  id TEXT PRIMARY KEY,
-                  title TEXT,
-                  published TEXT,
-                  updated TEXT,
-                  abstract TEXT,
-                  raw_json TEXT NOT NULL
-                );
-
-                CREATE TABLE IF NOT EXISTS seen_papers (
-                  id TEXT PRIMARY KEY,
-                  seen_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-                );
-                """
-            )
-
-    def _connect(self) -> sqlite3.Connection:
-        return sqlite3.connect(self.db_path)
+        if not self.seen_path.exists():
+            return set()
+        raw = json.loads(self.seen_path.read_text(encoding="utf-8"))
+        return {str(value) for value in raw}
 

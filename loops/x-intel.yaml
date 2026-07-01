@@ -1,0 +1,48 @@
+# loops/x-intel.yaml — X/Twitter intelligence as a first-class loop.
+id: x-intel
+name: "Daily X intelligence"
+description: >-
+  Fetch recent X posts from configured public sources, rank them for frontier AI
+  and loopcraft relevance, and write a daily digest plus durable seen/source
+  state into the memory ledger.
+
+runtime:
+  vendor: codex
+  model: gpt-5.5
+  reasoning_effort: medium
+
+locus: vm
+cadence:
+  type: cron
+  at: "30 7 * * 1-5"
+tier: observe
+budget:
+  max_turns: 20
+  max_tokens: 300000
+  max_runtime: 15m
+  max_consecutive_failures: 2
+
+depends_on:
+  apis: [x]
+  tools: []
+  auth: [x-api]
+  env: [X_API_BEARER_TOKEN]
+  loops: []
+
+inputs:
+  - state/research/x/seen.json
+  - state/research/x/source-state.json
+outputs:
+  - state/research/x/latest.md
+  - state/research/x/latest.json
+  - state/research/x/seen.json
+  - state/research/x/source-state.json
+  - state/research/x/posts.jsonl
+artifacts: []
+
+logic:
+  skill: skills/x-intelligence-reporting/SKILL.md
+  verify: "state/research/x/latest.md and latest.json exist; seen/source-state updated"
+
+approval:
+  required: false

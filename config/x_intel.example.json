@@ -90,7 +90,12 @@
     }
   },
   "output": {
-    "state_db": "var/x_intel/state.sqlite3",
-    "digest_dir": "var/x_intel/digests"
+    "seen_path": "state/research/x/seen.json",
+    "posts_path": "state/research/x/posts.jsonl",
+    "source_state_path": "state/research/x/source-state.json",
+    "digest_dir": "state/research/x/digests",
+    "latest_markdown": "state/research/x/latest.md",
+    "latest_json": "state/research/x/latest.json",
+    "follow_candidates_dir": "state/research/x/follow-candidates"
   }
 }

@@ -7,9 +7,10 @@ description: Summarize arXiv paper intelligence digests for ML, AI, foundation/f
 
 ## Workflow
 
-1. Work in the loopcraft repo unless the user gives another workspace.
-2. Run `make daily-arxiv-intel` when the user wants a fresh paper fetch. If network access or arXiv API errors occur, report that first.
-3. Read the emitted `ARXIV_DIGEST_MARKDOWN=...` and `ARXIV_DIGEST_JSON=...` paths. Prefer JSON for exact fields and Markdown for human-readable ordering.
+1. Work in the loopcraft source tree from the runtime context (the repo with
+   `Makefile`, `config/`, and `src/`) unless the user gives another workspace.
+2. Run `make run LOOP=arxiv-intel` when the user wants a fresh paper fetch through the control plane. Use `make daily-arxiv-intel` only when debugging the direct CLI. If network access or arXiv API errors occur, report that first.
+3. Read `state/research/arxiv/latest.md` and `latest.json` from the loopcraft memory ledger (or the emitted direct-CLI paths). Prefer JSON for exact fields and Markdown for human-readable ordering.
 4. Summarize the 5-10 most interesting papers, focusing on:
    - Foundation/frontier models and LLM systems
    - Post-training, preference optimization, RLHF, and evals
@@ -34,6 +35,7 @@ description: Summarize arXiv paper intelligence digests for ML, AI, foundation/f
 ```bash
 make daily-arxiv-intel
 PYTHONPATH=src python -m loopcraft.arxiv_intel.cli run --config config/arxiv_intel.json --include-seen
+PYTHONPATH=src python -m loopcraft.cli run arxiv-intel
 PYTHONPATH=src python -m pytest -q
 ```
 

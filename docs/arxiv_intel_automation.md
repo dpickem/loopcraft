@@ -8,9 +8,10 @@ The arXiv workflow fetches abstract metadata from the official arXiv API, ranks 
 2. Tune categories and terms if needed:
    - `sources.categories`: arXiv categories such as `cs.AI`, `cs.CL`, `cs.LG`, `stat.ML`.
    - `sources.search_terms`: abstract/title search terms for foundation models, LLMs, post-training, agentic workflows, loop engineering, RSI, and self-improving systems.
-3. Run:
+3. Run through the control plane (preferred) or directly:
 
 ```bash
+make run LOOP=arxiv-intel
 make daily-arxiv-intel
 ```
 
@@ -19,11 +20,11 @@ make daily-arxiv-intel
 Run this daily in `/Users/dpickem/workspace/loopcraft`:
 
 ```text
-Run make daily-arxiv-intel. Read the generated Markdown digest path printed by the command. Summarize the 5-10 most interesting papers for ML, foundation models, LLMs, post-training, harness/loop engineering, agentic workflows and use-cases, recursive self-improvement, and self-improving systems. Include arXiv abstract and PDF links, and mention code/model/data links from arXiv comments when present. Report arXiv API errors first.
+Run make run LOOP=arxiv-intel. Read state/research/arxiv/latest.md from the loopcraft memory ledger. Summarize the 5-10 most interesting papers for ML, foundation models, LLMs, post-training, harness/loop engineering, agentic workflows and use-cases, recursive self-improvement, and self-improving systems. Include arXiv abstract and PDF links, and mention code/model/data links from arXiv comments when present. Report arXiv API errors first.
 ```
 
 ## Notes
 
 - The workflow fetches metadata and abstracts only. It does not download PDFs.
-- State is stored locally in SQLite so daily runs avoid repeating already-seen papers.
+- State is stored in the loopcraft memory ledger (`state/research/arxiv/seen.json` and `papers.jsonl`) so daily runs avoid repeating already-seen papers.
 - arXiv API docs: https://info.arxiv.org/help/api/user-manual.html

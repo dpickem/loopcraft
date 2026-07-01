@@ -66,7 +66,10 @@
     }
   },
   "output": {
-    "state_db": "var/arxiv_intel/state.sqlite3",
-    "digest_dir": "var/arxiv_intel/digests"
+    "seen_path": "state/research/arxiv/seen.json",
+    "papers_path": "state/research/arxiv/papers.jsonl",
+    "digest_dir": "state/research/arxiv/digests",
+    "latest_markdown": "state/research/arxiv/latest.md",
+    "latest_json": "state/research/arxiv/latest.json"
   }
 }

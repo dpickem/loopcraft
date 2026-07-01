@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from loopcraft.config import LoopcraftConfig, is_state_path
 from loopcraft.env import load_dotenv
 
 from .client import XApiClient, XApiError
@@ -45,7 +46,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     discover_parser.add_argument("--config", default="config/x_intel.json", help="Path to JSON config.")
     discover_parser.add_argument("--digest-json", help="Digest JSON path. Defaults to latest digest in config.")
-    discover_parser.add_argument("--output-dir", default="var/x_intel/follow_candidates", help="Output directory.")
+    discover_parser.add_argument("--output-dir", help="Output directory. Defaults to config.output.follow_candidates_dir.")
     discover_parser.add_argument("--top", type=int, default=25, help="Maximum candidates to emit.")
 
     args = parser.parse_args(argv)
@@ -60,13 +61,18 @@ def main(argv: list[str] | None = None) -> int:
 
 def run(config_path: str, *, dry_run: bool = False) -> int:
     load_dotenv()
+    loopcraft = LoopcraftConfig.load()
     config = IntelConfig.load(Path(config_path))
     token = _api_token()
     if not token:
         print("ERROR: X_API_BEARER_TOKEN is required for official X API access.", file=sys.stderr)
         return 2
 
-    store = IntelStore(config.output.state_db)
+    store = IntelStore(
+        seen_path=_resolve_path(loopcraft, config.output.seen_path),
+        posts_path=_resolve_path(loopcraft, config.output.posts_path),
+        source_state_path=_resolve_path(loopcraft, config.output.source_state_path),
+    )
     client = XApiClient(token)
     errors: list[str] = []
     raw_posts: list[dict[str, Any]] = []
@@ -88,27 +94,31 @@ def run(config_path: str, *, dry_run: bool = False) -> int:
         store.save_posts(raw_posts)
         store.mark_seen([post["id"] for post in raw_posts if post.get("id")])
 
-    digest_dir = config.output.digest_dir
+    digest_dir = _resolve_path(loopcraft, config.output.digest_dir)
     digest_dir.mkdir(parents=True, exist_ok=True)
     stamp = now.strftime("%Y-%m-%d")
     markdown_path = digest_dir / f"{stamp}.md"
     json_path = digest_dir / f"{stamp}.json"
+    latest_markdown = _resolve_path(loopcraft, config.output.latest_markdown)
+    latest_json = _resolve_path(loopcraft, config.output.latest_json)
+    latest_markdown.parent.mkdir(parents=True, exist_ok=True)
+    latest_json.parent.mkdir(parents=True, exist_ok=True)
 
     markdown = render_digest(top_posts, raw_posts, errors, generated_at=now)
-    markdown_path.write_text(markdown, encoding="utf-8")
-    json_path.write_text(
-        json.dumps(
-            {
-                "generated_at": now.isoformat(),
-                "post_count": len(raw_posts),
-                "top_posts": top_posts,
-                "errors": errors,
-            },
-            indent=2,
-            ensure_ascii=False,
-        ),
-        encoding="utf-8",
+    payload = json.dumps(
+        {
+            "generated_at": now.isoformat(),
+            "post_count": len(raw_posts),
+            "top_posts": top_posts,
+            "errors": errors,
+        },
+        indent=2,
+        ensure_ascii=False,
     )
+    markdown_path.write_text(markdown, encoding="utf-8")
+    json_path.write_text(payload, encoding="utf-8")
+    latest_markdown.write_text(markdown, encoding="utf-8")
+    latest_json.write_text(payload, encoding="utf-8")
 
     print(f"DIGEST_MARKDOWN={markdown_path}")
     print(f"DIGEST_JSON={json_path}")
@@ -155,15 +165,17 @@ def snapshot_following(output_path: str, *, user_id: str | None = None, username
     return 0
 
 
-def discover_follows(config_path: str, *, digest_json: str | None, output_dir: str, top: int) -> int:
+def discover_follows(config_path: str, *, digest_json: str | None, output_dir: str | None, top: int) -> int:
     load_dotenv()
+    loopcraft = LoopcraftConfig.load()
     config = IntelConfig.load(Path(config_path))
     token = _api_token()
     if not token:
         print("ERROR: X_API_BEARER_TOKEN or X_API_OAUTH2_ACCESS_TOKEN is required for profile hydration.", file=sys.stderr)
         return 2
 
-    digest_path = Path(digest_json) if digest_json else load_latest_digest_json(config.output.digest_dir)
+    digest_dir = _resolve_path(loopcraft, config.output.digest_dir)
+    digest_path = Path(digest_json) if digest_json else load_latest_digest_json(digest_dir)
     digest = json.loads(digest_path.read_text(encoding="utf-8"))
     followed_handles = followed_handles_from_snapshot(config.sources.following_snapshot)
     initial = discover_candidates(digest, config, followed_handles=followed_handles, top_n=top * 3)
@@ -183,7 +195,9 @@ def discover_follows(config_path: str, *, digest_json: str | None, output_dir: s
         top_n=top,
     )
     generated_at = datetime.now(UTC)
-    out_dir = Path(output_dir)
+    out_dir = _resolve_path(loopcraft, Path(output_dir)) if output_dir else _resolve_path(
+        loopcraft, config.output.follow_candidates_dir
+    )
     out_dir.mkdir(parents=True, exist_ok=True)
     stamp = generated_at.strftime("%Y-%m-%d")
     markdown_path = out_dir / f"{stamp}.md"
@@ -326,6 +340,14 @@ def _api_token(*, require_user_context: bool = False) -> str | None:
     if require_user_context:
         return os.environ.get("X_API_OAUTH2_ACCESS_TOKEN")
     return os.environ.get("X_API_OAUTH2_ACCESS_TOKEN") or os.environ.get("X_API_BEARER_TOKEN")
+
+
+def _resolve_path(loopcraft: LoopcraftConfig, path: Path) -> Path:
+    """Resolve config paths through the loopcraft memory tree when they use state/."""
+    raw = path.as_posix()
+    if is_state_path(raw):
+        return loopcraft.resolve_state_path(raw)
+    return path
 
 
 if __name__ == "__main__":
