@@ -1,10 +1,12 @@
+"""Keyword-based scoring and ranking of arXiv papers."""
+
 from __future__ import annotations
 
 import re
 from datetime import UTC, datetime
 from typing import Any
 
-from .config import ArxivIntelConfig
+from loopcraft.research_intel.arxiv.config import ArxivIntelConfig
 
 
 def rank_papers(papers: list[dict[str, Any]], config: ArxivIntelConfig) -> list[dict[str, Any]]:

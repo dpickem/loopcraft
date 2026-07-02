@@ -1,15 +1,28 @@
+"""X (Twitter) API client with bounded, retrying HTTP fetches."""
+
 from __future__ import annotations
 
 import json
-import time
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
+from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
+
+_USER_AGENT = "loopcraft-x-intel/0.1"
+_REQUEST_TIMEOUT_S = 30
+_MAX_RETRY_ATTEMPTS = 3
+_MIN_POSTS_PER_SEARCH = 10
+_MIN_POSTS_PER_LIST = 5
+_MAX_POSTS_PER_REQUEST = 100
+_MAX_FOLLOWING_PER_REQUEST = 1000
+_MAX_USERS_PER_LOOKUP = 100
+_ERROR_BODY_LIMIT = 500
+
 
 class XApiError(RuntimeError):
-    pass
+    """Raised when the X API request or response is unusable."""
 
 
 class XApiClient:
@@ -20,7 +33,7 @@ class XApiClient:
     def search_recent(self, query: str, *, since_id: str | None, max_results: int) -> list[dict[str, Any]]:
         params: dict[str, str | int] = {
             "query": query,
-            "max_results": min(max(max_results, 10), 100),
+            "max_results": min(max(max_results, _MIN_POSTS_PER_SEARCH), _MAX_POSTS_PER_REQUEST),
             "tweet.fields": "author_id,created_at,public_metrics,conversation_id,referenced_tweets,entities",
             "expansions": "author_id",
             "user.fields": "username,name,description,verified,verified_type,affiliation,public_metrics",
@@ -31,7 +44,7 @@ class XApiClient:
 
     def list_posts(self, list_id: str, *, since_id: str | None, max_results: int) -> list[dict[str, Any]]:
         params: dict[str, str | int] = {
-            "max_results": min(max(max_results, 5), 100),
+            "max_results": min(max(max_results, _MIN_POSTS_PER_LIST), _MAX_POSTS_PER_REQUEST),
             "tweet.fields": "author_id,created_at,public_metrics,conversation_id,referenced_tweets,entities",
             "expansions": "author_id",
             "user.fields": "username,name,description,verified,verified_type,affiliation,public_metrics",
@@ -64,8 +77,8 @@ class XApiClient:
     def users_by_usernames(self, usernames: list[str]) -> list[dict[str, Any]]:
         users: list[dict[str, Any]] = []
         clean_usernames = sorted({username.lower().lstrip("@") for username in usernames if username.strip()})
-        for index in range(0, len(clean_usernames), 100):
-            batch = clean_usernames[index : index + 100]
+        for index in range(0, len(clean_usernames), _MAX_USERS_PER_LOOKUP):
+            batch = clean_usernames[index : index + _MAX_USERS_PER_LOOKUP]
             if not batch:
                 continue
             payload = self._get_json(
@@ -83,7 +96,7 @@ class XApiClient:
         pagination_token: str | None = None
         while True:
             params: dict[str, str | int] = {
-                "max_results": 1000,
+                "max_results": _MAX_FOLLOWING_PER_REQUEST,
                 "user.fields": "username,name,description,verified,verified_type,affiliation,public_metrics",
             }
             if pagination_token:
@@ -111,24 +124,34 @@ class XApiClient:
             url,
             headers={
                 "Authorization": f"Bearer {self.bearer_token}",
-                "User-Agent": "loopcraft-x-intel/0.1",
+                "User-Agent": _USER_AGENT,
             },
         )
-        for attempt in range(3):
-            try:
-                with urlopen(request, timeout=30) as response:
-                    return json.loads(response.read().decode("utf-8"))
-            except HTTPError as exc:
-                body = exc.read().decode("utf-8", errors="replace")
-                if exc.code == 429:
-                    raise XApiError("X API rate limit hit: " + body[:500]) from exc
-                if 500 <= exc.code < 600 and attempt < 2:
-                    time.sleep(2**attempt)
-                    continue
-                raise XApiError(f"X API HTTP {exc.code}: {body[:500]}") from exc
-            except URLError as exc:
-                if attempt < 2:
-                    time.sleep(2**attempt)
-                    continue
-                raise XApiError(f"X API network error: {exc}") from exc
-        raise XApiError("X API request failed after retries")
+        try:
+            return json.loads(_read_response(request).decode("utf-8"))
+        except HTTPError as exc:
+            body = exc.read().decode("utf-8", errors="replace")
+            if exc.code == 429:
+                raise XApiError("X API rate limit hit: " + body[:_ERROR_BODY_LIMIT]) from exc
+            raise XApiError(f"X API HTTP {exc.code}: {body[:_ERROR_BODY_LIMIT]}") from exc
+        except URLError as exc:
+            raise XApiError(f"X API network error: {exc}") from exc
+
+
+def _is_retryable_url_error(exc: BaseException) -> bool:
+    """Return whether a lower-level urllib exception should be retried."""
+    if isinstance(exc, HTTPError):
+        return 500 <= exc.code < 600
+    return isinstance(exc, URLError)
+
+
+@retry(
+    retry=retry_if_exception(_is_retryable_url_error),
+    stop=stop_after_attempt(_MAX_RETRY_ATTEMPTS),
+    wait=wait_exponential(multiplier=1, min=1, max=4),
+    reraise=True,
+)
+def _read_response(request: Request) -> bytes:
+    """Read an HTTP response body with retry around transient failures."""
+    with urlopen(request, timeout=_REQUEST_TIMEOUT_S) as response:
+        return response.read()

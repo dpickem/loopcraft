@@ -1,6 +1,7 @@
+"""arXiv Atom API client with bounded, retrying HTTP fetches."""
+
 from __future__ import annotations
 
-import time
 import xml.etree.ElementTree as ET
 from datetime import UTC, datetime
 from typing import Any
@@ -8,15 +9,24 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
-from .config import ArxivIntelConfig
+from tenacity import retry, retry_if_exception, stop_after_attempt, wait_fixed
+
+from loopcraft.research_intel.arxiv.config import ArxivIntelConfig
 
 
 ATOM_NS = "{http://www.w3.org/2005/Atom}"
 ARXIV_NS = "{http://arxiv.org/schemas/atom}"
+_USER_AGENT = "loopcraft-arxiv-intel/0.1"
+_REQUEST_TIMEOUT_S = 30
+_MAX_RETRY_ATTEMPTS = 3
+_RETRY_WAIT_S = 3
+_MAX_RESULTS_UPPER_BOUND = 2000
+_DEFAULT_SEARCH_QUERY = "cat:cs.AI"
+_ERROR_BODY_LIMIT = 500
 
 
 class ArxivApiError(RuntimeError):
-    pass
+    """Raised when the arXiv API request or response is unusable."""
 
 
 class ArxivClient:
@@ -27,7 +37,7 @@ class ArxivClient:
         params = {
             "search_query": build_search_query(config),
             "start": 0,
-            "max_results": max(1, min(config.ranking.max_results, 2000)),
+            "max_results": max(1, min(config.ranking.max_results, _MAX_RESULTS_UPPER_BOUND)),
             "sortBy": "submittedDate",
             "sortOrder": "descending",
         }
@@ -36,23 +46,14 @@ class ArxivClient:
 
     def _get(self, params: dict[str, Any]) -> bytes:
         url = f"{self.base_url}?{urlencode(params)}"
-        request = Request(url, headers={"User-Agent": "loopcraft-arxiv-intel/0.1"})
-        for attempt in range(3):
-            try:
-                with urlopen(request, timeout=30) as response:
-                    return response.read()
-            except HTTPError as exc:
-                body = exc.read().decode("utf-8", errors="replace")
-                if 500 <= exc.code < 600 and attempt < 2:
-                    time.sleep(3)
-                    continue
-                raise ArxivApiError(f"arXiv API HTTP {exc.code}: {body[:500]}") from exc
-            except URLError as exc:
-                if attempt < 2:
-                    time.sleep(3)
-                    continue
-                raise ArxivApiError(f"arXiv API network error: {exc}") from exc
-        raise ArxivApiError("arXiv API request failed after retries")
+        request = Request(url, headers={"User-Agent": _USER_AGENT})
+        try:
+            return _read_response(request)
+        except HTTPError as exc:
+            body = exc.read().decode("utf-8", errors="replace")
+            raise ArxivApiError(f"arXiv API HTTP {exc.code}: {body[:_ERROR_BODY_LIMIT]}") from exc
+        except URLError as exc:
+            raise ArxivApiError(f"arXiv API network error: {exc}") from exc
 
 
 def build_search_query(config: ArxivIntelConfig) -> str:
@@ -60,7 +61,26 @@ def build_search_query(config: ArxivIntelConfig) -> str:
     term_query = " OR ".join(_term_query(term) for term in config.sources.search_terms)
     if category_query and term_query:
         return f"({category_query}) AND ({term_query})"
-    return category_query or term_query or "cat:cs.AI"
+    return category_query or term_query or _DEFAULT_SEARCH_QUERY
+
+
+def _is_retryable_url_error(exc: BaseException) -> bool:
+    """Return whether urllib raised a retryable API/network exception."""
+    if isinstance(exc, HTTPError):
+        return 500 <= exc.code < 600
+    return isinstance(exc, URLError)
+
+
+@retry(
+    retry=retry_if_exception(_is_retryable_url_error),
+    stop=stop_after_attempt(_MAX_RETRY_ATTEMPTS),
+    wait=wait_fixed(_RETRY_WAIT_S),
+    reraise=True,
+)
+def _read_response(request: Request) -> bytes:
+    """Read an arXiv response body with bounded retries around transient errors."""
+    with urlopen(request, timeout=_REQUEST_TIMEOUT_S) as response:
+        return response.read()
 
 
 def parse_feed(payload: bytes) -> list[dict[str, Any]]:

@@ -1,3 +1,5 @@
+"""Markdown/JSON digest rendering for the X intelligence loop."""
+
 from __future__ import annotations
 
 from datetime import datetime

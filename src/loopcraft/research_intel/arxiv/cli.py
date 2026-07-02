@@ -1,3 +1,5 @@
+"""Command-line entry point for the arXiv intelligence loop."""
+
 from __future__ import annotations
 
 import argparse
@@ -6,13 +8,13 @@ import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
-from loopcraft.config import LoopcraftConfig, is_state_path
+from loopcraft.config import LoopcraftConfig
 
-from .client import ArxivApiError, ArxivClient
-from .config import ArxivIntelConfig
-from .digest import render_digest
-from .ranking import rank_papers
-from .store import ArxivStore
+from loopcraft.research_intel.arxiv.client import ArxivApiError, ArxivClient
+from loopcraft.research_intel.arxiv.config import ArxivIntelConfig
+from loopcraft.research_intel.arxiv.digest import render_digest
+from loopcraft.research_intel.arxiv.ranking import rank_papers
+from loopcraft.research_intel.arxiv.store import ArxivStore
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -33,10 +35,7 @@ def main(argv: list[str] | None = None) -> int:
 def run(config_path: str, *, dry_run: bool = False, include_seen: bool = False) -> int:
     loopcraft = LoopcraftConfig.load()
     config = ArxivIntelConfig.load(Path(config_path))
-    store = ArxivStore(
-        seen_path=_resolve_path(loopcraft, config.output.seen_path),
-        papers_path=_resolve_path(loopcraft, config.output.papers_path),
-    )
+    store = ArxivStore(loopcraft, config.output)
     client = ArxivClient()
     errors: list[str] = []
     raw_papers: list[dict] = []
@@ -59,20 +58,8 @@ def run(config_path: str, *, dry_run: bool = False, include_seen: bool = False) 
         store.save_papers(raw_papers)
         store.mark_seen([paper["id"] for paper in raw_papers if paper.get("id")])
 
-    digest_dir = _resolve_path(loopcraft, config.output.digest_dir)
-    digest_dir.mkdir(parents=True, exist_ok=True)
     stamp = now.strftime("%Y-%m-%d")
     run_stamp = now.strftime("%Y%m%dT%H%M%SZ")
-    markdown_path = digest_dir / f"{stamp}.md"
-    json_path = digest_dir / f"{stamp}.json"
-    history_dir = _resolve_path(loopcraft, config.output.history_dir)
-    history_dir.mkdir(parents=True, exist_ok=True)
-    history_markdown = history_dir / f"{run_stamp}.md"
-    history_json = history_dir / f"{run_stamp}.json"
-    latest_markdown = _resolve_path(loopcraft, config.output.latest_markdown)
-    latest_json = _resolve_path(loopcraft, config.output.latest_json)
-    latest_markdown.parent.mkdir(parents=True, exist_ok=True)
-    latest_json.parent.mkdir(parents=True, exist_ok=True)
 
     markdown = render_digest(top_papers, raw_papers, errors, generated_at=now)
     payload = json.dumps(
@@ -86,12 +73,12 @@ def run(config_path: str, *, dry_run: bool = False, include_seen: bool = False) 
         indent=2,
         ensure_ascii=False,
     )
-    markdown_path.write_text(markdown, encoding="utf-8")
-    json_path.write_text(payload, encoding="utf-8")
-    history_markdown.write_text(markdown, encoding="utf-8")
-    history_json.write_text(payload, encoding="utf-8")
-    latest_markdown.write_text(markdown, encoding="utf-8")
-    latest_json.write_text(payload, encoding="utf-8")
+    markdown_path, json_path = store.write_digest(
+        markdown=markdown,
+        payload=payload,
+        run_stamp=run_stamp,
+        date_stamp=stamp,
+    )
 
     print(f"ARXIV_DIGEST_MARKDOWN={markdown_path}")
     print(f"ARXIV_DIGEST_JSON={json_path}")
@@ -99,15 +86,5 @@ def run(config_path: str, *, dry_run: bool = False, include_seen: bool = False) 
         print("ERROR_SUMMARY=" + " | ".join(errors), file=sys.stderr)
         return 1
     return 0
-
-
-def _resolve_path(loopcraft: LoopcraftConfig, path: Path) -> Path:
-    """Resolve config paths through the loopcraft memory tree when they use state/."""
-    raw = path.as_posix()
-    if is_state_path(raw):
-        return loopcraft.resolve_state_path(raw)
-    return path
-
-
 if __name__ == "__main__":
     raise SystemExit(main())

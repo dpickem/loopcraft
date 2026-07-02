@@ -44,6 +44,9 @@ ranking:
   max_posts_per_author: 3
   reply_penalty: 20
   require_ai_context: true
+  topic_query: '(AI OR LLM OR "language model" OR "frontier model" OR "foundation
+    model" OR agent OR agents OR evals OR harness OR "tool use" OR reasoning OR
+    "post-training" OR coding) lang:en -is:retweet'
   ai_context_keywords:
   - ai
   - llm
@@ -64,6 +67,24 @@ ranking:
   - post-training
   - coding
   - synthetic data
+  discovery_context_terms:
+  - ai
+  - ml
+  - llm
+  - agent
+  - agents
+  - model
+  - models
+  - research
+  - science
+  - technology
+  - software
+  - engineering
+  - data
+  - robotics
+  - frontier
+  - eval
+  - evals
   negative_keywords:
     free agent: 45
     free agents: 45

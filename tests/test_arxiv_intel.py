@@ -3,8 +3,9 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from pathlib import Path
 
+from loopcraft.config import LoopcraftConfig
 from loopcraft.research_intel.arxiv.client import build_search_query, parse_feed
-from loopcraft.research_intel.arxiv.config import ArxivIntelConfig
+from loopcraft.research_intel.arxiv.config import ArxivIntelConfig, OutputPaths
 from loopcraft.research_intel.arxiv.digest import render_digest
 from loopcraft.research_intel.arxiv.ranking import rank_papers, score_paper
 from loopcraft.research_intel.arxiv.store import ArxivStore
@@ -133,10 +134,12 @@ def test_arxiv_loads_yaml_content_config() -> None:
 
 
 def test_arxiv_store_uses_json_ledger_files(tmp_path) -> None:
-    store = ArxivStore(
-        seen_path=tmp_path / "seen.json",
-        papers_path=tmp_path / "papers.jsonl",
+    config = LoopcraftConfig(source_path=tmp_path / "src", memory_path=tmp_path / "mem")
+    output = OutputPaths(
+        seen_path=Path("state/seen.json"),
+        papers_path=Path("state/papers.jsonl"),
     )
+    store = ArxivStore(config, output)
     store.save_papers(
         [
             {"id": "1", "title": "Old"},
@@ -147,6 +150,6 @@ def test_arxiv_store_uses_json_ledger_files(tmp_path) -> None:
     store.mark_seen(["1", "2"])
 
     assert store.seen_ids() == {"1", "2"}
-    lines = (tmp_path / "papers.jsonl").read_text(encoding="utf-8").splitlines()
+    lines = (tmp_path / "mem" / "ledger" / "papers.jsonl").read_text(encoding="utf-8").splitlines()
     assert len(lines) == 2
     assert "Updated" in "\n".join(lines)

@@ -1,74 +1,70 @@
+"""Content configuration for the arXiv intelligence loop (sources, ranking)."""
+
 from __future__ import annotations
 
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import yaml
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
-@dataclass(frozen=True)
-class SourcesConfig:
-    categories: list[str]
-    search_terms: list[str]
+class _ContentModel(BaseModel):
+    """Base model for arXiv content-definition data."""
+
+    model_config = ConfigDict(extra="forbid")
 
 
-@dataclass(frozen=True)
-class RankingConfig:
-    max_results: int
-    top_papers: int
-    min_score: int
-    recency_bonus_days: int
-    keywords: dict[str, int]
-    negative_keywords: dict[str, int]
+class SourcesConfig(_ContentModel):
+    """arXiv source categories and search terms."""
+
+    categories: list[str] = Field(default_factory=lambda: ["cs.AI", "cs.CL", "cs.LG", "stat.ML"])
+    search_terms: list[str] = Field(default_factory=list)
 
 
-@dataclass(frozen=True)
-class OutputPaths:
-    seen_path: Path
-    papers_path: Path
-    digest_dir: Path
-    history_dir: Path
-    latest_markdown: Path
-    latest_json: Path
+class RankingConfig(_ContentModel):
+    """Ranking knobs for arXiv papers."""
+
+    max_results: int = 150
+    top_papers: int = 10
+    min_score: int = 25
+    recency_bonus_days: int = 3
+    keywords: dict[str, int] = Field(default_factory=dict)
+    negative_keywords: dict[str, int] = Field(default_factory=dict)
+
+    @field_validator("keywords", "negative_keywords", mode="before")
+    @classmethod
+    def clean_keyword_weights(cls, values: Any) -> dict[str, int]:
+        """Normalize weighted keyword dictionaries."""
+        return {str(term).lower(): int(weight) for term, weight in (values or {}).items()}
 
 
-@dataclass(frozen=True)
-class ArxivIntelConfig:
-    sources: SourcesConfig
-    ranking: RankingConfig
-    output: OutputPaths = OutputPaths(
-        seen_path=Path("state/research/arxiv/seen.json"),
-        papers_path=Path("state/research/arxiv/papers.jsonl"),
-        digest_dir=Path("state/research/arxiv/digests"),
-        history_dir=Path("state/research/arxiv/history"),
-        latest_markdown=Path("state/research/arxiv/latest.md"),
-        latest_json=Path("state/research/arxiv/latest.json"),
-    )
+class OutputPaths(_ContentModel):
+    """Fixed ledger output paths for direct arXiv CLI runs."""
+
+    seen_path: Path = Path("state/research/arxiv/seen.json")
+    papers_path: Path = Path("state/research/arxiv/papers.jsonl")
+    digest_dir: Path = Path("state/research/arxiv/digests")
+    history_dir: Path = Path("state/research/arxiv/history")
+    latest_markdown: Path = Path("state/research/arxiv/latest.md")
+    latest_json: Path = Path("state/research/arxiv/latest.json")
+
+
+class ArxivIntelConfig(_ContentModel):
+    """Complete arXiv content definition plus fixed ledger output defaults."""
+
+    sources: SourcesConfig = Field(default_factory=SourcesConfig)
+    ranking: RankingConfig = Field(default_factory=RankingConfig)
+    output: OutputPaths = Field(default_factory=OutputPaths)
 
     @classmethod
-    def load(cls, path: Path) -> "ArxivIntelConfig":
+    def load(cls, path: Path) -> ArxivIntelConfig:
+        """Load a YAML content-definition file."""
         raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
         return cls.from_dict(raw)
 
     @classmethod
-    def from_dict(cls, raw: dict[str, Any]) -> "ArxivIntelConfig":
-        sources = raw.get("sources", {})
-        ranking = raw.get("ranking", {})
-        return cls(
-            sources=SourcesConfig(
-                categories=[str(value) for value in sources.get("categories", ["cs.AI", "cs.CL", "cs.LG", "stat.ML"])],
-                search_terms=[str(value) for value in sources.get("search_terms", [])],
-            ),
-            ranking=RankingConfig(
-                max_results=int(ranking.get("max_results", 150)),
-                top_papers=int(ranking.get("top_papers", 10)),
-                min_score=int(ranking.get("min_score", 25)),
-                recency_bonus_days=int(ranking.get("recency_bonus_days", 3)),
-                keywords={str(term).lower(): int(weight) for term, weight in ranking.get("keywords", {}).items()},
-                negative_keywords={
-                    str(term).lower(): int(weight) for term, weight in ranking.get("negative_keywords", {}).items()
-                },
-            ),
-        )
+    def from_dict(cls, raw: dict[str, Any]) -> ArxivIntelConfig:
+        """Build content config from a raw mapping."""
+        return cls.model_validate(raw)
 

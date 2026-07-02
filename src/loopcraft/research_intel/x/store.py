@@ -1,8 +1,14 @@
+"""Ledger-backed state and digest storage for the X intelligence loop."""
+
 from __future__ import annotations
 
 import json
 from pathlib import Path
 from typing import Any, Iterable
+
+from loopcraft.config import LoopcraftConfig, is_state_path
+from loopcraft.jsonl import read_jsonl, write_jsonl
+from loopcraft.research_intel.x.config import OutputPaths
 
 
 class IntelStore:
@@ -12,12 +18,83 @@ class IntelStore:
     loopcraft memory tree instead of a per-tool SQLite database.
     """
 
-    def __init__(self, *, seen_path: Path, posts_path: Path, source_state_path: Path) -> None:
-        self.seen_path = seen_path
-        self.posts_path = posts_path
-        self.source_state_path = source_state_path
+    def __init__(self, loopcraft: LoopcraftConfig, output: OutputPaths) -> None:
+        self.loopcraft = loopcraft
+        self.output = output
+        self.seen_path = self.resolve(output.seen_path)
+        self.posts_path = self.resolve(output.posts_path)
+        self.source_state_path = self.resolve(output.source_state_path)
         for path in (self.seen_path, self.posts_path, self.source_state_path):
             path.parent.mkdir(parents=True, exist_ok=True)
+
+    def resolve(self, path: Path) -> Path:
+        """Resolve a configured path through the memory ledger when needed."""
+        raw = path.as_posix()
+        if is_state_path(raw):
+            return self.loopcraft.resolve_state_path(raw)
+        return path
+
+    def write_digest(self, *, markdown: str, payload: str, run_stamp: str, date_stamp: str) -> tuple[Path, Path]:
+        """Write dated, history, and latest X digest files.
+
+        Args:
+            markdown: Rendered digest markdown.
+            payload: Rendered digest JSON string.
+            run_stamp: Timestamp used for immutable history filenames.
+            date_stamp: Date used for daily digest filenames.
+
+        Returns:
+            The daily markdown and JSON paths printed by the direct CLI.
+        """
+        digest_dir = self.resolve(self.output.digest_dir)
+        history_dir = self.resolve(self.output.history_dir)
+        latest_markdown = self.resolve(self.output.latest_markdown)
+        latest_json = self.resolve(self.output.latest_json)
+        for path in (digest_dir, history_dir, latest_markdown.parent, latest_json.parent):
+            path.mkdir(parents=True, exist_ok=True)
+        markdown_path = digest_dir / f"{date_stamp}.md"
+        json_path = digest_dir / f"{date_stamp}.json"
+        writes = {
+            markdown_path: markdown,
+            json_path: payload,
+            history_dir / f"{run_stamp}.md": markdown,
+            history_dir / f"{run_stamp}.json": payload,
+            latest_markdown: markdown,
+            latest_json: payload,
+        }
+        for path, text in writes.items():
+            path.write_text(text, encoding="utf-8")
+        return markdown_path, json_path
+
+    def follow_candidates_dir(self, output_dir: str | None) -> Path:
+        """Return the resolved follow-candidate output directory."""
+        if output_dir:
+            return self.resolve(Path(output_dir))
+        return self.resolve(self.output.follow_candidates_dir)
+
+    def latest_digest_json(self) -> Path:
+        """Return the newest digest JSON file in the resolved digest directory.
+
+        Raises:
+            FileNotFoundError: If no digest JSON files exist yet.
+        """
+        digest_dir = self.resolve(self.output.digest_dir)
+        candidates = sorted(digest_dir.glob("*.json"))
+        if not candidates:
+            raise FileNotFoundError(f"no digest JSON files under {digest_dir}")
+        return candidates[-1]
+
+    def write_follow_candidates(
+        self, *, markdown: str, payload: str, date_stamp: str, output_dir: str | None
+    ) -> tuple[Path, Path]:
+        """Write dated follow-candidate markdown/JSON and return their paths."""
+        out_dir = self.follow_candidates_dir(output_dir)
+        out_dir.mkdir(parents=True, exist_ok=True)
+        markdown_path = out_dir / f"{date_stamp}.md"
+        json_path = out_dir / f"{date_stamp}.json"
+        markdown_path.write_text(markdown, encoding="utf-8")
+        json_path.write_text(payload, encoding="utf-8")
+        return markdown_path, json_path
 
     def latest_seen_id(self, source_key: str) -> str | None:
         state = self._source_state()
@@ -38,21 +115,14 @@ class IntelStore:
 
     def save_posts(self, posts: list[dict[str, Any]]) -> None:
         existing: dict[str, dict[str, Any]] = {}
-        if self.posts_path.exists():
-            for line in self.posts_path.read_text(encoding="utf-8").splitlines():
-                if not line.strip():
-                    continue
-                record = json.loads(line)
-                if record.get("id"):
-                    existing[str(record["id"])] = record
+        for record in read_jsonl(self.posts_path):
+            if record.get("id"):
+                existing[str(record["id"])] = record
         for post in posts:
             post_id = post.get("id")
             if post_id:
                 existing[str(post_id)] = post
-        self.posts_path.write_text(
-            "".join(json.dumps(v, ensure_ascii=False) + "\n" for v in existing.values()),
-            encoding="utf-8",
-        )
+        write_jsonl(self.posts_path, existing.values())
 
     def mark_seen(self, post_ids: Iterable[str]) -> None:
         seen = self.seen_ids()

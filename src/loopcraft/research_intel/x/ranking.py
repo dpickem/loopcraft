@@ -1,10 +1,12 @@
+"""Keyword-based scoring and ranking of X posts."""
+
 from __future__ import annotations
 
 import re
 from datetime import UTC, datetime
 from typing import Any
 
-from .config import IntelConfig
+from loopcraft.research_intel.x.config import IntelConfig
 
 
 def rank_posts(posts: list[dict[str, Any]], config: IntelConfig) -> list[dict[str, Any]]:

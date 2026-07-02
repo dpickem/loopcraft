@@ -1,135 +1,152 @@
+"""Content configuration and API-token resolution for the X intelligence loop."""
+
 from __future__ import annotations
 
-from dataclasses import dataclass
+import os
 from pathlib import Path
 from typing import Any
 
 import yaml
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
-@dataclass(frozen=True)
-class SourcesConfig:
-    list_ids: list[str]
-    following_user_ids: list[str]
-    following_snapshot: Path | None
-    search_queries: list[str]
-    author_handles: list[str]
+class _ContentModel(BaseModel):
+    """Base model for X content-definition data."""
+
+    model_config = ConfigDict(extra="forbid")
 
 
-@dataclass(frozen=True)
-class FrontierLabsConfig:
-    high_priority_handles: set[str]
-    affiliations: dict[str, set[str]]
+class SourcesConfig(_ContentModel):
+    """Public X API sources to fetch from."""
+
+    list_ids: list[str] = Field(default_factory=list)
+    following_user_ids: list[str] = Field(default_factory=list)
+    following_snapshot: Path | None = None
+    search_queries: list[str] = Field(default_factory=list)
+    author_handles: list[str] = Field(default_factory=list)
 
 
-@dataclass(frozen=True)
-class RankingConfig:
-    max_posts_per_run: int
-    top_posts: int
-    frontier_lab_bonus: int
-    high_priority_author_bonus: int
-    recency_bonus_hours: int
-    min_score: int
-    max_posts_per_author: int
-    reply_penalty: int
-    require_ai_context: bool
-    ai_context_keywords: set[str]
-    negative_keywords: dict[str, int]
-    keywords: dict[str, int]
+class FrontierLabsConfig(_ContentModel):
+    """Frontier-lab attribution and high-priority author settings."""
+
+    high_priority_handles: set[str] = Field(default_factory=set)
+    affiliations: dict[str, set[str]] = Field(default_factory=dict)
+
+    @field_validator("high_priority_handles", mode="before")
+    @classmethod
+    def clean_high_priority_handles(cls, values: Any) -> set[str]:
+        """Normalize configured handles."""
+        return {_clean_handle(value) for value in values or []}
+
+    @field_validator("affiliations", mode="before")
+    @classmethod
+    def clean_affiliations(cls, values: Any) -> dict[str, set[str]]:
+        """Normalize affiliation handle maps."""
+        return {
+            str(name): {_clean_handle(handle) for handle in handles}
+            for name, handles in (values or {}).items()
+        }
 
 
-@dataclass(frozen=True)
-class OutputPaths:
-    seen_path: Path
-    posts_path: Path
-    source_state_path: Path
-    digest_dir: Path
-    history_dir: Path
-    latest_markdown: Path
-    latest_json: Path
-    follow_candidates_dir: Path
+class RankingConfig(_ContentModel):
+    """Ranking configuration for fetched posts."""
+
+    max_posts_per_run: int = 100
+    top_posts: int = 25
+    frontier_lab_bonus: int = 35
+    high_priority_author_bonus: int = 25
+    recency_bonus_hours: int = 18
+    min_score: int = 35
+    max_posts_per_author: int = 3
+    reply_penalty: int = 20
+    require_ai_context: bool = True
+    topic_query: str = ""
+    discovery_context_terms: set[str] = Field(default_factory=set)
+    ai_context_keywords: set[str] = Field(default_factory=set)
+    negative_keywords: dict[str, int] = Field(default_factory=dict)
+    keywords: dict[str, int] = Field(default_factory=dict)
+
+    @field_validator("ai_context_keywords", mode="before")
+    @classmethod
+    def lower_context_keywords(cls, values: Any) -> set[str]:
+        """Normalize context keywords to lowercase."""
+        return {str(value).lower() for value in values or []}
+
+    @field_validator("discovery_context_terms", mode="before")
+    @classmethod
+    def lower_discovery_terms(cls, values: Any) -> set[str]:
+        """Normalize profile discovery terms to lowercase."""
+        return {str(value).lower() for value in values or []}
+
+    @field_validator("negative_keywords", "keywords", mode="before")
+    @classmethod
+    def clean_keyword_weights(cls, values: Any) -> dict[str, int]:
+        """Normalize weighted keyword dictionaries."""
+        return {str(term).lower(): int(weight) for term, weight in (values or {}).items()}
 
 
-@dataclass(frozen=True)
-class IntelConfig:
-    sources: SourcesConfig
-    frontier_labs: FrontierLabsConfig
-    ranking: RankingConfig
-    output: OutputPaths = OutputPaths(
-        seen_path=Path("state/research/x/seen.json"),
-        posts_path=Path("state/research/x/posts.jsonl"),
-        source_state_path=Path("state/research/x/source-state.json"),
-        digest_dir=Path("state/research/x/digests"),
-        history_dir=Path("state/research/x/history"),
-        latest_markdown=Path("state/research/x/latest.md"),
-        latest_json=Path("state/research/x/latest.json"),
-        follow_candidates_dir=Path("state/research/x/follow-candidates"),
-    )
+class OutputPaths(_ContentModel):
+    """Fixed ledger output paths for direct X CLI runs."""
+
+    seen_path: Path = Path("state/research/x/seen.json")
+    posts_path: Path = Path("state/research/x/posts.jsonl")
+    source_state_path: Path = Path("state/research/x/source-state.json")
+    digest_dir: Path = Path("state/research/x/digests")
+    history_dir: Path = Path("state/research/x/history")
+    latest_markdown: Path = Path("state/research/x/latest.md")
+    latest_json: Path = Path("state/research/x/latest.json")
+    follow_candidates_dir: Path = Path("state/research/x/follow-candidates")
+
+
+class XApiTokens(_ContentModel):
+    """Resolved X API token values from the environment."""
+
+    bearer_token: str | None = None
+    oauth2_access_token: str | None = None
 
     @classmethod
-    def load(cls, path: Path) -> "IntelConfig":
+    def from_env(cls) -> XApiTokens:
+        """Resolve X API tokens from environment variables."""
+        return cls(
+            bearer_token=os.environ.get("X_API_BEARER_TOKEN"),
+            oauth2_access_token=os.environ.get("X_API_OAUTH2_ACCESS_TOKEN"),
+        )
+
+    def token(self, *, require_user_context: bool = False) -> str | None:
+        """Return the token appropriate for an X API operation.
+
+        Args:
+            require_user_context: Whether app-only bearer auth is insufficient.
+
+        Returns:
+            OAuth2 access token when user context is required, otherwise OAuth2
+            access token if present or app bearer token as a fallback.
+        """
+        if require_user_context:
+            return self.oauth2_access_token
+        return self.oauth2_access_token or self.bearer_token
+
+
+class IntelConfig(_ContentModel):
+    """Complete X content definition plus fixed ledger output defaults."""
+
+    sources: SourcesConfig = Field(default_factory=SourcesConfig)
+    frontier_labs: FrontierLabsConfig = Field(default_factory=FrontierLabsConfig)
+    ranking: RankingConfig = Field(default_factory=RankingConfig)
+    output: OutputPaths = Field(default_factory=OutputPaths)
+
+    @classmethod
+    def load(cls, path: Path) -> IntelConfig:
+        """Load a YAML content-definition file."""
         raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
         return cls.from_dict(raw)
 
     @classmethod
-    def from_dict(cls, raw: dict[str, Any]) -> "IntelConfig":
-        sources = raw.get("sources", {})
-        labs = raw.get("frontier_labs", {})
-        ranking = raw.get("ranking", {})
-        return cls(
-            sources=SourcesConfig(
-                list_ids=[str(value) for value in sources.get("list_ids", [])],
-                following_user_ids=[str(value) for value in sources.get("following_user_ids", [])],
-                following_snapshot=Path(sources["following_snapshot"]) if sources.get("following_snapshot") else None,
-                search_queries=[str(value) for value in sources.get("search_queries", [])],
-                author_handles=[str(value) for value in sources.get("author_handles", [])],
-            ),
-            frontier_labs=FrontierLabsConfig(
-                high_priority_handles={_clean_handle(value) for value in labs.get("high_priority_handles", [])},
-                affiliations={
-                    str(name): {_clean_handle(handle) for handle in handles}
-                    for name, handles in labs.get("affiliations", {}).items()
-                },
-            ),
-            ranking=RankingConfig(
-                max_posts_per_run=int(ranking.get("max_posts_per_run", 100)),
-                top_posts=int(ranking.get("top_posts", 25)),
-                frontier_lab_bonus=int(ranking.get("frontier_lab_bonus", 35)),
-                high_priority_author_bonus=int(ranking.get("high_priority_author_bonus", 25)),
-                recency_bonus_hours=int(ranking.get("recency_bonus_hours", 18)),
-                min_score=int(ranking.get("min_score", 35)),
-                max_posts_per_author=int(ranking.get("max_posts_per_author", 3)),
-                reply_penalty=int(ranking.get("reply_penalty", 20)),
-                require_ai_context=bool(ranking.get("require_ai_context", True)),
-                ai_context_keywords={
-                    str(value).lower()
-                    for value in ranking.get(
-                        "ai_context_keywords",
-                        [
-                            "ai",
-                            "llm",
-                            "model",
-                            "models",
-                            "agent",
-                            "agents",
-                            "eval",
-                            "evals",
-                            "tool use",
-                            "harness",
-                            "loopcraft",
-                            "loop engineering",
-                            "reasoning",
-                            "post-training",
-                        ],
-                    )
-                },
-                negative_keywords={
-                    str(term).lower(): int(weight) for term, weight in ranking.get("negative_keywords", {}).items()
-                },
-                keywords={str(term).lower(): int(weight) for term, weight in ranking.get("keywords", {}).items()},
-            ),
-        )
+    def from_dict(cls, raw: dict[str, Any]) -> IntelConfig:
+        """Build content config from a raw mapping."""
+        return cls.model_validate(raw)
 
 
 def _clean_handle(value: str) -> str:
+    """Normalize an X handle to lowercase without a leading ``@``."""
     return str(value).lower().lstrip("@")

@@ -5,7 +5,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from loopcraft.env import load_dotenv
-from loopcraft.research_intel.x.config import IntelConfig
+from loopcraft.config import LoopcraftConfig
+from loopcraft.research_intel.x.config import IntelConfig, OutputPaths
 from loopcraft.research_intel.x.digest import render_digest
 from loopcraft.research_intel.x.follow_discovery import discover_candidates, render_follow_candidates
 from loopcraft.research_intel.x.ranking import rank_posts, score_post
@@ -25,6 +26,7 @@ def _config() -> IntelConfig:
                 "frontier_lab_bonus": 35,
                 "high_priority_author_bonus": 25,
                 "recency_bonus_hours": 24,
+                "ai_context_keywords": ["loopcraft", "evals", "ai", "agent"],
                 "keywords": {"loopcraft": 40, "evals": 10},
             },
         }
@@ -255,11 +257,13 @@ def test_x_loads_yaml_content_config() -> None:
 
 
 def test_x_store_uses_json_ledger_files(tmp_path) -> None:
-    store = IntelStore(
-        seen_path=tmp_path / "seen.json",
-        posts_path=tmp_path / "posts.jsonl",
-        source_state_path=tmp_path / "source-state.json",
+    config = LoopcraftConfig(source_path=tmp_path / "src", memory_path=tmp_path / "mem")
+    output = OutputPaths(
+        seen_path=Path("state/seen.json"),
+        posts_path=Path("state/posts.jsonl"),
+        source_state_path=Path("state/source-state.json"),
     )
+    store = IntelStore(config, output)
     assert store.latest_seen_id("query:test") is None
     store.remember_source_highwater(
         "query:test",
@@ -270,4 +274,4 @@ def test_x_store_uses_json_ledger_files(tmp_path) -> None:
     store.save_posts([{"id": "10", "text": "old"}, {"id": "10", "text": "updated"}])
     store.mark_seen(["10", "12"])
     assert store.seen_ids() == {"10", "12"}
-    assert len((tmp_path / "posts.jsonl").read_text(encoding="utf-8").splitlines()) == 1
+    assert len((tmp_path / "mem" / "ledger" / "posts.jsonl").read_text(encoding="utf-8").splitlines()) == 1
