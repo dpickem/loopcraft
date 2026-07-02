@@ -64,11 +64,13 @@ class Store:
     """
 
     def __init__(self, config: LoopcraftConfig) -> None:
+        """Bind the store to a resolved control-plane config."""
         self.config = config
 
     # --- run lifecycle ------------------------------------------------------
     @staticmethod
     def new_run_id() -> str:
+        """Return a fresh sortable run id (``<UTC timestamp>-<short uuid>``)."""
         stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
         return f"{stamp}-{uuid.uuid4().hex[:8]}"
 
@@ -83,10 +85,16 @@ class Store:
         return path
 
     def latest_run(self, loop_id: str) -> RunRecord | None:
+        """Return the most recent run record for a loop, or None."""
         runs = self.runs_for(loop_id)
         return runs[-1] if runs else None
 
     def runs_for(self, loop_id: str) -> list[RunRecord]:
+        """Return all run records for a loop, oldest first.
+
+        Handles both current (``<loop>__<run>.json``) and legacy run-record
+        filenames, skipping any unreadable files.
+        """
         if not self.config.runs_dir.exists():
             return []
         records: list[RunRecord] = []
@@ -113,15 +121,18 @@ class Store:
         return path
 
     def read_state(self, declared_path: str) -> str | None:
+        """Return the text of a ledger file, or None if it does not exist."""
         path = self.config.resolve_state_path(declared_path)
         if not path.exists():
             return None
         return path.read_text(encoding="utf-8")
 
     def state_exists(self, declared_path: str) -> bool:
+        """Return whether a declared ledger file exists."""
         return self.config.resolve_state_path(declared_path).exists()
 
     def append_jsonl(self, declared_path: str, record: dict[str, Any]) -> Path:
+        """Append one JSON record as a line to a ledger JSONL file."""
         path = self.config.resolve_state_path(declared_path)
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("a", encoding="utf-8") as handle:

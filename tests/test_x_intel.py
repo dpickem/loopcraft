@@ -1,3 +1,5 @@
+"""Tests for the X intelligence ranking, digest, follow discovery, and store."""
+
 from __future__ import annotations
 
 import os
@@ -16,6 +18,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 def _config() -> IntelConfig:
+    """Return an X content config with representative frontier/ranking data."""
     return IntelConfig.from_dict(
         {
             "frontier_labs": {
@@ -34,6 +37,7 @@ def _config() -> IntelConfig:
 
 
 def test_score_post_weights_frontier_lab_and_keywords() -> None:
+    """score_post credits frontier-lab affiliation and keyword matches."""
     post = {
         "id": "10",
         "text": "Loopcraft evals for agent harnesses",
@@ -50,6 +54,7 @@ def test_score_post_weights_frontier_lab_and_keywords() -> None:
 
 
 def test_rank_posts_dedupes_by_id() -> None:
+    """rank_posts collapses duplicate ids and ranks by score."""
     posts = [
         {"id": "1", "text": "boring", "author": {"username": "nobody"}},
         {"id": "1", "text": "loopcraft", "author": {"username": "nobody"}},
@@ -63,6 +68,7 @@ def test_rank_posts_dedupes_by_id() -> None:
 
 
 def test_render_digest_includes_frontier_section() -> None:
+    """The digest renders a frontier-lab highlights section with post links."""
     markdown = render_digest(
         [
             {
@@ -84,6 +90,7 @@ def test_render_digest_includes_frontier_section() -> None:
 
 
 def test_render_digest_includes_expanded_external_links() -> None:
+    """The digest surfaces expanded external links from post entities."""
     markdown = render_digest(
         [
             {
@@ -114,6 +121,7 @@ def test_render_digest_includes_expanded_external_links() -> None:
 
 
 def test_load_dotenv_sets_missing_values_without_overwriting(tmp_path, monkeypatch) -> None:
+    """load_dotenv sets unset vars but never overwrites existing ones."""
     env_path = tmp_path / ".env"
     env_path.write_text("X_API_BEARER_TOKEN='local-token'\nOPENAI_MODEL=gpt-5.4\n", encoding="utf-8")
     monkeypatch.delenv("X_API_BEARER_TOKEN", raising=False)
@@ -126,6 +134,7 @@ def test_load_dotenv_sets_missing_values_without_overwriting(tmp_path, monkeypat
 
 
 def test_discover_candidates_filters_followed_and_scores_linked_sources() -> None:
+    """Discovery excludes followed handles and scores linked-source accounts."""
     digest = {
         "top_posts": [
             {
@@ -183,6 +192,7 @@ def test_discover_candidates_filters_followed_and_scores_linked_sources() -> Non
 
 
 def test_render_follow_candidates_links_profile_and_evidence() -> None:
+    """The follow-candidate markdown links profiles and evidence posts."""
     markdown = render_follow_candidates(
         [
             {
@@ -208,6 +218,7 @@ def test_render_follow_candidates_links_profile_and_evidence() -> None:
 
 
 def test_discover_candidates_drops_irrelevant_mention_only_profiles() -> None:
+    """Mention-only candidates without discovery context are dropped."""
     digest = {
         "top_posts": [
             {
@@ -241,6 +252,7 @@ def test_discover_candidates_drops_irrelevant_mention_only_profiles() -> None:
 
 
 def test_x_output_defaults_are_memory_state_paths() -> None:
+    """Default X output paths point at the memory ledger state tree."""
     config = IntelConfig.from_dict({})
     assert config.output.seen_path.as_posix() == "state/research/x/seen.json"
     assert config.output.posts_path.as_posix() == "state/research/x/posts.jsonl"
@@ -250,6 +262,7 @@ def test_x_output_defaults_are_memory_state_paths() -> None:
 
 
 def test_x_loads_yaml_content_config() -> None:
+    """The shipped X YAML content config loads with expected values."""
     config = IntelConfig.load(REPO_ROOT / "config" / "x_intel.yaml")
     assert config.sources.following_snapshot is None
     assert "sama" in config.frontier_labs.high_priority_handles
@@ -257,6 +270,7 @@ def test_x_loads_yaml_content_config() -> None:
 
 
 def test_x_store_uses_json_ledger_files(tmp_path) -> None:
+    """The X store tracks high-water marks and posts/seen ids in the ledger."""
     config = LoopcraftConfig(source_path=tmp_path / "src", memory_path=tmp_path / "mem")
     output = OutputPaths(
         seen_path=Path("state/seen.json"),

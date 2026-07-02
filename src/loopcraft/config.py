@@ -135,31 +135,38 @@ class LoopcraftConfig(BaseModel):
     # --- source-tree locations ---------------------------------------------
     @property
     def loops_dir(self) -> Path:
+        """Directory holding loop manifests in the source tree."""
         return self.source_path / SourceDir.LOOPS
 
     @property
     def skills_dir(self) -> Path:
+        """Directory holding skills in the source tree."""
         return self.source_path / SourceDir.SKILLS
 
     @property
     def agents_dir(self) -> Path:
+        """Directory holding agent definitions in the source tree."""
         return self.source_path / SourceDir.AGENTS
 
     # --- memory-tree locations ---------------------------------------------
     @property
     def ledger_dir(self) -> Path:
+        """Ledger root in the memory tree (durable loop state and outputs)."""
         return self.memory_path / MemoryDir.LEDGER
 
     @property
     def artifacts_dir(self) -> Path:
+        """Artifact store root in the memory tree."""
         return self.memory_path / MemoryDir.ARTIFACTS
 
     @property
     def runs_dir(self) -> Path:
+        """Directory holding per-run records under the ledger."""
         return self.ledger_dir / MemoryDir.RUNS
 
     @property
     def db_path(self) -> Path:
+        """Path to the derived run-history database in the memory tree."""
         return self.memory_path / DB_FILENAME
 
     def resolve_state_path(self, declared: str) -> Path:

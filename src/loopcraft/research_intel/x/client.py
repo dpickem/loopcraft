@@ -26,11 +26,24 @@ class XApiError(RuntimeError):
 
 
 class XApiClient:
+    """Client for the subset of the X v2 API used by the intelligence loop."""
+
     def __init__(self, bearer_token: str, *, base_url: str = "https://api.x.com/2") -> None:
+        """Store the bearer token and API base URL for subsequent requests."""
         self.bearer_token = bearer_token
         self.base_url = base_url.rstrip("/")
 
     def search_recent(self, query: str, *, since_id: str | None, max_results: int) -> list[dict[str, Any]]:
+        """Return recent posts matching ``query`` (author-hydrated).
+
+        Args:
+            query: X recent-search query string.
+            since_id: Only return posts newer than this id, if given.
+            max_results: Desired page size (clamped to the API's limits).
+
+        Returns:
+            Post dicts with an ``author`` sub-dict attached.
+        """
         params: dict[str, str | int] = {
             "query": query,
             "max_results": min(max(max_results, _MIN_POSTS_PER_SEARCH), _MAX_POSTS_PER_REQUEST),
@@ -43,6 +56,16 @@ class XApiClient:
         return self._get_posts("/tweets/search/recent", params)
 
     def list_posts(self, list_id: str, *, since_id: str | None, max_results: int) -> list[dict[str, Any]]:
+        """Return recent posts from an X list (author-hydrated).
+
+        Args:
+            list_id: The X list id to read.
+            since_id: Only return posts newer than this id, if given.
+            max_results: Desired page size (clamped to the API's limits).
+
+        Returns:
+            Post dicts with an ``author`` sub-dict attached.
+        """
         params: dict[str, str | int] = {
             "max_results": min(max(max_results, _MIN_POSTS_PER_LIST), _MAX_POSTS_PER_REQUEST),
             "tweet.fields": "author_id,created_at,public_metrics,conversation_id,referenced_tweets,entities",
@@ -54,9 +77,15 @@ class XApiClient:
         return self._get_posts(f"/lists/{list_id}/tweets", params)
 
     def following_handles(self, user_id: str) -> list[str]:
+        """Return the usernames a user follows."""
         return [user["username"] for user in self.following_users(user_id) if user.get("username")]
 
     def current_user(self) -> dict[str, Any]:
+        """Return the authenticated user (``/users/me``).
+
+        Raises:
+            XApiError: If the API returns no user (e.g. app-only auth).
+        """
         payload = self._get_json("/users/me", {"user.fields": "username,name,description,verified,verified_type"})
         user = payload.get("data")
         if not user:
@@ -64,6 +93,11 @@ class XApiClient:
         return user
 
     def user_by_username(self, username: str) -> dict[str, Any]:
+        """Return one user profile by handle.
+
+        Raises:
+            XApiError: If the API returns no user for the handle.
+        """
         clean_username = username.lstrip("@")
         payload = self._get_json(
             f"/users/by/username/{clean_username}",
@@ -75,6 +109,7 @@ class XApiClient:
         return user
 
     def users_by_usernames(self, usernames: list[str]) -> list[dict[str, Any]]:
+        """Return profiles for many handles, batched to the API lookup limit."""
         users: list[dict[str, Any]] = []
         clean_usernames = sorted({username.lower().lstrip("@") for username in usernames if username.strip()})
         for index in range(0, len(clean_usernames), _MAX_USERS_PER_LOOKUP):
@@ -92,6 +127,7 @@ class XApiClient:
         return users
 
     def following_users(self, user_id: str) -> list[dict[str, Any]]:
+        """Return all users ``user_id`` follows, following pagination to the end."""
         users: list[dict[str, Any]] = []
         pagination_token: str | None = None
         while True:
@@ -108,6 +144,7 @@ class XApiClient:
                 return users
 
     def _get_posts(self, path: str, params: dict[str, str | int]) -> list[dict[str, Any]]:
+        """Fetch posts and attach each post's expanded author profile."""
         payload = self._get_json(path, params)
         users = {user["id"]: user for user in payload.get("includes", {}).get("users", []) if user.get("id")}
         posts: list[dict[str, Any]] = []
@@ -119,6 +156,11 @@ class XApiClient:
         return posts
 
     def _get_json(self, path: str, params: dict[str, str | int]) -> dict[str, Any]:
+        """Perform a bearer-authenticated GET and return the decoded JSON.
+
+        Raises:
+            XApiError: On rate limiting, HTTP status errors, or network errors.
+        """
         url = f"{self.base_url}{path}?{urlencode(params)}"
         request = Request(
             url,

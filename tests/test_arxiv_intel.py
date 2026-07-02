@@ -1,3 +1,5 @@
+"""Tests for the arXiv intelligence client, ranking, digest, and store."""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime
@@ -14,6 +16,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 def _config() -> ArxivIntelConfig:
+    """Return an arXiv content config with representative sources/ranking."""
     return ArxivIntelConfig.from_dict(
         {
             "sources": {
@@ -33,6 +36,7 @@ def _config() -> ArxivIntelConfig:
 
 
 def test_build_search_query_uses_categories_and_terms() -> None:
+    """The search query combines categories and quoted multi-word terms."""
     query = build_search_query(_config())
 
     assert "cat:cs.AI" in query
@@ -41,6 +45,7 @@ def test_build_search_query_uses_categories_and_terms() -> None:
 
 
 def test_parse_feed_extracts_abstract_metadata() -> None:
+    """parse_feed extracts id, title, authors, and primary category."""
     payload = b"""<?xml version="1.0" encoding="UTF-8"?>
     <feed xmlns="http://www.w3.org/2005/Atom" xmlns:arxiv="http://arxiv.org/schemas/atom">
       <entry>
@@ -66,6 +71,7 @@ def test_parse_feed_extracts_abstract_metadata() -> None:
 
 
 def test_score_paper_weights_loopcraft_topics() -> None:
+    """score_paper rewards configured loopcraft topic keywords."""
     paper = {
         "id": "2606.12345v1",
         "title": "Recursive Self-Improvement for Agent Harnesses",
@@ -81,6 +87,7 @@ def test_score_paper_weights_loopcraft_topics() -> None:
 
 
 def test_rank_papers_filters_low_score_and_sorts() -> None:
+    """rank_papers drops sub-threshold papers and keeps the relevant one."""
     papers = [
         {"id": "1v1", "title": "Wireless Systems", "abstract": "wireless", "categories": ["cs.IT"]},
         {"id": "2v1", "title": "Agent Harness", "abstract": "agent harness", "categories": ["cs.AI"]},
@@ -93,6 +100,7 @@ def test_rank_papers_filters_low_score_and_sorts() -> None:
 
 
 def test_render_digest_links_abstract_and_pdf() -> None:
+    """The digest includes abstract, PDF, and comment code links."""
     markdown = render_digest(
         [
             {
@@ -120,6 +128,7 @@ def test_render_digest_links_abstract_and_pdf() -> None:
 
 
 def test_arxiv_output_defaults_are_memory_state_paths() -> None:
+    """Default arXiv output paths point at the memory ledger state tree."""
     config = ArxivIntelConfig.from_dict({})
     assert config.output.seen_path.as_posix() == "state/research/arxiv/seen.json"
     assert config.output.papers_path.as_posix() == "state/research/arxiv/papers.jsonl"
@@ -128,12 +137,14 @@ def test_arxiv_output_defaults_are_memory_state_paths() -> None:
 
 
 def test_arxiv_loads_yaml_content_config() -> None:
+    """The shipped arXiv YAML content config loads with expected values."""
     config = ArxivIntelConfig.load(REPO_ROOT / "config" / "arxiv_intel.yaml")
     assert "cs.AI" in config.sources.categories
     assert "recursive self-improvement" in config.ranking.keywords
 
 
 def test_arxiv_store_uses_json_ledger_files(tmp_path) -> None:
+    """The arXiv store persists papers/seen ids as JSON(L) in the ledger."""
     config = LoopcraftConfig(source_path=tmp_path / "src", memory_path=tmp_path / "mem")
     output = OutputPaths(
         seen_path=Path("state/seen.json"),

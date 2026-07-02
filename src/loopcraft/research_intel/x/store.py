@@ -19,6 +19,12 @@ class IntelStore:
     """
 
     def __init__(self, loopcraft: LoopcraftConfig, output: OutputPaths) -> None:
+        """Resolve ledger paths from config and ensure their parents exist.
+
+        Args:
+            loopcraft: Control-plane config used to resolve ``state/`` paths.
+            output: Configured X output paths (seen/posts/source-state/digests).
+        """
         self.loopcraft = loopcraft
         self.output = output
         self.seen_path = self.resolve(output.seen_path)
@@ -97,11 +103,13 @@ class IntelStore:
         return markdown_path, json_path
 
     def latest_seen_id(self, source_key: str) -> str | None:
+        """Return the stored high-water post id for a source key, if any."""
         state = self._source_state()
         value = state.get(source_key)
         return str(value) if value else None
 
     def remember_source_highwater(self, source_key: str, posts: list[dict[str, Any]]) -> None:
+        """Persist the max post id seen for a source key as its high-water mark."""
         ids = [int(post["id"]) for post in posts if str(post.get("id", "")).isdigit()]
         if not ids:
             return
@@ -114,6 +122,7 @@ class IntelStore:
         )
 
     def save_posts(self, posts: list[dict[str, Any]]) -> None:
+        """Merge ``posts`` into the JSONL post store, deduped by id."""
         existing: dict[str, dict[str, Any]] = {}
         for record in read_jsonl(self.posts_path):
             if record.get("id"):
@@ -125,6 +134,7 @@ class IntelStore:
         write_jsonl(self.posts_path, existing.values())
 
     def mark_seen(self, post_ids: Iterable[str]) -> None:
+        """Add ``post_ids`` to the persisted seen-id set."""
         seen = self.seen_ids()
         seen.update(str(post_id) for post_id in post_ids)
         self.seen_path.write_text(
@@ -133,12 +143,14 @@ class IntelStore:
         )
 
     def seen_ids(self) -> set[str]:
+        """Return the set of post ids already seen in prior runs."""
         if not self.seen_path.exists():
             return set()
         raw = json.loads(self.seen_path.read_text(encoding="utf-8"))
         return {str(value) for value in raw}
 
     def _source_state(self) -> dict[str, str]:
+        """Return the per-source high-water mark map from the ledger."""
         if not self.source_state_path.exists():
             return {}
         raw = json.loads(self.source_state_path.read_text(encoding="utf-8"))

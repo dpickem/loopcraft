@@ -30,10 +30,24 @@ class ArxivApiError(RuntimeError):
 
 
 class ArxivClient:
+    """Thin client over the arXiv Atom export API."""
+
     def __init__(self, *, base_url: str = "https://export.arxiv.org/api/query") -> None:
+        """Store the API base URL used for search requests."""
         self.base_url = base_url
 
     def search_recent(self, config: ArxivIntelConfig) -> list[dict[str, Any]]:
+        """Fetch and parse the most recent papers for the configured query.
+
+        Args:
+            config: arXiv content config (categories, search terms, max results).
+
+        Returns:
+            Parsed paper metadata dicts, newest submission first.
+
+        Raises:
+            ArxivApiError: On an HTTP or network failure.
+        """
         params = {
             "search_query": build_search_query(config),
             "start": 0,
@@ -45,6 +59,11 @@ class ArxivClient:
         return parse_feed(payload)
 
     def _get(self, params: dict[str, Any]) -> bytes:
+        """Perform the GET request and translate urllib errors to ArxivApiError.
+
+        Raises:
+            ArxivApiError: On an HTTP status error or network failure.
+        """
         url = f"{self.base_url}?{urlencode(params)}"
         request = Request(url, headers={"User-Agent": _USER_AGENT})
         try:
@@ -57,6 +76,15 @@ class ArxivClient:
 
 
 def build_search_query(config: ArxivIntelConfig) -> str:
+    """Build the arXiv ``search_query`` string from categories and terms.
+
+    Args:
+        config: arXiv content config providing categories and search terms.
+
+    Returns:
+        A combined ``(cat:...) AND (all:...)`` query, or a safe default when the
+        config declares neither categories nor terms.
+    """
     category_query = " OR ".join(f"cat:{category}" for category in config.sources.categories)
     term_query = " OR ".join(_term_query(term) for term in config.sources.search_terms)
     if category_query and term_query:
@@ -84,6 +112,14 @@ def _read_response(request: Request) -> bytes:
 
 
 def parse_feed(payload: bytes) -> list[dict[str, Any]]:
+    """Parse an arXiv Atom feed into a list of paper metadata dicts.
+
+    Args:
+        payload: Raw Atom XML bytes returned by the API.
+
+    Returns:
+        One dict per ``<entry>`` with id, title, abstract, links, and metadata.
+    """
     root = ET.fromstring(payload)
     papers: list[dict[str, Any]] = []
     for entry in root.findall(f"{ATOM_NS}entry"):
@@ -110,6 +146,7 @@ def parse_feed(payload: bytes) -> list[dict[str, Any]]:
 
 
 def _term_query(term: str) -> str:
+    """Return an ``all:`` field query for one term, quoting multi-word terms."""
     escaped = term.replace('"', "")
     if " " in escaped or "-" in escaped:
         return f'all:"{escaped}"'
@@ -117,6 +154,7 @@ def _term_query(term: str) -> str:
 
 
 def _links(entry: ET.Element) -> dict[str, str]:
+    """Extract the alternate (abstract) and PDF links from an entry."""
     links: dict[str, str] = {}
     for link in entry.findall(f"{ATOM_NS}link"):
         rel = link.attrib.get("rel", "")
@@ -130,16 +168,19 @@ def _links(entry: ET.Element) -> dict[str, str]:
 
 
 def _primary_category(entry: ET.Element) -> str:
+    """Return the arXiv primary category term, or empty string if absent."""
     primary = entry.find(f"{ARXIV_NS}primary_category")
     return primary.attrib.get("term", "") if primary is not None else ""
 
 
 def _text(entry: ET.Element, tag: str) -> str:
+    """Return the text of an Atom child tag, or empty string if missing."""
     child = entry.find(f"{ATOM_NS}{tag}")
     return child.text or "" if child is not None else ""
 
 
 def _extension_text(entry: ET.Element, tag: str) -> str | None:
+    """Return cleaned text of an arXiv-extension tag, or None if missing."""
     child = entry.find(f"{ARXIV_NS}{tag}")
     if child is None or not child.text:
         return None
@@ -147,6 +188,7 @@ def _extension_text(entry: ET.Element, tag: str) -> str | None:
 
 
 def _parse_datetime(value: str) -> str | None:
+    """Normalize an ISO timestamp to UTC ISO format; pass through on failure."""
     if not value:
         return None
     try:
@@ -156,5 +198,6 @@ def _parse_datetime(value: str) -> str | None:
 
 
 def _clean(value: str) -> str:
+    """Collapse runs of whitespace in ``value`` to single spaces."""
     return " ".join(value.split())
 

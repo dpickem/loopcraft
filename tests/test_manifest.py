@@ -1,3 +1,5 @@
+"""Tests for manifest parsing, validation, and dependency-cycle detection."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -16,6 +18,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 def _minimal(**overrides) -> dict:
+    """Return a minimal valid manifest mapping, with ``overrides`` applied."""
     base = {
         "id": "demo",
         "name": "Demo",
@@ -31,11 +34,13 @@ def _minimal(**overrides) -> dict:
 
 
 def test_valid_manifest_has_no_problems() -> None:
+    """A minimal well-formed manifest reports no validation problems."""
     manifest = LoopManifest.from_dict(_minimal())
     assert manifest.validate() == []
 
 
 def test_missing_required_fields_are_reported() -> None:
+    """Missing id and logic.skill are surfaced by validation."""
     manifest = LoopManifest.from_dict(_minimal(id="", logic={}))
     problems = manifest.validate()
     assert any("id" in p for p in problems)
@@ -43,6 +48,7 @@ def test_missing_required_fields_are_reported() -> None:
 
 
 def test_enum_validation() -> None:
+    """Invalid enum values for tier/locus raise ManifestError."""
     with pytest.raises(ManifestError) as exc:
         LoopManifest.from_dict(_minimal(tier="boss", locus="moon"))
     assert "tier" in str(exc.value)
@@ -50,11 +56,13 @@ def test_enum_validation() -> None:
 
 
 def test_cron_requires_at() -> None:
+    """A cron cadence without ``at`` is reported as invalid."""
     manifest = LoopManifest.from_dict(_minimal(cadence={"type": "cron"}))
     assert any("cadence.at" in p for p in manifest.validate())
 
 
 def test_effective_vendor_falls_back_to_default() -> None:
+    """effective_vendor uses the manifest vendor, else the global default."""
     manifest = LoopManifest.from_dict(_minimal(runtime={}))
     assert manifest.effective_vendor("claude") == "claude"
     pinned = LoopManifest.from_dict(_minimal(runtime={"vendor": "codex"}))
@@ -62,6 +70,7 @@ def test_effective_vendor_falls_back_to_default() -> None:
 
 
 def test_cycle_detection_via_io_contract() -> None:
+    """A producer/consumer loop in the I/O contract is flagged as a cycle."""
     a = LoopManifest.from_dict(_minimal(id="a", inputs=["state/x"], outputs=["state/y"]))
     b = LoopManifest.from_dict(_minimal(id="b", inputs=["state/y"], outputs=["state/x"]))
     problems = _detect_cycles([a, b]).messages()
@@ -69,12 +78,14 @@ def test_cycle_detection_via_io_contract() -> None:
 
 
 def test_no_cycle_for_linear_chain() -> None:
+    """A linear producer chain is not reported as a cycle."""
     a = LoopManifest.from_dict(_minimal(id="a", outputs=["state/y"]))
     b = LoopManifest.from_dict(_minimal(id="b", inputs=["state/y"], outputs=["state/z"]))
     assert _detect_cycles([a, b]).ok
 
 
 def test_repo_slack_triage_manifest_is_valid() -> None:
+    """All shipped manifests load cleanly and include the expected ids."""
     manifests, problems = load_all(REPO_ROOT / "loops")
     assert problems == []
     assert any(m.id == "slack-triage" for m in manifests)
@@ -93,6 +104,7 @@ def test_slack_triage_declares_seen_cursor() -> None:
 
 
 def test_research_intel_manifests_archive_latest_outputs() -> None:
+    """The arXiv/X manifests reference content configs and archive history."""
     manifests, _ = load_all(REPO_ROOT / "loops")
     arxiv = next(m for m in manifests if m.id == "arxiv-intel")
     x_intel = next(m for m in manifests if m.id == "x-intel")
@@ -105,6 +117,7 @@ def test_research_intel_manifests_archive_latest_outputs() -> None:
 
 
 def test_self_cursor_is_not_a_cycle() -> None:
+    """A loop reading and writing its own cursor is not a dependency cycle."""
     loop = LoopManifest.from_dict(
         _minimal(inputs=["state/slack/seen.json"], outputs=["state/slack/seen.json"])
     )
@@ -116,20 +129,24 @@ def test_self_cursor_is_not_a_cycle() -> None:
     [(None, None), ("30s", 30), ("10m", 600), ("1h", 3600), ("  5m ", 300)],
 )
 def test_parse_duration_valid(value, expected) -> None:
+    """parse_duration converts s/m/h duration strings into seconds."""
     assert parse_duration(value) == expected
 
 
 def test_parse_duration_invalid_raises() -> None:
+    """parse_duration raises ValueError on an unparseable duration."""
     with pytest.raises(ValueError):
         parse_duration("forever")
 
 
 def test_budget_max_runtime_seconds() -> None:
+    """budget.max_runtime_s parses the configured runtime into seconds."""
     manifest = LoopManifest.from_dict(_minimal(budget={"max_runtime": "10m"}))
     assert manifest.budget.max_runtime_s == 600
 
 
 def test_invalid_max_runtime_reported() -> None:
+    """An unparseable budget.max_runtime is reported by validation."""
     manifest = LoopManifest.from_dict(_minimal(budget={"max_runtime": "soon"}))
     assert any("max_runtime" in p for p in manifest.validate())
 
@@ -161,6 +178,7 @@ def test_unprefixed_ledger_path_requires_state_prefix() -> None:
 
 
 def test_state_prefixed_paths_are_accepted() -> None:
+    """Properly ``state/``-prefixed inputs and outputs validate cleanly."""
     ok = LoopManifest.from_dict(
         _minimal(inputs=["state/slack/seen.json"], outputs=["state/slack/out.md"])
     )
@@ -193,6 +211,7 @@ def test_unsafe_skill_paths_are_reported() -> None:
 
 
 def test_unknown_upstream_loop_is_reported() -> None:
+    """A depends_on.loops reference to an unknown loop is reported."""
     manifest = LoopManifest.from_dict(_minimal(depends_on={"loops": ["ghost"]}))
     # load_all wires the cross-manifest checks; emulate via a temp single-loop set.
     _, problems = _single(manifest)
@@ -200,7 +219,7 @@ def test_unknown_upstream_loop_is_reported() -> None:
 
 
 def _single(manifest: LoopManifest):
-    # Helper mirroring load_all's cross-checks for a single in-memory manifest.
+    """Mirror load_all's cross-manifest checks for one in-memory manifest."""
     problems: list[str] = []
     ids = {manifest.id}
     for upstream in manifest.depends_on.loops:

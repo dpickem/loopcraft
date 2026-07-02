@@ -10,6 +10,15 @@ from loopcraft.research_intel.arxiv.config import ArxivIntelConfig
 
 
 def rank_papers(papers: list[dict[str, Any]], config: ArxivIntelConfig) -> list[dict[str, Any]]:
+    """Dedupe, score, filter, and sort papers by relevance.
+
+    Args:
+        papers: Raw fetched paper dicts.
+        config: arXiv content config (score weights, min score).
+
+    Returns:
+        Papers scoring at least ``min_score``, highest score (then newest) first.
+    """
     ranked = [score_paper(paper, config) for paper in _dedupe(papers)]
     ranked = [paper for paper in ranked if paper.get("score", 0) >= config.ranking.min_score]
     ranked.sort(key=lambda paper: (paper.get("score", 0), paper.get("published") or ""), reverse=True)
@@ -17,6 +26,16 @@ def rank_papers(papers: list[dict[str, Any]], config: ArxivIntelConfig) -> list[
 
 
 def score_paper(paper: dict[str, Any], config: ArxivIntelConfig, *, now: datetime | None = None) -> dict[str, Any]:
+    """Score one paper by keyword, category, and recency signals.
+
+    Args:
+        paper: Paper metadata dict.
+        config: arXiv content config providing keyword weights and knobs.
+        now: Reference time for recency (defaults to current UTC time).
+
+    Returns:
+        A copy of ``paper`` with ``score`` and ``score_reasons`` added.
+    """
     now = now or datetime.now(UTC)
     scored = dict(paper)
     text = f"{paper.get('title', '')} {paper.get('abstract', '')}".lower()
@@ -51,6 +70,7 @@ def score_paper(paper: dict[str, Any], config: ArxivIntelConfig, *, now: datetim
 
 
 def _dedupe(papers: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Collapse arXiv versions (``2401.01v2``) to one entry per base id."""
     deduped: dict[str, dict[str, Any]] = {}
     for paper in papers:
         paper_id = str(paper.get("id", ""))
@@ -61,12 +81,14 @@ def _dedupe(papers: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def _contains_term(text: str, term: str) -> bool:
+    """Return whether ``term`` appears in ``text`` (word-boundary aware)."""
     if " " in term or "-" in term:
         return term in text
     return re.search(rf"\b{re.escape(term)}\b", text) is not None
 
 
 def _parse_datetime(value: Any) -> datetime | None:
+    """Parse an ISO timestamp to a UTC datetime, or None if unparseable."""
     if not value:
         return None
     try:

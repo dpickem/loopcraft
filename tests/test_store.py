@@ -1,3 +1,5 @@
+"""Tests for the ledger store, run records, and state-path resolution."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -9,6 +11,7 @@ from loopcraft.store import RunRecord, Store
 
 
 def _config(tmp_path: Path) -> LoopcraftConfig:
+    """Return a LoopcraftConfig rooted at temp source/memory trees."""
     return LoopcraftConfig(
         source_path=tmp_path / "src",
         memory_path=tmp_path / "mem",
@@ -17,6 +20,7 @@ def _config(tmp_path: Path) -> LoopcraftConfig:
 
 
 def test_state_prefix_maps_into_ledger(tmp_path: Path) -> None:
+    """A ``state/`` path resolves into the memory ledger and round-trips."""
     config = _config(tmp_path)
     store = Store(config)
     path = store.write_state("state/slack/triage-latest.md", "# hi\n")
@@ -27,6 +31,7 @@ def test_state_prefix_maps_into_ledger(tmp_path: Path) -> None:
 
 
 def test_ledger_relative_path_without_prefix(tmp_path: Path) -> None:
+    """A bare ledger-relative path resolves under the ledger directory."""
     config = _config(tmp_path)
     store = Store(config)
     path = store.write_state("research/themes.md", "x")
@@ -34,6 +39,7 @@ def test_ledger_relative_path_without_prefix(tmp_path: Path) -> None:
 
 
 def test_append_jsonl(tmp_path: Path) -> None:
+    """append_jsonl appends one line per record to a ledger JSONL file."""
     store = Store(_config(tmp_path))
     store.append_jsonl("research/queue.jsonl", {"a": 1})
     store.append_jsonl("research/queue.jsonl", {"a": 2})
@@ -46,12 +52,14 @@ def test_append_jsonl(tmp_path: Path) -> None:
     ["/tmp/out.md", "state/../../escape.md", "../escape.md", "state/..", ""],
 )
 def test_resolve_state_path_rejects_escapes(tmp_path: Path, bad: str) -> None:
+    """Absolute, traversing, and empty state paths are rejected."""
     config = _config(tmp_path)
     with pytest.raises(StatePathError):
         config.resolve_state_path(bad)
 
 
 def test_store_write_rejects_escaping_path(tmp_path: Path) -> None:
+    """Store writes reject paths that would escape the ledger tree."""
     store = Store(_config(tmp_path))
     with pytest.raises(StatePathError):
         store.write_state("../../escape.md", "x")
@@ -60,12 +68,14 @@ def test_store_write_rejects_escaping_path(tmp_path: Path) -> None:
 
 
 def test_safe_state_relpath_strips_prefixes() -> None:
+    """safe_state_relpath strips an optional state/ or ledger/ prefix."""
     assert safe_state_relpath("state/slack/x.md") == "slack/x.md"
     assert safe_state_relpath("ledger/runs/y.json") == "runs/y.json"
     assert safe_state_relpath("research/themes.md") == "research/themes.md"
 
 
 def test_resolve_state_template_expands_run_id_and_date(tmp_path: Path) -> None:
+    """resolve_state_template expands {{run_id}} and {{date}} placeholders."""
     config = _config(tmp_path)
     path = config.resolve_state_template(
         "state/slack/history/{{date}}/{{run_id}}.md",
@@ -83,6 +93,7 @@ def test_resolve_state_template_expands_run_id_and_date(tmp_path: Path) -> None:
 
 
 def test_record_and_read_runs(tmp_path: Path) -> None:
+    """A recorded run is written with a loop-prefixed name and read back."""
     store = Store(_config(tmp_path))
     rid = store.new_run_id()
     record = RunRecord(
@@ -105,6 +116,7 @@ def test_record_and_read_runs(tmp_path: Path) -> None:
 
 
 def test_reads_legacy_run_record_filenames(tmp_path: Path) -> None:
+    """Run records written with the legacy filename scheme are still read."""
     store = Store(_config(tmp_path))
     rid = "20260701T120000Z-legacy"
     store.config.runs_dir.mkdir(parents=True)
@@ -128,6 +140,7 @@ def test_reads_legacy_run_record_filenames(tmp_path: Path) -> None:
 
 
 def test_config_worktree_keep_last_defaults_and_clamps(tmp_path: Path, monkeypatch) -> None:
+    """worktree_keep_last is clamped to 0..100 across toml/env sources."""
     source = tmp_path / "src"
     source.mkdir()
     (source / "loopcraft.toml").write_text(
@@ -145,6 +158,7 @@ def test_config_worktree_keep_last_defaults_and_clamps(tmp_path: Path, monkeypat
 
 
 def test_config_loads_cli_dependency_table(tmp_path: Path, monkeypatch) -> None:
+    """CLI dependencies load from [tool.loopcraft.dependencies] in pyproject."""
     source = tmp_path / "src"
     source.mkdir()
     (source / "loopcraft.toml").write_text(

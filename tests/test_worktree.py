@@ -1,3 +1,5 @@
+"""Tests for staging loop assets into an isolated run worktree."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -10,6 +12,7 @@ from loopcraft.worktree import stage_loop_assets
 
 
 def _source_tree(tmp_path: Path) -> Path:
+    """Build a minimal source tree (skill dir + manifest) and return its root."""
     source = tmp_path / "src"
     skill_dir = source / "skills" / "slack-triage"
     skill_dir.mkdir(parents=True)
@@ -22,6 +25,7 @@ def _source_tree(tmp_path: Path) -> Path:
 
 
 def test_stage_loop_assets_copies_skill_dir_and_manifest(tmp_path: Path) -> None:
+    """Staging copies the skill directory and manifest into the worktree."""
     source = _source_tree(tmp_path)
     config = LoopcraftConfig(source_path=source, memory_path=tmp_path / "mem")
     manifest = LoopManifest.from_dict(
@@ -47,6 +51,7 @@ def test_stage_loop_assets_copies_skill_dir_and_manifest(tmp_path: Path) -> None
 
 
 def test_all_staged_paths_stay_under_workdir(tmp_path: Path) -> None:
+    """Every staged path is contained within the run worktree."""
     source = _source_tree(tmp_path)
     config = LoopcraftConfig(source_path=source, memory_path=tmp_path / "mem")
     manifest = LoopManifest.from_dict(

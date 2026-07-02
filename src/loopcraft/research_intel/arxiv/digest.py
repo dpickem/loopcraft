@@ -13,6 +13,17 @@ def render_digest(
     *,
     generated_at: datetime,
 ) -> str:
+    """Render the arXiv digest markdown.
+
+    Args:
+        top_papers: Ranked papers to feature.
+        raw_papers: All fetched papers (used for the summary counts).
+        errors: Fetch/processing errors to surface.
+        generated_at: Digest generation timestamp.
+
+    Returns:
+        The digest as a markdown string.
+    """
     lines = [
         f"# Daily arXiv Intelligence - {generated_at.date().isoformat()}",
         "",
@@ -35,6 +46,7 @@ def render_digest(
 
 
 def _render_paper(paper: dict[str, Any]) -> str:
+    """Render one ranked paper as a markdown bullet with metadata and abstract."""
     title = paper.get("title", "Untitled")
     authors = ", ".join(paper.get("authors", [])[:6])
     if len(paper.get("authors", [])) > 6:

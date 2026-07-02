@@ -13,6 +13,17 @@ def render_digest(
     *,
     generated_at: datetime,
 ) -> str:
+    """Render the X digest markdown.
+
+    Args:
+        top_posts: Ranked posts to feature (frontier-lab posts get a section).
+        raw_posts: All fetched posts (used for the summary counts).
+        errors: Fetch/processing errors to surface.
+        generated_at: Digest generation timestamp.
+
+    Returns:
+        The digest as a markdown string.
+    """
     lines = [
         f"# Daily X Intelligence - {generated_at.date().isoformat()}",
         "",
@@ -41,6 +52,7 @@ def render_digest(
 
 
 def _render_post(post: dict[str, Any]) -> str:
+    """Render one ranked post as a markdown bullet with links and reasons."""
     author = post.get("author", {})
     username = author.get("username", "unknown")
     name = author.get("name", username)
@@ -66,6 +78,7 @@ def _render_post(post: dict[str, Any]) -> str:
 
 
 def _external_links(post: dict[str, Any]) -> list[dict[str, str]]:
+    """Return de-duplicated external links from a post, excluding its own URL."""
     links: list[dict[str, str]] = []
     seen: set[str] = set()
     urls = (post.get("entities") or {}).get("urls") or []

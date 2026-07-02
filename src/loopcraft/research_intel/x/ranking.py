@@ -10,6 +10,19 @@ from loopcraft.research_intel.x.config import IntelConfig
 
 
 def rank_posts(posts: list[dict[str, Any]], config: IntelConfig) -> list[dict[str, Any]]:
+    """Dedupe, score, filter, sort, and per-author cap posts.
+
+    Exact-id and near-duplicate (same author + normalized text) posts are
+    collapsed, each surviving post is scored, low-scoring non-frontier posts are
+    dropped, and results are sorted by score then capped per author.
+
+    Args:
+        posts: Raw fetched post dicts.
+        config: X content config (score weights, thresholds, caps).
+
+    Returns:
+        Ranked, per-author-capped posts, highest score first.
+    """
     deduped: dict[str, dict[str, Any]] = {}
     for post in posts:
         post_id = post.get("id")
@@ -35,6 +48,17 @@ def rank_posts(posts: list[dict[str, Any]], config: IntelConfig) -> list[dict[st
 
 
 def score_post(post: dict[str, Any], config: IntelConfig, *, now: datetime | None = None) -> dict[str, Any]:
+    """Score one post by frontier-lab, keyword, engagement, and recency signals.
+
+    Args:
+        post: Post dict (with an ``author`` sub-dict).
+        config: X content config providing weights and thresholds.
+        now: Reference time for recency (defaults to current UTC time).
+
+    Returns:
+        A copy of ``post`` with ``score``, ``score_reasons``, and
+        ``frontier_lab`` populated.
+    """
     now = now or datetime.now(UTC)
     scored = dict(post)
     author = dict(scored.get("author") or {})
@@ -94,6 +118,7 @@ def score_post(post: dict[str, Any], config: IntelConfig, *, now: datetime | Non
 
 
 def _frontier_lab(handle: str, author: dict[str, Any], config: IntelConfig) -> str | None:
+    """Return the frontier lab a handle is affiliated with, or None."""
     for lab, handles in config.frontier_labs.affiliations.items():
         if handle in handles:
             return lab
@@ -101,6 +126,7 @@ def _frontier_lab(handle: str, author: dict[str, Any], config: IntelConfig) -> s
 
 
 def _cap_posts_per_author(posts: list[dict[str, Any]], max_posts: int) -> list[dict[str, Any]]:
+    """Keep at most ``max_posts`` per author, preserving input order."""
     if max_posts <= 0:
         return posts
     counts: dict[str, int] = {}
@@ -115,25 +141,30 @@ def _cap_posts_per_author(posts: list[dict[str, Any]], max_posts: int) -> list[d
 
 
 def _normalize_text(text: str) -> str:
+    """Lowercase text and strip URLs/whitespace for near-duplicate matching."""
     no_urls = re.sub(r"https?://\S+", "", text.lower())
     return " ".join(no_urls.split())
 
 
 def _has_ai_context(text: str, config: IntelConfig) -> bool:
+    """Return whether the text mentions any configured AI-context keyword."""
     return any(_contains_term(text, term) for term in config.ranking.ai_context_keywords)
 
 
 def _contains_term(text: str, term: str) -> bool:
+    """Return whether ``term`` appears in ``text`` (word-boundary aware)."""
     if " " in term or "-" in term:
         return term in text
     return re.search(rf"\b{re.escape(term)}\b", text) is not None
 
 
 def _is_reply(post: dict[str, Any]) -> bool:
+    """Return whether the post is a reply to another tweet."""
     return any(ref.get("type") == "replied_to" for ref in post.get("referenced_tweets", []) or [])
 
 
 def _parse_datetime(value: Any) -> datetime | None:
+    """Parse an ISO timestamp to a UTC datetime, or None if unparseable."""
     if not value:
         return None
     try:

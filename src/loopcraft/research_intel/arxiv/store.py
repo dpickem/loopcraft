@@ -19,6 +19,12 @@ class ArxivStore:
     """
 
     def __init__(self, loopcraft: LoopcraftConfig, output: OutputPaths) -> None:
+        """Resolve ledger paths from config and ensure their parents exist.
+
+        Args:
+            loopcraft: Control-plane config used to resolve ``state/`` paths.
+            output: Configured arXiv output paths (seen/papers/digests).
+        """
         self.loopcraft = loopcraft
         self.output = output
         self.seen_path = self.resolve(output.seen_path)
@@ -66,6 +72,7 @@ class ArxivStore:
         return markdown_path, json_path
 
     def save_papers(self, papers: list[dict[str, Any]]) -> None:
+        """Merge ``papers`` into the JSONL paper store, deduped by id."""
         existing: dict[str, dict[str, Any]] = {}
         for record in read_jsonl(self.papers_path):
             if record.get("id"):
@@ -77,6 +84,7 @@ class ArxivStore:
         write_jsonl(self.papers_path, existing.values())
 
     def mark_seen(self, paper_ids: Iterable[str]) -> None:
+        """Add ``paper_ids`` to the persisted seen-id set."""
         seen = self.seen_ids()
         seen.update(str(paper_id) for paper_id in paper_ids)
         self.seen_path.write_text(
@@ -85,6 +93,7 @@ class ArxivStore:
         )
 
     def seen_ids(self) -> set[str]:
+        """Return the set of paper ids already seen in prior runs."""
         if not self.seen_path.exists():
             return set()
         raw = json.loads(self.seen_path.read_text(encoding="utf-8"))
