@@ -1,0 +1,1872 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Loopcraft — A Field Guide to Loop Engineering</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f5f1ea;
+      --bg-2: #eee9df;
+      --panel: #fbf8f1;
+      --panel-2: #eee9df;
+      --ink: #191713;
+      --muted: #57534b;
+      --soft: #6f6859;
+      --line: #d8d1c5;
+      --green: #748b5d;
+      --blue: #7c8fa6;
+      --violet: #8c829b;
+      --amber: #c88a61;
+      --red: #c96f5d;
+      --cyan: #6f8c8d;
+      --code-bg: #eee8dc;
+      --shadow: 0 14px 34px rgba(53, 45, 36, 0.12);
+      font-family:
+        Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+        "Segoe UI", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background:
+        radial-gradient(circle at 88% 8%, rgba(205, 119, 87, 0.08), transparent 22rem),
+        radial-gradient(circle at 12% 0%, rgba(116, 139, 93, 0.07), transparent 30rem),
+        linear-gradient(180deg, #f8f5ee 0%, var(--bg) 100%);
+      color: var(--ink);
+      line-height: 1.62;
+    }
+
+    a { color: #7f533f; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    h1, h2, h3, p { margin-top: 0; }
+    ul, ol { padding-left: 22px; }
+    li { margin: 6px 0; color: var(--muted); }
+    li strong, p strong { color: var(--ink); }
+
+    .page {
+      width: min(1180px, calc(100vw - 32px));
+      margin: 0 auto;
+      padding: 48px 0 72px;
+    }
+
+    .hero {
+      position: relative;
+      overflow: hidden;
+      padding: 36px;
+      border: 1px solid var(--line);
+      border-radius: 28px;
+      background:
+        linear-gradient(135deg, #fbf8f1, #f3ede1),
+        radial-gradient(circle at 82% 12%, rgba(116, 139, 93, 0.12), transparent 22rem);
+      box-shadow: var(--shadow);
+    }
+
+    .hero::after {
+      content: "";
+      position: absolute;
+      inset: auto -80px -140px auto;
+      width: 420px;
+      height: 420px;
+      border-radius: 999px;
+      background: conic-gradient(from 180deg, rgba(116, 139, 93, 0.24), rgba(124, 143, 166, 0.28), rgba(140, 130, 155, 0.24), rgba(116, 139, 93, 0.24));
+      filter: blur(8px);
+      opacity: 0.7;
+      pointer-events: none;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      gap: 8px;
+      align-items: center;
+      margin: 0 0 18px;
+      padding: 7px 11px;
+      border: 1px solid rgba(116, 139, 93, 0.35);
+      border-radius: 999px;
+      color: var(--green);
+      background: rgba(116, 139, 93, 0.08);
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.09em;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      max-width: 920px;
+      margin-bottom: 18px;
+      font-size: clamp(36px, 6vw, 64px);
+      line-height: 0.98;
+      letter-spacing: -0.05em;
+    }
+
+    .lead {
+      max-width: 900px;
+      color: #4a4640;
+      font-size: clamp(17px, 1.8vw, 22px);
+    }
+
+    .quick-facts, .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(245px, 1fr));
+      gap: 20px;
+    }
+
+    .fact, .mini, .card, .note {
+      border: 1px solid var(--line);
+      background: var(--panel);
+      box-shadow: 0 14px 36px rgba(0, 0, 0, 0.2);
+      backdrop-filter: blur(14px);
+    }
+
+    .fact { min-height: 118px; padding: 18px; border-radius: 20px; }
+
+    .fact strong {
+      display: block;
+      margin-bottom: 7px;
+      color: var(--ink);
+      font-size: 21px;
+      letter-spacing: -0.03em;
+    }
+
+    .fact span { color: var(--muted); font-size: 14px; }
+
+    section { margin-top: 34px; }
+    section[id] { scroll-margin-top: 18px; }
+
+    .card {
+      padding: 26px;
+      border-radius: 28px;
+    }
+
+    .card > p:last-child { margin-bottom: 0; }
+    .card p { color: var(--muted); }
+    .card h2 {
+      margin: 0 0 16px;
+      font-size: clamp(24px, 3.6vw, 38px);
+      line-height: 1;
+      letter-spacing: -0.04em;
+    }
+
+    .card h3 {
+      margin: 22px 0 8px;
+      font-size: 17px;
+      letter-spacing: -0.02em;
+    }
+
+    .card h4 {
+      margin: 18px 0 8px;
+      color: var(--blue);
+      font-size: 13px;
+      font-weight: 900;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+
+    .mini {
+      border-radius: 20px;
+      padding: 20px;
+    }
+
+    .mini b {
+      display: block;
+      margin-bottom: 8px;
+      color: var(--ink);
+      font-size: 17px;
+      letter-spacing: -0.02em;
+    }
+
+    .mini span { color: var(--muted); font-size: 14px; }
+
+    .mini code {
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }
+
+    .note {
+      margin: 16px 0 22px;
+      padding: 16px 18px;
+      border-radius: 18px;
+      background: rgba(124, 143, 166, 0.12);
+      border-color: rgba(124, 143, 166, 0.4);
+      color: #3f5063;
+    }
+
+    .note.good {
+      background: rgba(116, 139, 93, 0.12);
+      border-color: rgba(116, 139, 93, 0.35);
+      color: #465b35;
+    }
+
+    .note.warn {
+      background: rgba(200, 138, 97, 0.1);
+      border-color: rgba(200, 138, 97, 0.3);
+      color: #8a5a30;
+    }
+
+    .note.risk {
+      background: rgba(201, 111, 93, 0.1);
+      border-color: rgba(201, 111, 93, 0.3);
+      color: #884036;
+    }
+
+    .note + p,
+    .note + .grid,
+    .note + table,
+    .note + details,
+    .note + h3,
+    .note + ul,
+    .note + ol {
+      margin-top: 22px;
+    }
+
+    details.explain {
+      margin: 22px 0;
+      padding: 0;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: linear-gradient(180deg, rgba(53, 45, 36, 0.045), rgba(53, 45, 36, 0.015));
+      overflow: hidden;
+    }
+
+    details.explain[open] {
+      background: rgba(53, 45, 36, 0.07);
+      border-color: rgba(111, 140, 141, 0.3);
+    }
+
+    details.explain summary {
+      cursor: pointer;
+      display: block;
+      padding: 16px 18px;
+      color: var(--ink);
+      font-weight: 800;
+      letter-spacing: -0.01em;
+      outline: none;
+    }
+
+    details.explain summary::marker {
+      color: var(--blue);
+    }
+
+    details.explain summary:focus-visible {
+      box-shadow: inset 0 0 0 2px rgba(200, 138, 97, 0.8);
+      border-radius: 16px;
+    }
+
+    details.explain > :not(summary) {
+      margin: 0 18px 16px;
+    }
+
+    details.explain > summary + * {
+      margin-top: 0;
+    }
+
+    details.explain pre {
+      margin: 0 18px 16px;
+    }
+
+    details.explain p,
+    details.explain li {
+      color: var(--muted);
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 6px 10px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      color: var(--muted);
+      background: rgba(53, 45, 36, 0.04);
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      white-space: nowrap;
+    }
+
+    .pill.green { color: #465b35; background: rgba(116, 139, 93, 0.12); }
+    .pill.purple { color: #5b5367; background: rgba(140, 130, 155, 0.14); }
+    .pill.amber { color: #8a5a30; background: rgba(200, 138, 97, 0.12); }
+    .pill.red { color: #884036; background: rgba(201, 111, 93, 0.12); }
+    .pill.blue { color: #3f5063; background: rgba(124, 143, 166, 0.14); }
+
+    code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 0.92em;
+      color: #37322b;
+      background: var(--code-bg);
+      padding: 0.1em 0.36em;
+      border-radius: 5px;
+    }
+
+    pre {
+      margin: 18px 0 22px;
+      padding: 16px 18px;
+      border-radius: 16px;
+      border: 1px solid #25324a;
+      background: #0f1b2d;
+      overflow-x: auto;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    pre code {
+      padding: 0;
+      color: #cfe6ff;
+      background: transparent;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 18px 0 22px;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      font-size: 14px;
+    }
+
+    th, td {
+      padding: 11px 12px;
+      border-bottom: 1px solid var(--line);
+      vertical-align: top;
+      text-align: left;
+    }
+
+    th {
+      color: var(--ink);
+      background: rgba(53, 45, 36, 0.06);
+      font-size: 12px;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    td { color: var(--muted); }
+    tr td:first-child { color: var(--ink); font-weight: 600; }
+
+    .meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 18px;
+    }
+
+    .flow {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 12px;
+      margin: 18px 0 22px;
+      align-items: stretch;
+    }
+
+    .flow div {
+      position: relative;
+      border: 1px solid var(--line);
+      background: linear-gradient(180deg, rgba(53, 45, 36, 0.045), rgba(53, 45, 36, 0.015));
+      border-radius: 16px;
+      padding: 14px 12px;
+      text-align: center;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 800;
+    }
+
+    .flow div small {
+      display: block;
+      margin-top: 4px;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--soft);
+    }
+
+    .muted { color: var(--muted); }
+
+    .card > .grid,
+    .card > .quick-facts {
+      margin-top: 20px;
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: 248px minmax(0, 1fr);
+      gap: 26px;
+      align-items: start;
+      margin-top: 34px;
+    }
+
+    .toc-panel {
+      position: sticky;
+      top: 18px;
+      max-height: calc(100vh - 36px);
+      overflow: auto;
+      padding: 20px 18px;
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      background: var(--panel);
+      box-shadow: 0 14px 36px rgba(0, 0, 0, 0.2);
+      backdrop-filter: blur(14px);
+    }
+
+    .toc-brand {
+      display: block;
+      margin-bottom: 14px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--line);
+      font-size: 14px;
+      font-weight: 800;
+      letter-spacing: -0.01em;
+      color: var(--ink);
+    }
+
+    .toc-brand span {
+      display: block;
+      margin-top: 2px;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--blue);
+    }
+
+    .toc-panel h2 {
+      margin: 0 0 10px;
+      color: var(--soft);
+      font-size: 12px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    #generated-toc { counter-reset: toc; display: grid; gap: 4px; }
+    .toc-group + .toc-group { margin-top: 3px; }
+
+    #generated-toc a {
+      display: block;
+      position: relative;
+      padding: 7px 8px 7px 34px;
+      border-radius: 10px;
+      color: var(--muted);
+      font-size: 13.5px;
+      line-height: 1.3;
+      counter-increment: toc;
+    }
+
+    #generated-toc a::before {
+      content: counter(toc, decimal-leading-zero);
+      position: absolute;
+      left: 8px;
+      top: 7px;
+      color: var(--soft);
+      font-size: 12px;
+      font-variant-numeric: tabular-nums;
+    }
+
+    #generated-toc a.active::before { color: var(--blue); }
+    #generated-toc a:hover { color: var(--ink); background: rgba(53, 45, 36, 0.055); text-decoration: none; }
+    #generated-toc a.active { color: #06111c; background: linear-gradient(135deg, var(--green), var(--blue)); font-weight: 900; box-shadow: 0 8px 22px rgba(124, 143, 166, 0.22); }
+    .toc-group.current > .toc-parent:not(.active) { color: var(--ink); background: rgba(116, 139, 93, 0.1); font-weight: 900; }
+    .toc-children {
+      display: none;
+      margin: 2px 0 8px 16px;
+      padding-left: 10px;
+      border-left: 1px solid var(--line);
+    }
+    .toc-group.current .toc-children { display: block; }
+    .toc-children a {
+      padding: 6px 8px 6px 10px !important;
+      font-size: 12.5px !important;
+      line-height: 1.25 !important;
+      counter-increment: none !important;
+    }
+    .toc-children a::before { content: none !important; }
+
+    .content-col { min-width: 0; counter-reset: section; }
+    .content-col > section:first-child { margin-top: 0; }
+    .content-col section[id] > h2 { counter-increment: section; }
+
+    .content-col section[id] > h2::before {
+      content: counter(section, decimal-leading-zero);
+      margin-right: 14px;
+      color: var(--blue);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .footer { margin-top: 40px; color: var(--soft); font-size: 13px; text-align: center; }
+
+    @media (max-width: 980px) {
+      .layout { grid-template-columns: 1fr; }
+      .toc-panel { position: relative; top: 0; max-height: none; }
+      .quick-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+
+    @media (max-width: 640px) {
+      .page { width: min(100vw - 20px, 1180px); padding-top: 20px; }
+      .hero, .card { padding: 20px; border-radius: 22px; }
+      .quick-facts { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header class="hero">
+      <p class="eyebrow">Loop Engineering / Field Guide</p>
+      <h1>Loopcraft</h1>
+      <p class="lead">
+        Stop being the person who prompts the agent. Build the system that prompts it for you. This is a working field guide to <strong>loop engineering</strong> &mdash; what it is, what it is made of, what the field has already learned, and, most importantly, how to turn it into daily, compounding loops that do real work in the background: for Nemotron post-training, for a personal investing lab, and for everyday life.
+      </p>
+      <div class="quick-facts" style="margin-top: 30px;">
+        <div class="fact">
+          <strong>5 + 1 primitives</strong>
+          <span>Automations, worktrees, skills, connectors, sub-agents &mdash; plus a memory that lives outside the conversation.</span>
+        </div>
+        <div class="fact">
+          <strong>Design once, run forever</strong>
+          <span>You author the loop a single time; the loop finds work, dispatches it, checks it, and decides what is next.</span>
+        </div>
+        <div class="fact">
+          <strong>You stay the engineer</strong>
+          <span>The leverage point moved from prompt to loop. Verification, judgment, and taste do not transfer to the machine.</span>
+        </div>
+      </div>
+      <div class="meta">
+        <span class="pill">Date: 2026-06-22</span>
+        <span class="pill green">Nemotron post-training</span>
+        <span class="pill blue">Personal investing lab</span>
+        <span class="pill purple">Daily life OS</span>
+        <span class="pill amber">Cursor / Codex / Claude Code</span>
+      </div>
+    </header>
+
+    <div class="layout">
+      <aside class="toc-panel" aria-label="Page navigation">
+        <span class="toc-brand">Loopcraft<span>Field Guide</span></span>
+        <h2>Navigate</h2>
+        <nav id="generated-toc"></nav>
+      </aside>
+      <div class="content-col">
+
+  <section class="card tldr-section">
+    <h2>TL;DR</h2>
+    <div class="note good">
+      <strong>The one-line shift:</strong> for two years the unit of work was the <em>prompt</em>. The new unit of work is the <em>loop</em> &mdash; a small system that finds work, hands it to agents, checks the result, writes down what is done, and decides what to do next, on a schedule, without you in the chair.
+    </div>
+    <p>
+      Peter Steinberger (creator of OpenClaw, now at OpenAI) put it bluntly: &ldquo;You shouldn&rsquo;t be prompting coding agents anymore. You should be designing loops that prompt your agents.&rdquo; Boris Cherny (head of Claude Code at Anthropic) said the same from the other side: &ldquo;I don&rsquo;t prompt Claude anymore. I have loops running that prompt Claude and figuring out what to do. My job is to write loops.&rdquo; The surprising part, per <a href="https://addyosmani.com/blog/loop-engineering/">Addy Osmani</a>, is that this is no longer a pile of bash you maintain forever &mdash; the pieces now ship inside Codex, Claude Code, and Cursor.
+    </p>
+    <div class="grid summary-grid">
+      <div class="mini">
+        <b>A loop has six parts</b>
+        <span>Automations (the heartbeat), worktrees (parallel isolation), skills (codified knowledge), connectors (touch real tools), sub-agents (maker vs. checker), and a memory file (state on disk, not in context).</span>
+      </div>
+      <div class="mini">
+        <b>The memory is the spine</b>
+        <span>The model forgets everything between runs. A markdown file or a Linear board holds what is done and what is next so tomorrow&rsquo;s run resumes where today&rsquo;s stopped.</span>
+      </div>
+      <div class="mini">
+        <b>Maker &ne; checker</b>
+        <span>The agent that wrote the work is too kind grading its own homework. A separate verifier (different instructions, often a different model) is the only reason you can walk away.</span>
+      </div>
+      <div class="mini">
+        <b>Start small, compound</b>
+        <span>Begin with one read-only triage loop that surfaces work into an inbox. Add action only after you trust the verifier. Loops stack into a personal operating system.</span>
+      </div>
+      <div class="mini">
+        <b>Three pitfalls scale with the loop</b>
+        <span>Verification debt, comprehension debt, and cognitive surrender all get <em>worse</em> as the loop gets smoother. Design against them on purpose.</span>
+      </div>
+    </div>
+    <div class="note">
+      <strong>How to read this doc:</strong> Sections 1&ndash;5 are the concepts. Section 6 synthesizes the source material into one story. Section 7 is the hard-won lessons. Sections 8&ndash;11 are the practical core &mdash; a design method plus ready-to-build loops for work, money, and life. Sections 12&ndash;14 cover compounding, a first-week rollout, and guardrails.
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>What Loop Engineering Is</h2>
+    <p>
+      Loop engineering is <strong>replacing yourself as the person who prompts the agent</strong>. Instead of holding the tool one turn at a time &mdash; type, read, type again &mdash; you design a system that does the prompting and decides the next move on its own. A &ldquo;loop&rdquo; is a recursive goal: you define a purpose and a stopping condition, and the agent iterates until it is complete.
+    </p>
+    <h3>The shift from prompting to loops</h3>
+    <p>
+      The old model was conversational and synchronous. You were the orchestrator, the dispatcher, and the verifier, every single turn. That works, but it caps throughput at one human attention span. The loop model externalizes the orchestration: the loop runs on a timer, spawns helpers, feeds itself the next task, and only escalates to you when it cannot proceed or when something needs judgment.
+    </p>
+    <div class="flow">
+      <div>Prompting<small>you hold the tool every turn</small></div>
+      <div>Harness engineering<small>the environment one agent runs inside</small></div>
+      <div>Loop engineering<small>the harness, but on a timer that feeds itself</small></div>
+      <div>You, the engineer<small>design + verify + judge</small></div>
+    </div>
+    <div class="note">
+      Osmani frames it as a stack: <strong>harness engineering</strong> is building the environment a single agent runs inside (the factory). <strong>Loop engineering sits one floor above</strong> &mdash; it is the harness, but it runs on a timer, spawns little helpers, and feeds itself.
+    </div>
+    <h3>What a loop is not</h3>
+    <ul>
+      <li><strong>Not a single run you did once.</strong> A one-shot agent task is not a loop. The cadence is what makes it a loop.</li>
+      <li><strong>Not &ldquo;fire and forget.&rdquo;</strong> A loop running unattended is also a loop making mistakes unattended. The verifier and the memory are non-negotiable.</li>
+      <li><strong>Not a replacement for understanding.</strong> The loop changes the work; it does not delete you from it. You move from operator to designer, not to spectator.</li>
+    </ul>
+  </section>
+
+  <section class="card">
+    <h2>Why Now &mdash; The Inflection Point</h2>
+    <p>
+      A year ago a loop meant a pile of bespoke bash you owned and maintained forever. What changed is that <strong>the primitives now ship inside the products</strong>. Steinberger&rsquo;s list of what a loop needs maps almost one-to-one onto the Codex app, and nearly the same onto Claude Code and Cursor. Once you notice the shape is identical across tools, you stop arguing about which tool and just design a loop that survives whichever one you happen to be sitting in.
+    </p>
+    <div class="grid">
+      <div class="mini">
+        <b>The capabilities converged</b>
+        <span>Scheduling, worktrees, skills, MCP connectors, and sub-agents are now first-class features, not weekend scripts. The names differ; the capability is the same.</span>
+      </div>
+      <div class="mini">
+        <b>The cost model is real</b>
+        <span>Loops run agents while you sleep, so token spend can vary wildly. This is a genuine constraint &mdash; budget it, cap it, and spend sub-agents only where a second opinion pays for itself.</span>
+      </div>
+      <div class="mini">
+        <b>The bottleneck moved to you</b>
+        <span>Worktrees remove the mechanical collisions of parallel agents, but your review bandwidth is still the ceiling on how many loops you can actually run.</span>
+      </div>
+    </div>
+    <div class="note warn">
+      <strong>Skeptic&rsquo;s footnote (worth keeping):</strong> even the people most bullish on this are careful. Osmani is explicit that it is early, that token costs bite, and that two people building the exact same loop get opposite results depending on whether they use it to move faster on work they understand or to avoid understanding the work at all.
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Anatomy of a Loop &mdash; Five Primitives + Memory</h2>
+    <p>
+      A loop needs five moving parts and one place to remember things. Here is the canonical list, with the job each part does and how it shows up across the three tools you are likely to use.
+    </p>
+
+    <h3>1. Automations &mdash; the heartbeat</h3>
+    <p>
+      Automations are what make a loop an actual loop and not just one run you did once. You define a prompt, a cadence, and an environment (your local checkout or a background worktree). Runs that find something land in a triage inbox; runs that find nothing archive themselves. Typical jobs: daily issue triage, summarizing CI failures, writing commit briefings, hunting last week&rsquo;s regressions. An automation can call a skill, so you fire <code>$skill-name</code> instead of pasting a wall of instructions into a schedule nobody will ever update.
+    </p>
+    <div class="note">
+      <strong>Two in-session control primitives worth knowing:</strong> <code>/loop</code> re-runs a prompt on a cadence; <code>/goal</code> keeps going until a verifiable stopping condition is true, with a separate small model checking &ldquo;are we done?&rdquo; after every turn &mdash; so the agent that wrote the code is not the one grading it. Both Codex and Claude Code ship a <code>/goal</code>; Cursor exposes the same idea through its loop/automation tooling.
+    </div>
+
+    <h3>2. Worktrees &mdash; parallel without chaos</h3>
+    <p>
+      The moment you run more than one agent, files start colliding &mdash; the same headache as two engineers committing to the same lines without talking. A git worktree is a separate working directory on its own branch sharing the same repo history, so one agent&rsquo;s edits literally cannot touch another&rsquo;s checkout. Codex builds worktrees in per thread; Claude Code gives you <code>git worktree</code>, a <code>--worktree</code> flag, and an <code>isolation: worktree</code> setting on sub-agents; Cursor supports per-agent worktrees too.
+    </p>
+
+    <h3>3. Skills &mdash; stop re-explaining your project</h3>
+    <p>
+      A skill is how you stop re-explaining the same project context every session like a goldfish. It is a folder with a <code>SKILL.md</code> holding instructions and metadata, plus optional scripts, references, and assets. The agent runs it when you call it explicitly or when your task matches its description &mdash; which is why a tight, boring description beats a clever one. Skills are where intent stops costing you over and over: the conventions, the build steps, the &ldquo;we don&rsquo;t do it like this because of that one incident&rdquo; get written down once where the agent reads them every run. Without skills, the loop re-derives your whole project from zero every cycle; with skills it compounds.
+    </p>
+
+    <h3>4. Plugins &amp; connectors &mdash; touch your real tools</h3>
+    <p>
+      A loop that can only see the filesystem is a tiny loop. Connectors (built on MCP) let the agent read your issue tracker, query a database, hit a staging API, drop a message in Slack. Plugins bundle connectors and skills so a teammate installs your whole setup in one go. This is the difference between an agent that says &ldquo;here is the fix&rdquo; and a loop that opens the PR, links the ticket, and pings the channel once CI is green by itself. At NVIDIA, your single biggest connector is <code>nv-tools</code> (Jira, Confluence, Slack, Gerrit, Helios, GDrive, W&amp;B, and more behind one CLI).
+    </p>
+
+    <h3>5. Sub-agents &mdash; keep the maker away from the checker</h3>
+    <p>
+      The most useful structural move in a loop is splitting the one who writes from the one who checks. The model that wrote the code is far too generous grading its own homework; a second agent with different instructions (and sometimes a different model) catches what the first talked itself into. The usual split is one agent explores, one implements, one verifies against the spec. Sub-agents burn more tokens because each runs its own model and tools, so spend them where a second opinion is worth paying for. This is also what <code>/goal</code> does under the hood: a fresh model decides whether the loop is done.
+    </p>
+
+    <h3>6. Memory / state &mdash; the spine</h3>
+    <p>
+      The sixth thing is the one that sounds too dumb to matter: a place to remember stuff that lives <em>outside</em> the single conversation. A markdown file, a Linear board, an Obsidian note &mdash; anything on disk that holds what is done and what is next. The model forgets everything between runs, so the memory has to be on disk, not in the context. The agent forgets; the repo does not. This is what lets tomorrow&rsquo;s run pick up where today&rsquo;s stopped.
+    </p>
+
+    <h4>The six parts, mapped to tools</h4>
+    <table>
+      <thead>
+        <tr><th>Primitive</th><th>Job in the loop</th><th>Codex</th><th>Claude Code</th><th>Cursor</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Automations</td><td>discovery + triage on a schedule</td><td>Automations tab; <code>/goal</code> for run-until-done</td><td>cron tasks, <code>/loop</code>, <code>/goal</code>, hooks, GitHub Actions</td><td>Automations, <code>/loop</code> skill, hooks</td></tr>
+        <tr><td>Worktrees</td><td>isolate parallel features</td><td>built-in worktree per thread</td><td><code>git worktree</code>, <code>--worktree</code>, <code>isolation: worktree</code></td><td>per-agent worktree, best-of-n runner</td></tr>
+        <tr><td>Skills</td><td>codify project knowledge</td><td>Agent Skills (SKILL.md)</td><td>Agent Skills (SKILL.md)</td><td><code>.cursor/skills/</code> SKILL.md</td></tr>
+        <tr><td>Connectors</td><td>connect your tools</td><td>Connectors (MCP) + plugins</td><td>MCP servers + plugins</td><td>MCP + <code>nv-tools</code> CLI + Rules</td></tr>
+        <tr><td>Sub-agents</td><td>ideate and verify</td><td>TOML in <code>.codex/agents/</code></td><td>subagents in <code>.claude/agents/</code>, agent teams</td><td>Task subagents, <code>.cursor/agents/</code></td></tr>
+        <tr><td>State</td><td>track what is done</td><td>Markdown or Linear via connector</td><td>Markdown (AGENTS.md, progress files) or Linear via MCP</td><td>Obsidian vault, markdown, Linear via MCP</td></tr>
+      </tbody>
+    </table>
+    <div class="note good">
+      <strong>The point of the table:</strong> the names differ but the capability is identical. Design loops against the <em>shape</em>, not the tool, and they survive a migration from one product to the next.
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>The Control Loop &mdash; How a Loop Actually Runs</h2>
+    <p>
+      Stick the primitives together and a single thread becomes a small control panel. Every loop, whether it ships code or rebalances a paper portfolio, walks the same cycle:
+    </p>
+    <div class="flow">
+      <div>1. Discover<small>automation finds work</small></div>
+      <div>2. Triage<small>rank, filter, decide worth-doing</small></div>
+      <div>3. Dispatch<small>worktree + maker sub-agent</small></div>
+      <div>4. Verify<small>checker sub-agent vs. spec</small></div>
+      <div>5. Act<small>connector: PR, ticket, message</small></div>
+      <div>6. Record<small>write outcome to memory</small></div>
+      <div>7. Decide next<small>resume tomorrow from state</small></div>
+    </div>
+    <h3>A worked example, in one paragraph</h3>
+    <p>
+      An automation runs every morning on the repo. Its prompt calls a triage skill that reads yesterday&rsquo;s CI failures, the open issues, and the recent commits, and writes the findings into a markdown file or a Linear board. For each finding worth doing, the thread opens an isolated worktree and sends a sub-agent to draft the fix; a second sub-agent reviews that draft against the project skills and the existing tests. Connectors open the PR and update the ticket. Anything the loop cannot handle lands in the triage inbox for you. The state file is the spine: it remembers what was tried, what passed, what is still open &mdash; so tomorrow&rsquo;s run picks up where today&rsquo;s stopped. You designed it once. You prompted none of those steps.
+    </p>
+    <div class="note">
+      <strong>The stopping condition is the hard part.</strong> &ldquo;Done&rdquo; must be <em>verifiable</em>: &ldquo;all tests in <code>test/auth</code> pass and lint is clean,&rdquo; not &ldquo;the feature works.&rdquo; If you cannot write the stop condition as something a separate model can check, the loop has no business running unattended.
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>The Sources, Synthesized</h2>
+    <p>
+      Six sources, published within two weeks of each other, tell one coherent story from different angles. Here is the combined narrative, then what each source contributes.
+    </p>
+    <div class="note good">
+      <strong>The combined story in four beats.</strong> (1) A directive went viral &mdash; stop prompting, start designing loops &mdash; and two senior practitioners (Steinberger, Cherny) independently said the same thing. (2) People reverse-engineered what a loop <em>is</em> and landed on the same anatomy: a scheduled heartbeat, isolated parallel workers, codified skills, real-tool connectors, a maker/checker split, and an external memory. (3) The tooling caught up &mdash; the primitives now ship inside Codex, Claude Code, and Cursor, and even dynamic, self-evolving workflows are appearing. (4) Everyone who has actually run loops converges on the same warning: the loop amplifies whoever is driving it, so verification and understanding are now <em>your</em> job, more than ever.
+    </div>
+
+    <h3>Per-source contributions</h3>
+    <div class="grid">
+      <div class="mini">
+        <b>Addy Osmani &mdash; <em>Loop Engineering</em></b>
+        <span>The definitive map. Defines the term, the five-primitives-plus-memory anatomy, the tool-to-tool mapping table, the worked single-loop example, and the three pitfalls (verification, comprehension debt, cognitive surrender). The backbone of this guide. <a href="https://addyosmani.com/blog/loop-engineering/">Read</a></span>
+      </div>
+      <div class="mini">
+        <b>Rahul (@sairahul1) &mdash; <em>Loops: What Every AI Engineer Needs to Know in 2026</em></b>
+        <span>The most complete practitioner breakdown: both anchor quotes, the cost reality (open vs closed loops), single-agent vs fleet, the 5 stages + 6 building blocks, and ready-made loop skeletons (~4.6M views). <a href="https://x.com/sairahul1/status/2064277888216555684">Read</a></span>
+      </div>
+      <div class="mini">
+        <b>elvis (@omarsar0) &mdash; <em>From Prompting Agents to Loop Engineering</em></b>
+        <span>The practical version: the clearest taxonomy of what &ldquo;loop&rdquo; means (ReAct &rarr; AutoGPT &rarr; ralph &rarr; /goal &rarr; orchestration), <code>/goal</code>-as-contract, per-role multi-model, and the &ldquo;cost = iterations&rdquo; reframing. <a href="https://x.com/omarsar0/status/2068008743153832264">Read</a></span>
+      </div>
+      <div class="mini">
+        <b>AlphaSignal AI &mdash; <em>All about loop engineering (incl. pitfalls)</em></b>
+        <span>Names the anti-pattern: &ldquo;loopmaxxing&rdquo; (the new tokenmaxxing). Argues for strict <em>control loops</em> &mdash; deterministic code drives, the LLM only decides &mdash; with a 2&ndash;3-retry human handover. &ldquo;Agents run loudly and fail quietly.&rdquo; <a href="https://x.com/AlphaSignalAI/status/2066540692281971085">Read</a></span>
+      </div>
+      <div class="mini">
+        <b>Anatoli Kopadze &mdash; <em>Loops explained: Claude, GPT, Mira and what actually works</em></b>
+        <span>The beginner-first explainer (~9.3M views): the four-box &ldquo;do you even need a loop?&rdquo; test, &ldquo;cost per accepted change,&rdquo; the Ralph Wiggum failure, and the best set of everyday/life loop ideas (via no-code agents). <a href="https://x.com/AnatoliKopadze/status/2068328135611822149">Read</a></span>
+      </div>
+      <div class="mini">
+        <b>Alok Bishoyi &mdash; <em>Self-Evolving Autoresearch Workflow Loops</em></b>
+        <span>The frontier build report: porting <strong>evo</strong>&rsquo;s autoresearch loop onto dynamic workflows (coordination as <em>code</em>, not context), then a concurrent <em>meta loop</em> that rewrites the harness while it runs. Loops that evolve their own shape. <a href="https://x.com/alokbishoyi97/status/2064281952631525741">Read</a></span>
+      </div>
+    </div>
+
+    <h3>Source deep dives</h3>
+    <p>Expand each source for its core thesis, the key concepts it introduces, the setup it describes, and what to take from it. (Quotes are as documented across the discourse; the X long-form articles are login-gated, so their entries describe each author&rsquo;s stated framing rather than verbatim text.)</p>
+
+    <details class="explain">
+      <summary>Addy Osmani &mdash; <em>Loop Engineering</em> (the definitive map)</summary>
+      <p><strong>Core thesis.</strong> &ldquo;Loop engineering is replacing yourself as the person who prompts the agent. You design the system that does it instead.&rdquo; A loop is a recursive goal: you define a purpose and the AI iterates until complete. Osmani is openly skeptical and stresses it is early and token-cost-sensitive &mdash; but believes it may be the future of working with coding agents.</p>
+      <h4>The two anchor quotes</h4>
+      <ul>
+        <li><strong>Peter Steinberger</strong> (OpenClaw creator, now at OpenAI): &ldquo;You shouldn&rsquo;t be prompting coding agents anymore. You should be designing loops that prompt your agents.&rdquo;</li>
+        <li><strong>Boris Cherny</strong> (head of Claude Code, Anthropic): &ldquo;I don&rsquo;t prompt Claude anymore. I have loops running that prompt Claude and figuring out what to do. My job is to write loops.&rdquo;</li>
+      </ul>
+      <h4>Key concepts</h4>
+      <ul>
+        <li><strong>The stack:</strong> prompting &rarr; harness engineering (the environment one agent runs inside) &rarr; loop engineering (the harness, but on a timer that spawns helpers and feeds itself).</li>
+        <li><strong>Five primitives + memory:</strong> automations, worktrees, skills, plugins/connectors, sub-agents, and an external state file. He argues all five now ship inside both Codex and Claude Code, and gives a primitive-by-primitive mapping table.</li>
+        <li><strong>Automations are the heartbeat:</strong> distinguishes <code>/loop</code> (re-run on a cadence) from <code>/goal</code> (run until a verifiable stop condition holds, with a separate small model grading &ldquo;are we done?&rdquo; each turn).</li>
+        <li><strong>Memory is the spine:</strong> the model forgets between runs, so state must live on disk &mdash; &ldquo;the agent forgets, the repo doesn&rsquo;t.&rdquo;</li>
+        <li><strong>Maker &ne; checker:</strong> the model that wrote the code grades its own homework too kindly; a separate verifier sub-agent is what lets you walk away.</li>
+      </ul>
+      <h4>The setup he describes</h4>
+      <p>A single worked loop: a morning automation calls a triage skill that reads yesterday&rsquo;s CI failures, open issues, and recent commits and writes findings to a markdown file or Linear board; for each worthwhile finding it opens a worktree, a maker sub-agent drafts the fix, a checker sub-agent reviews it against project skills and tests; connectors open the PR and update the ticket; anything it can&rsquo;t handle lands in a triage inbox. &ldquo;You designed it once. You did not prompt any of those steps.&rdquo;</p>
+      <h4>The three pitfalls (his framing)</h4>
+      <ul>
+        <li><strong>Verification is still on you</strong> &mdash; &ldquo;done&rdquo; is a claim, not a proof.</li>
+        <li><strong>Comprehension debt</strong> &mdash; the faster the loop ships code you didn&rsquo;t write, the bigger the gap between what exists and what you understand.</li>
+        <li><strong>Cognitive surrender</strong> &mdash; the comfortable posture (taking outputs without an opinion) is the dangerous one. Two people build the same loop; one to move faster on work they understand, one to avoid understanding. The loop can&rsquo;t tell the difference.</li>
+      </ul>
+      <p><strong>Takeaway line:</strong> &ldquo;Build the loop. But build it like someone who intends to stay the engineer, not just the person who presses go.&rdquo; He also threads in his related essays &mdash; harness engineering, intent debt, the orchestration tax, long-running agents, adversarial code review.</p>
+    </details>
+
+    <details class="explain">
+      <summary>Rahul (@sairahul1) &mdash; <em>Loops: What Every AI Engineer Needs to Know in 2026</em></summary>
+      <p><strong>Core thesis.</strong> Loops are the new baseline competency for AI engineers in 2026. The piece opens on both anchor quotes &mdash; Steinberger (&ldquo;stop prompting&hellip; design loops that prompt your agents&rdquo;) and Cherny (&ldquo;my job is to write loops&rdquo;) &mdash; calls them &ldquo;two of the most senior AI engineers alive&rdquo; saying the same thing, and then builds the full mental model from first principles. It is the most complete practitioner breakdown of the set (~4.6M views).</p>
+
+      <h4>The blocker it leads with: cost</h4>
+      <p>Its most distinctive move is putting the <strong>economics first</strong> &mdash; the reason most people never build loops. A single agent loop on a medium task burns ~50K&ndash;200K tokens; a fleet loop with an orchestrator + 3 specialists, 500K&ndash;2M; a daily scheduled loop, millions per week. Every retry, self-correction, subagent, and verification pass costs. The takeaway: &ldquo;Loops are not hard to design. They are hard to afford.&rdquo; It argues cheap frontier models (e.g. DeepSeek V4, Kimi, MiniMax) are what make loops economically viable, and that a large context window matters because loops need to hold previous runs, errors, architecture docs, and test results in memory at once.</p>
+
+      <h4>Open loops vs closed loops (its key practical distinction)</h4>
+      <ul>
+        <li><strong>Open looping</strong> &mdash; you give a goal and let the agent roam; exploratory and powerful (what labs with unlimited budget do), but it burns tokens and, against loose standards, becomes &ldquo;a slop machine.&rdquo;</li>
+        <li><strong>Closed looping</strong> &mdash; a human designs the end-to-end path first: clear goal, defined steps, an eval at each step, and a stop/handback point. Improves every run, runs on a normal budget, stays honest because of the quality gate.</li>
+        <li><strong>Advice:</strong> start with closed loops; open them up only once your quality gates are solid. &ldquo;Without a quality gate, AI drifts. With one, AI improves.&rdquo;</li>
+      </ul>
+
+      <h4>Single agent vs fleet</h4>
+      <p>Two scales of looping: a <strong>single-agent loop</strong> (one brain redoing its own draft &mdash; discover, plan, execute, verify, iterate) and a <strong>fleet loop</strong> (an orchestrator owns the goal, specialists own the steps, subagents do the narrow work, eval gates keep it from being slop). Every agent in the tree runs the same 5-stage loop.</p>
+
+      <h4>The framework it codifies</h4>
+      <ul>
+        <li><strong>5 stages</strong> every loop moves through: <code>DISCOVER &rarr; PLAN &rarr; EXECUTE &rarr; VERIFY &rarr; ITERATE</code> (pass verification &rarr; ship; fail &rarr; loop again).</li>
+        <li><strong>6 building blocks</strong>, each mapped to a stage: <strong>automations</strong> (heartbeat, triggers discover), <strong>worktrees</strong> (parallel execute without collisions), <strong>skills</strong> (faster discover &mdash; <code>VISION.md</code>, <code>ARCHITECTURE.md</code>, <code>RULES.md</code>), <strong>plugins/connectors</strong> (real execute via MCP), <strong>subagents</strong> (honest verify &mdash; maker &ne; checker), <strong>memory</strong> (persistence &mdash; run 47 knows what runs 1&ndash;46 tried).</li>
+        <li><strong>5 parts of a good loop:</strong> a precise goal (what &ldquo;done&rdquo; means), context (the .md files), action (only what the agent needs), feedback (tests, type checks, linters, structured errors), and a stop condition.</li>
+      </ul>
+
+      <h4>Concrete loop templates it gives</h4>
+      <p>Worked skeletons for a <strong>coding loop</strong> (read vision/arch &rarr; plan &rarr; edit &rarr; test &rarr; fix-on-fail &rarr; summarize), a <strong>research loop</strong> (question &rarr; search &rarr; summarize &rarr; verify claims &rarr; synthesize &rarr; stop at confidence threshold), a <strong>content loop</strong> (draft &rarr; critique agent &rarr; rewrite &rarr; score &rarr; publish/repeat), and a <strong>sales-outreach loop</strong>. Common skeleton: <em>Goal &rarr; Action &rarr; Check &rarr; Fix &rarr; Repeat until done.</em></p>
+
+      <h4>Prompt engineer vs loop engineer</h4>
+      <p>The skill gap it names: a prompt engineer crafts better instructions and reviews each output by hand (you are the feedback loop); a loop engineer designs feedback cycles where the system runs, checks, and self-corrects (the system is the feedback loop). &ldquo;Prompt engineers ask AI for output. Loop engineers design systems that produce verified outcomes.&rdquo; It ends on the same note as Osmani &mdash; two people build the same loop and get opposite results; the loop can&rsquo;t tell the difference, you can &mdash; &ldquo;build it like someone who intends to stay the engineer, not just the person who presses go.&rdquo;</p>
+
+      <p><strong>Use it for:</strong> the economics of loops (open vs closed, token budgets), the single-vs-fleet decision, and ready-made loop skeletons. Its tagline: &ldquo;one reliable loop is worth a thousand perfect prompts.&rdquo;</p>
+    </details>
+
+    <details class="explain">
+      <summary>elvis (@omarsar0) &mdash; <em>From Prompting Agents to Loop Engineering</em></summary>
+      <p><strong>Core thesis.</strong> The &ldquo;practical version&rdquo; of the claim &mdash; what an agent loop is, why it matters, and what one looks like in production. It grants that the idea &ldquo;gets repeated often and explained rarely,&rdquo; then does the explaining, drawing on experiments and conversations with founders, AI engineers, and startups. Its framing of the shift: the work moves up a level, &ldquo;from writing the code to writing the system that writes the code&rdquo; &mdash; with developers reporting months where they shipped hundreds of PRs without opening an IDE.</p>
+
+      <h4>What a loop actually is</h4>
+      <p>A small program that does four things: prompts the agent for you, reads what it produced, decides whether it is done, and if not, prompts again with the error or next step. &ldquo;You write the loop, and the model becomes a subroutine it calls.&rdquo; Shape: set a goal, act, check, feed the error back, repeat until the check passes or the loop stops itself.</p>
+
+      <h4>&ldquo;Loop&rdquo; means at least five things (its clearest contribution)</h4>
+      <p>It untangles the word by tracing the lineage, oldest to newest: <strong>ReAct</strong> (2022, reason&ndash;act&ndash;observe&ndash;repeat) &rarr; <strong>AutoGPT</strong> (2023, self-prompting goal loop that never knew when to stop) &rarr; <strong>the ralph loop</strong> (deliberate context reset between iterations so the agent doesn&rsquo;t drown in its own history) &rarr; <strong><code>/loop</code> and <code>/goal</code></strong> (cadence and completion conditions built into the agent, state carried across turns) &rarr; <strong>orchestration</strong> (one author fans out many agents that read GitHub/Slack/chat and decide what to build next).</p>
+
+      <h4>The six parts you assemble</h4>
+      <p>Same anatomy, named operationally: a <strong>trigger</strong> (schedule/webhook/file-change/label &mdash; what separates a real loop from a repeated run), <strong>isolation</strong> (a worktree per agent), <strong>written-down context</strong>, <strong>reach into your tools</strong> (connectors), <strong>a second agent that checks</strong> (held apart from the maker), and <strong>state on disk</strong>.</p>
+
+      <h4>The contracts and recipes it adds</h4>
+      <ul>
+        <li><strong>The PR babysitter</strong> &mdash; a buildable-today loop: trigger every 15 min, scope to PRs labeled <code>agent-watch</code>, one fix attempt / 5 min / 10 files, stop on green CI or budget. Same shape covers CI-health clustering, deploy verification, and feedback clustering.</li>
+        <li><strong><code>/goal</code> as a contract</strong> &mdash; a strong goal specifies four things: the end state, the evidence that proves it, the constraints not to break, and the work budget. &ldquo;<code>npm test</code> exits 0 is a goal; &lsquo;make it better&rsquo; is not.&rdquo; An independent evaluator (a fast model) decides met/not-met so the agent doesn&rsquo;t grade itself.</li>
+        <li><strong>Roles as an architecture decision</strong> &mdash; once you split planner / executor / evaluator / vision-reviewer, each can run on a <em>different model</em>; you swap per role instead of betting on one &ldquo;best&rdquo; agent.</li>
+        <li><strong>Cherny&rsquo;s 5-step autonomous setup</strong> &mdash; auto-approve permissions, dynamic workflows to fan out, <code>/goal</code> or <code>/loop</code> to keep going, run in the cloud, and give it end-to-end self-verification (Chrome for web, simulator MCP for mobile, live server for backend) &mdash; the step that makes the other four safe.</li>
+        <li><strong>crabfleet</strong> (Steinberger&rsquo;s OpenClaw &ldquo;mission control&rdquo;) &mdash; orchestration hardened into a product: work as cards on a board (todo &rarr; running &rarr; human review &rarr; done), durable runs with heartbeats, agents that spawn agents, on disposable cloud sandboxes.</li>
+      </ul>
+
+      <h4>Where the cost goes now</h4>
+      <p>Its sharpest reframing: inside a loop, spend is no longer &ldquo;which model, how many tokens&rdquo; but <strong>how many times the loop goes around</strong>. So: <strong>iterations are the budget line</strong> (track cost per finished task, not per call); <strong>a weak verifier is the most expensive bug you can ship</strong> (it stops early on broken work or grinds on fine work); and <strong>failing fast is a cost control</strong> (an uncapped loop drains the account). &ldquo;You used to tune the prompt; now you tune the loop.&rdquo;</p>
+
+      <h4>When not to loop &amp; what goes wrong</h4>
+      <p>Skip loops for one-shot edits, unscoped/exploratory work with no pass condition, and anything without a cheap automated check (&ldquo;if the only verifier is your own eyes, you are still inside the loop&rdquo;). Failure modes are predictable: the verification burden stays human, comprehension gaps widen, and a loose check causes silent drift &mdash; &ldquo;why the engineer who designs the loop matters more, not less.&rdquo;</p>
+
+      <p><strong>Use it for:</strong> the clearest taxonomy of what &ldquo;loop&rdquo; means, the <code>/goal</code>-as-contract discipline, the per-role multi-model idea, and the &ldquo;cost = iterations&rdquo; reframing. Plus a concrete 6-step &ldquo;how to build your own.&rdquo;</p>
+    </details>
+
+    <details class="explain">
+      <summary>AlphaSignal AI &mdash; <em>All about loop engineering (including the pitfalls)</em></summary>
+      <p><strong>Core thesis.</strong> The anatomy of a production-ready loop in 5 minutes, plus how to keep it from spiraling. Adapted from @bendee983&rsquo;s AlphaSignal Sunday Deep Dive on &ldquo;the gap between AI code generation and actual software delivery,&rdquo; anchored on the Steinberger and Cherny quotes. Its sharpest line: &ldquo;the best AI engineering skill is no longer crafting a perfect LLM prompt but engineering loops with LLMs at their heart.&rdquo;</p>
+
+      <h4>What loop engineering is (its definition)</h4>
+      <p>It shifts a model &ldquo;from a static call-and-response tool to an active participant in an event loop.&rdquo; You give the system a verifiable goal; the loop observes state, chooses an action, executes, checks the result, and decides whether to continue, retry, or stop. It explicitly adopts Osmani&rsquo;s five primitives (automations, worktrees, skills + external tools, sub-agents, memory) in simplified form, and cites Karpathy&rsquo;s autoresearch &mdash; a lightweight Python loop running ML experiments overnight &mdash; as the proof-of-concept.</p>
+
+      <h4>The trap: &ldquo;loopmaxxing&rdquo; is the new &ldquo;tokenmaxxing&rdquo; (its signature idea)</h4>
+      <p>The piece&rsquo;s distinctive contribution is naming the anti-pattern. Just as tokenmaxxing brute-forces answers with massive inference budgets, <strong>loopmaxxing</strong> replaces real architecture with open-ended <code>while(true)</code> iteration on the assumption the agent will &ldquo;eventually figure it out.&rdquo; Two ways it bites:</p>
+      <ul>
+        <li><strong>Infinite drift on fuzzy goals.</strong> &ldquo;Refactor this to be better&rdquo; has no exit condition, so the agent spins into endless retries, optimizing hallucinated metrics and burning millions of tokens on memory/context a human would just retain.</li>
+        <li><strong>Comprehension debt.</strong> As the loop ships code in the background, the gap widens between the repo&rsquo;s state and the engineer&rsquo;s understanding &mdash; so when production breaks, debugging becomes &ldquo;an observability nightmare,&rdquo; staring at thousands of lines of unfamiliar logic with no mental model of why the agent chose that path.</li>
+      </ul>
+
+      <h4>The pragmatic path: strict control loops, not open-ended cycles</h4>
+      <ul>
+        <li><strong>Deterministic code drives; the LLM only decides.</strong> Developers write the desired state and the observation mechanism; ordinary code handles execution and API calls; the LLM step is reserved for dynamic decisions traditional code can&rsquo;t make &mdash; wrapping risky parts in memory and hard-coded checks to &ldquo;limit the blast radius of a hallucinating model.&rdquo;</li>
+        <li><strong>Start minimal with human verification</strong>, run it several times to learn what works, then gradually replace the LLM steps the agent gets right consistently with standard code.</li>
+        <li><strong>Separate maker from checker</strong> &mdash; &ldquo;an agent looping over its own flawed logic tends to reinforce its mistakes rather than fix them.&rdquo;</li>
+        <li><strong>Production requirements:</strong> trace-logging of agent reasoning, progress detection to kill a stuck run, strict iteration caps, and an explicit human-handover point &mdash; a rule of thumb of <strong>two or three retries</strong> before failing gracefully back to a human.</li>
+      </ul>
+
+      <h4>The closing warning</h4>
+      <p>&ldquo;Cognitive surrender remains the most significant risk&rdquo; &mdash; building a system specifically so you never have to think about your codebase is a recipe for disaster, and no amount of compute saves poor architecture. Its memorable framing: <strong>&ldquo;Agents run loudly and fail quietly&rdquo;</strong> &mdash; so stay a vigilant engineer, not just a prompt supervisor.</p>
+
+      <p><strong>Use it for:</strong> the guardrails mindset &mdash; the loopmaxxing anti-pattern, the deterministic-control-loop pattern, and the 2&ndash;3-retry handover rule. Maps directly onto this guide&rsquo;s <a href="#guardrails-when-not-to-loop">Guardrails</a> section.</p>
+    </details>
+
+    <details class="explain">
+      <summary>Anatoli Kopadze &mdash; <em>Loops explained: Claude, GPT, Mira and what actually works</em></summary>
+      <p><strong>Core thesis.</strong> The accessible, beginner-first explainer (~9.3M views, the highest-reach of the set). It argues most people still use AI &ldquo;the slowest way there is&rdquo; &mdash; one request at a time, where <em>you are the engine</em> and the AI stops the moment you stop. A loop flips that: you give the goal once and step out. Notably even-handed about <em>when not to</em> bother, and it ends by pointing non-engineers at a no-code option rather than the heavy stack.</p>
+
+      <h4>The framework</h4>
+      <p>Same five stages (<code>DISCOVER &rarr; PLAN &rarr; EXECUTE &rarr; VERIFY &rarr; ITERATE</code>), but it singles out the three that do the real work: <strong>Verify</strong> is the heart (&ldquo;no gate means the agent grades its own homework, and the model that did the work is far too generous a grader&rdquo;), <strong>State</strong> is what makes the loop learn (remember what was tried, resume instead of restarting), and the <strong>Stop condition</strong> is what keeps it sane (success <em>or</em> a hard limit). &ldquo;A prompt hands the AI an instruction. A loop hands it a job, a way to know when the job is done, and a rule for when to give up.&rdquo;</p>
+
+      <h4>Its sharpest practical contribution: the &ldquo;do you even need one?&rdquo; test</h4>
+      <p>A loop is worth building only when <strong>all four</strong> are true: (1) the task <strong>repeats at least weekly</strong>; (2) something can <strong>automatically reject</strong> bad output (test, type check, build, linter, hard rule); (3) the agent can do it <strong>end to end</strong>; (4) &ldquo;done&rdquo; is <strong>objective</strong>, not taste. Miss one box &mdash; keep it a manual prompt. &ldquo;Loop engineering is real, and most people do not need the heavy version yet.&rdquo;</p>
+
+      <h4>The code version &amp; the cost reality</h4>
+      <ul>
+        <li><strong>Five building blocks</strong> (Claude Code / Codex ship all five): automation (heartbeat), skill (reusable instructions), sub-agents (maker vs. checker &mdash; &ldquo;most of the quality&rdquo;), connectors (act, not suggest), and the verifier (the gate that decides whether the loop helps or just spends money). Cites a loop rewriting a whole codebase from one language to another in ~6 days.</li>
+        <li><strong>Cost compounds</strong> because the full context is re-sent every iteration and grows each pass; maker+checker doubles it. The metric almost nobody tracks: <strong>cost per accepted change</strong> &mdash; below a ~50% accept rate the loop costs more than it gives back.</li>
+        <li><strong>The &ldquo;Ralph Wiggum loop&rdquo;</strong> (Geoffrey Huntley): the agent decides it&rsquo;s done too early, exits half-finished, and the loop keeps running and billing while producing nothing. &ldquo;Loops do not crash, they bill you in silence.&rdquo;</li>
+      </ul>
+
+      <h4>The build order &amp; a paste-able loop</h4>
+      <p>Order matters more than tools: (1) get <strong>one manual run</strong> reliable, (2) turn it into a <strong>skill</strong>, (3) wrap it in a <strong>loop</strong> with a gate + stop condition, (4) <em>then</em> schedule it &mdash; &ldquo;scheduling something you have not made reliable by hand is exactly how loops blow up while you sleep.&rdquo; It includes a self-checking <code>PLAN / DO / VERIFY / DECIDE</code> loop you can paste into any LLM today &mdash; with the key caveat that <strong>you are still the trigger</strong> (close the tab and it&rsquo;s gone).</p>
+
+      <h4>The &ldquo;loops for your actual life&rdquo; angle</h4>
+      <p>Its distinctive turn: for ~99% of everyday tasks you don&rsquo;t need code/hosting/keys &mdash; you need a no-code agent that runs on a schedule or on events. The article recommends <strong>Mira</strong> (a Telegram-based agent; connects to 500+ apps via Composio, persistent memory, model-agnostic) where you describe a &ldquo;Skill&rdquo; in plain words and it acts (&ldquo;ChatGPT answers, Mira acts&rdquo;). Examples: a 7am Gmail+Calendar brief, forward-a-message&rarr;Linear ticket, meeting pre-briefs, habit/streak check-ins, flight-price watchers, calorie-from-photo. <em>(Note: this part is partly a product promotion; the underlying point &mdash; everyday loops via a no-code scheduler-agent &mdash; stands regardless of the specific tool.)</em></p>
+
+      <p><strong>Use it for:</strong> the four-box &ldquo;do you even need a loop?&rdquo; test, the prove-it-by-hand-before-you-schedule order, &ldquo;cost per accepted change,&rdquo; and the strongest set of <em>personal / daily-life</em> loop ideas &mdash; directly relevant to this guide&rsquo;s <a href="#life-loops-the-daily-operating-system">Life Loops</a> section.</p>
+    </details>
+
+    <details class="explain">
+      <summary>Alok Bishoyi (@alokbishoyi97) &mdash; <em>Self-Evolving Autoresearch Workflow Loops</em></summary>
+      <p><strong>Core thesis.</strong> The most concrete and frontier entry: a build report on porting <strong>evo</strong>&rsquo;s autoresearch loop onto <em>dynamic workflows</em>, then making the loop rewrite itself while it runs. The key conceptual claim &mdash; on <strong>June 2 Anthropic shipped dynamic workflows in Claude Code</strong>, where Claude writes a small JavaScript program on the fly that spawns and coordinates subagents: <strong>&ldquo;orchestration itself moved off the model&rsquo;s decision and can now be described as code &mdash; the model does the judgment, the code does the coordination.&rdquo;</strong></p>
+
+      <h4>What evo is</h4>
+      <p>An open-source <strong>autoresearch orchestrator</strong> (runs on Claude Code, Codex, Cursor). You give it a system, a definition of &ldquo;better,&rdquo; and a budget; it generates hypotheses, runs each in an isolated workspace, scores it, and keeps a <strong>tree of attempts</strong> &mdash; extending what works, pruning what doesn&rsquo;t &mdash; while an <strong>auditor checks every accepted change so the optimizer can&rsquo;t game the metric.</strong> (Concrete proof of the maker/checker split this guide keeps stressing.)</p>
+
+      <h4>Why move the loop onto workflows (its central lesson)</h4>
+      <p>The loop used to be orchestrated <em>in-context</em> as one long agent run holding the whole plan. Its hard-won finding: <strong>&ldquo;prompt and instruction adherence is unreliable on long-horizon tasks&rdquo;</strong> &mdash; across dozens of rounds the standing rules (run this phase, use this CLI, keep the gate strict) quietly stop happening, and the longer one context runs, the less it holds. Putting the loop in a <strong>dynamic workflow fixes it at the root: the method becomes code</strong> &mdash; phases, fan-out width, stopping rule, gates, CLI calls are deterministic and identical on round 1 and round 1000. Every step is a fresh, scoped subagent with a clean context, so there is nothing to drift.</p>
+
+      <h4>One round of the loop (six coded steps)</h4>
+      <p><code>Orient</code> (read the experiment tree, take the top frontier nodes as parents) &rarr; <code>Scan</code> (parallel agents find what&rsquo;s working/failing) &rarr; <code>Ideate</code> (on a stall, three research agents: extrapolate the best branch, dissect failures, read the literature) &rarr; <code>Brief</code> (fold findings into deduped experiment briefs) &rarr; <code>Fan-out</code> (one parallel lane per brief: implement, pre-verify against metric-gaming, run, post-audit) &rarr; <code>Collect</code> (prune dead lineages, record notes, repeat until the score stalls).</p>
+
+      <h4>The self-evolving part (evo 0.5)</h4>
+      <ul>
+        <li><strong>Two async loops on one event loop</strong> (joined with <code>Promise.all</code>): the <strong>optimize loop</strong> (the driver) and a concurrent <strong>meta loop</strong> &mdash; a fresh agent that wakes every few minutes, reads the run from the outside, and <strong>rewrites the optimize loop while it runs</strong>.</li>
+        <li>They share one plain object, <strong>the harness</strong> (the steps, phases, prompts, gates, verifiers, plus knobs like width/stall). The optimizer reads it each round; the meta thread writes it &mdash; writes land between the optimizer&rsquo;s awaits, no locks, no second process.</li>
+        <li><strong>The meta emits four outputs:</strong> <em>harness edits</em> (the real lever &mdash; inject a verifier step an experiment class needs, cut dead-weight phases, rewrite the phases that run; &ldquo;the loop&rsquo;s shape becomes data the system changes&rdquo;); <em>brief hints</em> (softer nudges for the next round); <em>stops</em> (never a silent kill &mdash; it recommends to a separate gated enforcer that verifies, aborts, diagnoses, discards); and <em>alerts</em> (runtime problems like a dying GPU go to a human).</li>
+        <li>Finding: an <strong>external observer / meta agent</strong> nudging the run is &ldquo;very effective in course-correcting and catching issues.&rdquo;</li>
+      </ul>
+
+      <h4>The takeaway it lands</h4>
+      <p>Dynamic workflows make coordination <strong>code instead of context</strong>, so the loop becomes a <strong>first-class object you can read, edit, and reason about while it runs</strong> &mdash; and &ldquo;the loop&rsquo;s own shape is one more parameter space that can be evolved.&rdquo; This is exactly the <strong>L5</strong> rung of this guide&rsquo;s <a href="#compounding-a-loop-maturity-model">maturity model</a>; note that even here the meta agent is strictly read-only and hands kills/alerts to gated enforcers or humans &mdash; the judgment layer does not move.</p>
+
+      <p><strong>Use it for:</strong> the strongest argument that long-horizon loops should be <em>code, not prompts</em>; the concrete meta-loop pattern (observer rewrites the harness between awaits); and a real-world maker/checker/auditor design. evo is open source.</p>
+    </details>
+
+    <div class="note">
+      <strong>What the sources agree on, unanimously:</strong> the anatomy (six parts), the maker/checker split, the external memory, and the warning that loops magnify the operator. Where they differ is mostly emphasis &mdash; Osmani on completeness, Rahul on economics (open vs closed loops, token budgets) and the full framework, elvis on the &ldquo;loop&rdquo; taxonomy and cost-as-iterations, AlphaSignal on guardrails (the &ldquo;loopmaxxing&rdquo; anti-pattern and control loops), Kopadze on accessibility (the &ldquo;do you even need one?&rdquo; test and everyday/life loops), and Bishoyi on the self-evolving frontier.
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Lessons Learned &amp; Pitfalls</h2>
+    <p>
+      The uncomfortable truth from everyone who has run loops in anger: the three biggest problems get <em>sharper</em> as the loop gets better, not easier. A smooth loop is a more dangerous loop if you stop paying attention.
+    </p>
+
+    <h3>Pitfall 1 &mdash; Verification is still on you</h3>
+    <div class="note risk">
+      A loop running unattended is a loop making mistakes unattended. Splitting a verifier sub-agent from the maker is what makes the loop&rsquo;s &ldquo;it&rsquo;s done&rdquo; mean something &mdash; but even then, &ldquo;done&rdquo; is a claim, not a proof. Your job is to ship work you confirmed, not work the loop asserted.
+    </div>
+
+    <h3>Pitfall 2 &mdash; Comprehension debt</h3>
+    <p>
+      The faster the loop ships work you did not write, the bigger the gap between what exists and what you actually understand. A smooth loop just makes that gap grow faster. The mitigation is boring and non-negotiable: <strong>read what the loop made</strong>, on a cadence, even when it &ldquo;passed.&rdquo;
+    </p>
+
+    <h3>Pitfall 3 &mdash; Cognitive surrender</h3>
+    <p>
+      When the loop runs itself it is tempting to stop having an opinion and just take whatever it returns. Designing the loop is the cure when you do it with judgment, and the accelerant when you do it to avoid thinking. Same action, opposite result. Osmani&rsquo;s line is the test: two people build the identical loop &mdash; one to move faster on work they understand deeply, one to avoid understanding the work at all. The loop does not know the difference. You do.
+    </p>
+
+    <h3>Practical lessons that prevent leaks</h3>
+    <div class="grid">
+      <div class="mini">
+        <b>Tight, boring skill descriptions</b>
+        <span>A skill fires when its description matches the task. Clever descriptions misfire; boring, specific ones win.</span>
+      </div>
+      <div class="mini">
+        <b>State on disk, never in context</b>
+        <span>If the loop&rsquo;s memory lives only in a conversation, it dies when the conversation does. Write it to a file or a board.</span>
+      </div>
+      <div class="mini">
+        <b>Verifiable stop conditions only</b>
+        <span>If a separate model cannot check &ldquo;done,&rdquo; the loop should escalate to a human, not declare victory.</span>
+      </div>
+      <div class="mini">
+        <b>Budget tokens explicitly</b>
+        <span>Loops spend money while you sleep. Cap run frequency and reserve sub-agents for where a second opinion pays off.</span>
+      </div>
+      <div class="mini">
+        <b>Inbox, not auto-merge, at first</b>
+        <span>Until you trust a loop, have it propose into a triage inbox. Promote it to autonomous action only after a track record.</span>
+      </div>
+      <div class="mini">
+        <b>You are the throughput ceiling</b>
+        <span>Worktrees let you run many agents, but your review bandwidth caps how many loops are actually safe to run.</span>
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>How We Use This &mdash; A Design Method</h2>
+    <p>
+      The hardest part is not the concept; it is mapping it onto daily, useful, compounding workflows. Here is a repeatable method for turning any recurring chore into a loop. Run a candidate through these seven questions before you build it.
+    </p>
+
+    <h3>The Loop Design Canvas</h3>
+    <table>
+      <thead><tr><th>#</th><th>Question</th><th>What you are deciding</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td>What recurring work do I keep doing by hand?</td><td>The <strong>trigger</strong> &mdash; only loop things that actually repeat.</td></tr>
+        <tr><td>2</td><td>How often, and on what signal, should it run?</td><td>The <strong>cadence</strong> &mdash; cron, on-commit, on-failure, on-new-data.</td></tr>
+        <tr><td>3</td><td>What does &ldquo;done&rdquo; look like, checkably?</td><td>The <strong>stop condition</strong> &mdash; must be verifiable by a second model.</td></tr>
+        <tr><td>4</td><td>What tools must it touch?</td><td>The <strong>connectors</strong> &mdash; nv-tools, market data, calendar, the vault.</td></tr>
+        <tr><td>5</td><td>What project knowledge does it need every run?</td><td>The <strong>skill</strong> &mdash; conventions, formats, &ldquo;don&rsquo;t do X&rdquo; rules.</td></tr>
+        <tr><td>6</td><td>Who checks the work?</td><td>The <strong>verifier</strong> &mdash; a separate sub-agent / stop-condition check.</td></tr>
+        <tr><td>7</td><td>Where does it remember state?</td><td>The <strong>memory</strong> &mdash; a markdown/JSONL file or a board.</td></tr>
+      </tbody>
+    </table>
+
+    <h3>Three escalation tiers (choose per loop)</h3>
+    <div class="grid">
+      <div class="mini">
+        <b><span class="pill green">Tier 1</span> Observe</b>
+        <span>Read-only. The loop summarizes, ranks, and reports into an inbox or daily note. Zero blast radius. Start every loop here.</span>
+      </div>
+      <div class="mini">
+        <b><span class="pill amber">Tier 2</span> Propose</b>
+        <span>The loop drafts the artifact &mdash; a PR, a ticket, a rebalance plan, a reply &mdash; and parks it for one-click human approval.</span>
+      </div>
+      <div class="mini">
+        <b><span class="pill red">Tier 3</span> Act</b>
+        <span>The loop executes autonomously within hard guardrails, after it has earned trust at Tier 2. Reserve for low-stakes, reversible actions.</span>
+      </div>
+    </div>
+    <div class="note">
+      <strong>Promotion rule:</strong> a loop only graduates a tier after it has produced N consecutive runs you would have approved unchanged. Write that track record into the loop&rsquo;s own memory file so the decision is evidence-based, not vibes.
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Work Loops &mdash; Nemotron Post-Training</h2>
+    <p>
+      Post-training is unusually loop-friendly: it is a stream of long-running jobs, evals, datasets, and recipes that already produce machine-readable signals. The biggest wins are the coding-adjacent chores that surround the actual research &mdash; triage, monitoring, synthesis, bookkeeping &mdash; exactly the work that drains attention without needing your taste. Each loop below lists its cadence, the canvas mapping, and a starter prompt.
+    </p>
+
+    <h3>Loop W1 &mdash; Nightly eval-regression triage</h3>
+    <div class="note">
+      <strong>Cadence:</strong> nightly, after eval jobs land. <strong>Tier:</strong> 1&rarr;2. <strong>Connectors:</strong> W&amp;B, dashboards, Jira, Slack via nv-tools. <strong>Memory:</strong> <code>evals/triage-log.md</code>.
+    </div>
+    <p>
+      The loop pulls the latest eval results, diffs them against the rolling baseline, flags any metric regression beyond a threshold, drafts a short triage note (which checkpoint, which suite, suspected cause from recent recipe/data changes), and files it into the inbox. Promote to Tier 2 once you trust it: it opens a Jira ticket and pings the owner.
+    </p>
+    <pre><code>$eval-triage
+For each eval suite that ran since the last entry in evals/triage-log.md:
+  - compare metrics to the 7-run rolling baseline
+  - flag regressions &gt; 1.5% absolute or &gt; 2 sigma
+  - cross-reference recent data-blend and recipe commits as suspects
+  - append a dated entry: suite, metric, delta, suspected cause, owner
+Escalate only regressions; archive clean runs silently.</code></pre>
+
+    <h3>Loop W2 &mdash; Training-run babysitter</h3>
+    <div class="note">
+      <strong>Cadence:</strong> every 30&ndash;60 min while jobs run. <strong>Tier:</strong> 1&rarr;2. <strong>Connectors:</strong> Slurm/MagLev, W&amp;B. <strong>Memory:</strong> per-run <code>runs/&lt;job_id&gt;.md</code>.
+    </div>
+    <p>
+      Watches active runs for divergence, NaNs, throughput cliffs, and stalled steps; writes a one-line health beat each cycle; produces an overnight summary at morning. At Tier 2 it can auto-restart a known-safe failure mode (OOM with a smaller micro-batch) and log what it did. This is the practical, bounded version of Karpathy-style autoresearch: the agent watches, summarizes, and nudges overnight while you sleep.
+    </p>
+
+    <h3>Loop W3 &mdash; Data-quality gate on new shards</h3>
+    <div class="note">
+      <strong>Cadence:</strong> on new dataset shard / blend artifact. <strong>Tier:</strong> 2. <strong>Connectors:</strong> Lustre/DSS, data-quality checkers. <strong>Memory:</strong> <code>data/qa-ledger.jsonl</code>.
+    </div>
+    <p>
+      Runs the data-quality checkers on each new shard (schema, dedup, length stats, reward-profile sanity), quarantines bad shards, and writes a pass/fail manifest. A maker sub-agent proposes the fix or filter; a checker sub-agent verifies against the data card spec before anything is registered.
+    </p>
+
+    <h3>Loop W4 &mdash; Daily arXiv + literature digest</h3>
+    <div class="note">
+      <strong>Cadence:</strong> daily, 7am. <strong>Tier:</strong> 1. <strong>Connectors:</strong> arXiv, Glean. <strong>Memory:</strong> reading-list note in the Obsidian vault.
+    </div>
+    <p>
+      Scans new submissions on post-training, RLHF/RLVR, distillation, reward modeling, and evals; scores relevance against your current projects; writes the top 3&ndash;5 with a two-line &ldquo;why it matters to us&rdquo; into the vault, dedup&rsquo;d against what you have already saved. This compounds into a living, project-aware literature map.
+    </p>
+    <div class="note">
+      <strong>W4 is the lightweight glance.</strong> If you want the full pipeline &mdash; multi-source discovery, deep summarization, and experiment generation &mdash; loops <strong>W7&ndash;W9</strong> below generalize it into a connected research-intelligence system. Run W4 alone if you just want a daily skim; run W7&ndash;W9 if you want a compounding idea engine.
+    </div>
+
+    <h3>Loop W5 &mdash; Standup &amp; status synthesizer</h3>
+    <div class="note">
+      <strong>Cadence:</strong> daily and weekly. <strong>Tier:</strong> 1&rarr;2. <strong>Connectors:</strong> Slack, Jira, git, daily notes via nv-tools. <strong>Memory:</strong> daily notes in the vault.
+    </div>
+    <p>
+      Pulls your mentions, ticket movement, and commits; drafts a standup blurb and a weekly status; rolls the same evidence forward all year so focal self-assessment is a query, not an archaeology dig. (You already have the building blocks from the nv-tools workflows; the loop just runs them on a cadence.)
+    </p>
+
+    <h3>Loop W6 &mdash; Inbound code-review &amp; PR babysitter</h3>
+    <div class="note">
+      <strong>Cadence:</strong> on new CL / on CI status change. <strong>Tier:</strong> 2. <strong>Connectors:</strong> Gerrit/GitLab via nv-tools. <strong>Memory:</strong> per-CL thread.
+    </div>
+    <p>
+      For CLs assigned to you, runs the NDAS review checklist and drafts inline comments for your approval; for your own PRs, keeps them merge-ready by triaging comments, resolving trivial conflicts, and re-running CI until green &mdash; escalating only the judgment calls.
+    </p>
+
+    <h3>The research-intelligence pipeline (W7&rarr;W8&rarr;W9)</h3>
+    <p>
+      The next three loops form one chained pipeline: <strong>discover</strong> papers from everywhere you already read, <strong>read &amp; summarize</strong> them into structured notes, and <strong>generate experiments</strong> from the ideas they spark. Each loop&rsquo;s output is the next loop&rsquo;s input, and each writes to a shared, living artifact in the vault. This is the part of post-training that most rewards a loop: keeping up with the literature and turning it into testable bets is constant, high-value, and the kind of work that silently slips when you are heads-down.
+    </p>
+    <div class="flow">
+      <div>W7 &middot; Discover<small>Twitter + arXiv + newsletters &rarr; discovery queue</small></div>
+      <div>W8 &middot; Read &amp; summarize<small>queue &rarr; paper notes + idea index</small></div>
+      <div>W9 &middot; Generate experiments<small>idea index &rarr; experiment backlog</small></div>
+      <div>W1 / W2<small>approved experiments &rarr; eval + training loops</small></div>
+    </div>
+
+    <h3>Loop W7 &mdash; Multi-source paper discovery</h3>
+    <div class="note">
+      <strong>Cadence:</strong> daily, 7am. <strong>Tier:</strong> 1. <strong>Connectors:</strong> arXiv API, X/Twitter (curated lists + follows), newsletter inbox (Outlook/Gmail), RSS, Glean. <strong>Memory:</strong> <code>research/discovery-queue.jsonl</code> + a <code>research/seen.json</code> dedup set.
+    </div>
+    <p>
+      Most papers worth reading do not reach you through arXiv first &mdash; they arrive via a researcher&rsquo;s post, a newsletter, or a colleague&rsquo;s link. W7 fans out across all of those, normalizes every hit to a common record, deduplicates the same paper arriving from three places, scores it against your active themes, and drops the keepers into one queue. It is the funnel; it never reads the papers (that is W8).
+    </p>
+    <h4>What each source contributes</h4>
+    <ul>
+      <li><strong>arXiv:</strong> new submissions in <code>cs.CL</code>, <code>cs.LG</code>, <code>cs.AI</code> filtered to post-training, RLHF/RLVR, distillation, reward modeling, evals, agentic.</li>
+      <li><strong>X/Twitter:</strong> extract paper/blog links from posts by a curated list (frontier labs, researchers you follow); keep the surfacing tweet as context (&ldquo;why it&rsquo;s buzzing&rdquo;).</li>
+      <li><strong>Newsletters:</strong> parse the emails you already subscribe to, pull out linked papers, and strip the marketing.</li>
+      <li><strong>RSS / Glean:</strong> lab blogs, conference proceedings, and internal mentions for anything the public sources miss.</li>
+    </ul>
+    <div class="note good">
+      <strong>Living artifact:</strong> a single deduplicated discovery queue where every item carries <code>{title, authors, url, source, date, abstract, surfaced_by, relevance, why}</code> &mdash; so you stop re-finding the same paper and always know <em>why</em> it showed up.
+    </div>
+    <pre><code>$paper-discover
+Sources: arxiv (cs.CL, cs.LG, cs.AI), X list "ml-research", subscribed newsletters, RSS.
+For each new candidate since the last run:
+  - normalize to {title, authors, url, source, date, abstract, surfaced_by}
+  - dedup against research/seen.json (match on arxiv id / normalized title)
+  - score relevance 0-1 against my themes in research/themes.md
+  - keep score &gt;= 0.6; append to research/discovery-queue.jsonl with a 1-line "why"
+Update research/seen.json. Report a top-5 digest; archive the rest into the queue silently.</code></pre>
+
+    <h3>Loop W8 &mdash; Paper reading &amp; summarization</h3>
+    <div class="note">
+      <strong>Cadence:</strong> daily (drains the queue) or on-new-item. <strong>Tier:</strong> 1&rarr;2. <strong>Connectors:</strong> arXiv (PDF/HTML fetch), the discovery queue, the vault. <strong>Memory:</strong> per-paper note <code>research/papers/&lt;id&gt;.md</code> + the <strong>idea index</strong> <code>research/idea-index.md</code>.
+    </div>
+    <p>
+      For each unread item in the queue, W8 fetches the paper, writes a structured summary, extracts the core concepts, and &mdash; the valuable part &mdash; harvests follow-up ideas and candidate experiments into a running ledger. A <strong>summarizer sub-agent</strong> drafts; a <strong>checker sub-agent</strong> verifies the summary against the actual paper so claimed numbers and methods are not hallucinated. The living artifact is exactly what you asked for: an index of ideas plus paper summaries, cross-linked.
+    </p>
+    <h4>Per-paper summary template</h4>
+    <ul>
+      <li><strong>Problem &amp; motivation</strong> &mdash; what gap it addresses, in one or two sentences.</li>
+      <li><strong>Method</strong> &mdash; the key idea, stripped of notation.</li>
+      <li><strong>Results</strong> &mdash; headline numbers, datasets/benchmarks, and the baseline they beat.</li>
+      <li><strong>Limitations &amp; caveats</strong> &mdash; what the authors (or you) think is shaky.</li>
+      <li><strong>Relevance to us</strong> &mdash; how it touches Nemotron post-training, RM, data, or evals.</li>
+      <li><strong>Follow-ups</strong> &mdash; ideas and experiments this sparks &rarr; appended to the idea index with tags + a backlink to the paper.</li>
+    </ul>
+    <div class="note good">
+      <strong>Living artifact:</strong> <code>idea-index.md</code> is an append-only, tagged ledger of ideas, each row linking back to the paper(s) that inspired it: <code>{idea, tags, source_papers, novelty_guess, status}</code>. Over months this becomes a searchable map of &ldquo;things worth trying,&rdquo; not a graveyard of unread PDFs.
+    </div>
+    <pre><code>$paper-read
+For each unread item in research/discovery-queue.jsonl:
+  - fetch the paper; write research/papers/&lt;id&gt;.md using the summary template
+  - extract main concepts and any reported numbers
+  - CHECKER pass: verify every claimed result/number exists in the source; flag mismatches
+  - append follow-up ideas/experiments to research/idea-index.md
+    as {idea, tags, source_papers, novelty_guess, status: "new"}
+  - mark the item read
+Escalate to me only papers scored "high relevance + high novelty".</code></pre>
+
+    <h3>Loop W9 &mdash; Experiment generation</h3>
+    <div class="note risk">
+      <strong>Cadence:</strong> weekly or on-demand. <strong>Tier:</strong> 1&rarr;2 &mdash; <strong>propose only.</strong> This loop drafts experiment specs; it never launches training or eval jobs. Spending compute is irreversible and expensive, so a human always selects what runs (then hands it to W2). Keep Tier 3 off here, permanently.
+    </div>
+    <p>
+      W9 turns the idea index into concrete, testable bets. It clusters related ideas, and for the most promising it drafts a full experiment spec; a <strong>critic sub-agent</strong> scores each for feasibility, novelty, and cost, and rejects anything vague or infeasible. The output is a ranked backlog you skim and green-light &mdash; the loop does the spec-writing toil; you keep the call on what is worth the GPUs.
+    </p>
+    <h4>What a generated experiment spec contains</h4>
+    <ul>
+      <li><strong>Hypothesis</strong> &mdash; the specific, falsifiable claim being tested.</li>
+      <li><strong>Change</strong> &mdash; what to vary (recipe, data blend, reward, method) vs. the baseline.</li>
+      <li><strong>Setup</strong> &mdash; base model/checkpoint, dataset, eval suite, and the metric that decides success.</li>
+      <li><strong>Success criterion</strong> &mdash; a verifiable bar (e.g. &ldquo;+1.5% on suite X without regressing Y&rdquo;).</li>
+      <li><strong>Smallest first step</strong> &mdash; the cheapest run that would confirm or kill the idea.</li>
+      <li><strong>Cost &amp; risk</strong> &mdash; rough compute estimate and what could make it a dead end.</li>
+    </ul>
+    <div class="note good">
+      <strong>Living artifact:</strong> <code>research/experiment-backlog.md</code> &mdash; a ranked list of ready-to-run specs, each linked to the ideas (W8) and papers (W7) that motivated it. Approved specs flow into the training-run babysitter (W2) and eval-triage (W1) loops, closing the loop from <em>literature</em> to <em>result</em>.
+    </div>
+    <pre><code>$experiment-gen
+Read research/idea-index.md (status: new|promising).
+Cluster related ideas; for the top clusters draft an experiment spec:
+  hypothesis, change-vs-baseline, setup (model/data/eval/metric),
+  success criterion, smallest-first-step, rough compute + risk.
+CRITIC pass: score feasibility/novelty/cost 0-1; drop specs that are vague or infeasible.
+Append survivors to research/experiment-backlog.md, ranked.
+Propose only. Do NOT launch any job. Surface the top 3 for my approval.</code></pre>
+
+    <div class="note good">
+      <strong>Why these compound:</strong> W1&ndash;W3 share a memory of what regressed and why; <strong>W7&rarr;W8&rarr;W9 turn the literature into a ranked experiment backlog</strong> that feeds W2/W1; W5 turns all of it into evidence; W6 keeps the code flowing. Together they are an always-on research-operations layer that hands you decisions &mdash; what to test, what regressed, what to ship &mdash; instead of chores.
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Personal Loops &mdash; Investing &amp; a Sample-Portfolio Lab</h2>
+    <div class="note risk">
+      <strong>Not financial advice.</strong> This is a research and learning harness. Everything here is <em>paper trading</em> by default. The loop&rsquo;s job is to make you a better-informed operator of your real portfolio, never to trade it autonomously. Keep Tier 3 (live execution) off.
+    </div>
+    <p>
+      Investing is an almost perfect loop domain: clear cadence (markets close daily), machine-readable signals (prices, fundamentals), a naturally verifiable stop condition (did the ledger reconcile?), and an obvious external memory (a portfolio ledger file). The design goal is a <strong>sample-portfolio lab</strong>: several model portfolios, each running a different strategy, tracked daily against a benchmark, so over months you accumulate real evidence about which approach fits you before you move a single real dollar.
+    </p>
+
+    <h3>The lab architecture</h3>
+    <div class="grid">
+      <div class="mini">
+        <b>Memory: the ledger</b>
+        <span>One file per model portfolio (<code>portfolios/value.jsonl</code>, <code>growth.jsonl</code>, <code>dividend.jsonl</code>&hellip;) holding positions, cash, and a dated row of every valuation and trade. The spine of the whole lab.</span>
+      </div>
+      <div class="mini">
+        <b>Connectors: market data</b>
+        <span>A price/fundamentals source (an API or a fetch step). Read-only. The loop never connects to a brokerage execution endpoint.</span>
+      </div>
+      <div class="mini">
+        <b>Skill: the strategy + risk rules</b>
+        <span>Each portfolio gets a SKILL.md: universe, sizing rules, rebalance triggers, hard risk limits (max position %, sector caps, drawdown stop). This is where your intent lives.</span>
+      </div>
+      <div class="mini">
+        <b>Sub-agents: analyst vs. risk officer</b>
+        <span>One sub-agent proposes trades from the strategy; a separate risk-officer sub-agent rejects anything that breaks the risk limits before it is written to the ledger.</span>
+      </div>
+    </div>
+
+    <h3>Loop P1 &mdash; Daily mark-to-market</h3>
+    <div class="note">
+      <strong>Cadence:</strong> daily after close. <strong>Tier:</strong> 1.
+    </div>
+    <p>
+      Fetch closing prices, value every model portfolio, append a dated NAV row to each ledger, and compute return vs. the benchmark (e.g. SPX). Pure observation &mdash; it just keeps the books current and never decides anything.
+    </p>
+    <pre><code>$portfolio-mark
+For each ledger in portfolios/*.jsonl:
+  - fetch close prices for all held tickers
+  - compute portfolio NAV, daily return, return vs. SPX since inception
+  - append: {date, nav, day_return, vs_benchmark, drawdown}
+  - flag any position breaching a risk limit in the strategy SKILL
+Write nothing to a brokerage. Report flags into the weekly note.</code></pre>
+
+    <h3>Loop P2 &mdash; Weekly rebalance proposal</h3>
+    <div class="note">
+      <strong>Cadence:</strong> weekly. <strong>Tier:</strong> 2 (propose only).
+    </div>
+    <p>
+      The analyst sub-agent reads each strategy&rsquo;s rules and the week&rsquo;s data and proposes rebalances; the risk-officer sub-agent vets every proposed trade against the hard limits. Approved-by-risk proposals are written to a weekly review note for <em>your</em> sign-off. Only after you approve does the trade get written to the paper ledger.
+    </p>
+
+    <h3>Loop P3 &mdash; Strategy scoreboard &amp; thesis journal</h3>
+    <div class="note">
+      <strong>Cadence:</strong> monthly. <strong>Tier:</strong> 1.
+    </div>
+    <p>
+      Produces a one-page scoreboard: each model portfolio&rsquo;s return, volatility, max drawdown, and Sharpe vs. benchmark, plus a short written note on <em>why</em> each is ahead or behind. Over a few months this is the evidence base for deciding which strategy (if any) earns real capital. This is the &ldquo;maker writes, checker grades&rdquo; idea applied to your own decisions: the loop reports the numbers; you supply the judgment.
+    </p>
+    <div class="note warn">
+      <strong>Guardrails specific to money:</strong> hard-code risk limits in the skill, not the prompt; keep execution manual; log every assumption (data source, fees, slippage) so the paper results are not lying to you; and re-read the thesis journal monthly to fight cognitive surrender. The danger here is not a bug &mdash; it is trusting a smooth report you never checked.
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Life Loops &mdash; The Daily Operating System</h2>
+    <p>
+      The same machinery that runs eval triage runs your life admin. Your Obsidian vault is already the ideal memory layer &mdash; it lives on disk, outside any single conversation, exactly as the spine should. These loops turn scattered tools into one calm morning briefing and a tidy weekly review.
+    </p>
+
+    <h3>Loop L1 &mdash; Morning briefing</h3>
+    <div class="note">
+      <strong>Cadence:</strong> daily, 7am. <strong>Tier:</strong> 1. <strong>Connectors:</strong> Outlook, Calendar, Teams, Slack. <strong>Memory:</strong> daily note.
+    </div>
+    <p>
+      One digest at the top of the daily note: today&rsquo;s meetings with prep links, unread mail that needs a reply (ranked by urgency), Teams/Slack mentions, and yesterday&rsquo;s open tasks rolled forward. Replaces the 30-minute scattered scan with a two-minute read.
+    </p>
+
+    <h3>Loop L2 &mdash; Meeting prep &amp; recap</h3>
+    <div class="note">
+      <strong>Cadence:</strong> before each meeting + after. <strong>Tier:</strong> 1&rarr;2.
+    </div>
+    <p>
+      Before: pulls attendee context, recent threads, and the relevant doc into a one-page brief. After: reads the transcript, extracts decisions and action items, and drops tasks into the vault with owners. At Tier 2 it drafts the follow-up message for your approval.
+    </p>
+
+    <h3>Loop L3 &mdash; Inbox &amp; commitment triage</h3>
+    <div class="note">
+      <strong>Cadence:</strong> twice daily. <strong>Tier:</strong> 2.
+    </div>
+    <p>
+      Classifies inbound (action / reply / FYI / archive), drafts replies for the easy ones, and surfaces anything where you made or were promised a commitment so nothing quietly slips.
+    </p>
+
+    <h3>Loop L4 &mdash; Weekly review &amp; knowledge gardener</h3>
+    <div class="note">
+      <strong>Cadence:</strong> weekly. <strong>Tier:</strong> 1.
+    </div>
+    <p>
+      Consolidates the week&rsquo;s daily notes into a review (what got done, what stalled, what is next), links new notes into existing topics, and flags stale tasks. Keeps the vault a living second brain instead of a junk drawer.
+    </p>
+
+    <h3>Loop L5 &mdash; Learning &amp; spaced repetition</h3>
+    <div class="note">
+      <strong>Cadence:</strong> a few times a week. <strong>Tier:</strong> 1.
+    </div>
+    <p>
+      Turns the arXiv digest (W4) and meeting learnings into short review prompts, resurfacing them on a spacing schedule so the things you decided to learn actually stick.
+    </p>
+
+    <h3>Loop L6 &mdash; Habit coach &amp; streak keeper</h3>
+    <div class="note">
+      <strong>Cadence:</strong> daily, evening + weekly. <strong>Tier:</strong> 1&rarr;2. <strong>Connectors:</strong> a chat channel (Telegram/Slack), calendar. <strong>Memory:</strong> <code>life/habits.md</code> (streaks + history).
+    </div>
+    <p>
+      Each evening it asks whether you did the thing &mdash; trained, wrote, practiced &mdash; updates the streak, and refuses to let you quietly skip more than a day in a row (a nudge, then a harder nudge). Weekly it reports the streak trend and one concrete adjustment. Anatoli&rsquo;s version: &ldquo;every evening at 7, ask if I trained today; keep a streak and don&rsquo;t let me quietly skip more than one day.&rdquo;
+    </p>
+
+    <h3>Loop L7 &mdash; Evening journal &amp; reflection companion</h3>
+    <div class="note">
+      <strong>Cadence:</strong> nightly + weekly. <strong>Tier:</strong> 1. <strong>Memory:</strong> <code>life/journal.md</code> in the vault.
+    </div>
+    <p>
+      Asks three short questions about your day, remembers the answers, and once a week tells you what actually changed &mdash; mood, energy, recurring blockers, what you keep saying you&rsquo;ll do. Because the memory persists, it becomes a check-in companion that notices patterns you wouldn&rsquo;t, instead of a blank page you abandon.
+    </p>
+
+    <h3>Loop L8 &mdash; Nutrition &amp; health log</h3>
+    <div class="note">
+      <strong>Cadence:</strong> on-event (you send a photo) + weekly. <strong>Tier:</strong> 1. <strong>Memory:</strong> <code>life/nutrition.jsonl</code>.
+    </div>
+    <p>
+      Snap a photo of your plate; it estimates calories/macros and logs them &mdash; no separate app, no manual entry. Weekly it summarizes trends against your target and flags drift. The estimate is a draft, not a lab result, so treat it as a directional signal you can correct.
+    </p>
+
+    <h3>Loop L9 &mdash; Deal &amp; price watcher</h3>
+    <div class="note">
+      <strong>Cadence:</strong> daily. <strong>Tier:</strong> 2 (alert / propose &mdash; <strong>never auto-buy</strong>). <strong>Connectors:</strong> price sources, mail. <strong>Memory:</strong> <code>life/watchlist.md</code>.
+    </div>
+    <p>
+      Watches the things you&rsquo;re waiting on &mdash; a flight route, a product, a subscription renewal &mdash; and pings you the moment the price hits your number, with a one-tap path to act. Anatoli&rsquo;s example auto-buys; this guide keeps the purchase human-confirmed, because spending money is exactly the kind of irreversible action a loop should propose, not execute.
+    </p>
+
+    <h3>Loop L10 &mdash; Personal news &amp; signal digest</h3>
+    <div class="note">
+      <strong>Cadence:</strong> daily, morning. <strong>Tier:</strong> 1. <strong>Connectors:</strong> RSS, X lists, newsletters. <strong>Memory:</strong> <code>life/news-seen.json</code> (dedup).
+    </div>
+    <p>
+      A no-clickbait briefing on the topics you actually care about &mdash; headlines distilled to what happened and why it matters, deduped against what you already saw. The non-work cousin of the W7 paper-discovery loop: same fan-out-and-filter shape, pointed at the rest of your life.
+    </p>
+
+    <div class="grid">
+      <div class="mini">
+        <b>Subscriptions &amp; bills watch</b>
+        <span>Flags renewals, price hikes, and unused subscriptions from mail. Tier 1: report; Tier 2: draft the cancellation.</span>
+      </div>
+      <div class="mini">
+        <b>Travel &amp; logistics monitor</b>
+        <span>Watches itineraries for schedule changes and price drops; drafts the rebooking, you confirm.</span>
+      </div>
+      <div class="mini">
+        <b>Thread / group-chat catch-up</b>
+        <span>&ldquo;What did I miss while I was away?&rdquo; &mdash; a 200-message thread distilled to 5 bullets with decisions, asks directed at you, and open questions.</span>
+      </div>
+      <div class="mini">
+        <b>Forward &rarr; task or ticket</b>
+        <span>Forward any message and it files a properly-scoped task/Linear ticket with priority and owner, instead of leaving it buried in a chat.</span>
+      </div>
+      <div class="mini">
+        <b>Language practice from your mistakes</b>
+        <span>Builds short daily drills from the errors you actually make, not a generic curriculum &mdash; spaced like L5 so it sticks.</span>
+      </div>
+      <div class="mini">
+        <b>Voice capture &rarr; clean notes</b>
+        <span>Drop a voice memo; it transcribes, cleans it up, and files any action items into the vault &mdash; hands-free idea capture.</span>
+      </div>
+      <div class="mini">
+        <b>Read-it-later &rarr; audio</b>
+        <span>Turns saved articles into an audio digest for the commute, and summarizes the long ones to text first so you choose what&rsquo;s worth the full listen.</span>
+      </div>
+      <div class="mini">
+        <b>Personal content repurposer</b>
+        <span>One raw idea (typed or voice) &rarr; platform-native drafts for X, LinkedIn, and a newsletter. Tier 2: drafts for your edit, never auto-post.</span>
+      </div>
+    </div>
+
+    <div class="note good">
+      <strong>The light version is enough for most of these (Anatoli&rsquo;s point).</strong> The work loops earn the heavy stack &mdash; worktrees, verifiers, an always-on VM. Most <em>life</em> loops do not: a no-code agent that runs on a schedule or an event (a Telegram-style assistant connected to your calendar, mail, and notes) covers L6&ndash;L10 with a sentence of plain English each. Start there; only graduate a life loop to the coded stack if you genuinely outgrow it. Two cautions carry over regardless of tool: keep <em>spending</em> and <em>sending</em> human-confirmed (Tier 2), and remember health/calorie/news outputs are drafts to sanity-check, not ground truth.
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Compounding &mdash; A Loop Maturity Model</h2>
+    <p>
+      Loops are not a one-time setup; they mature. The value is not any single loop but the way they stack: shared memory, shared skills, and loops that feed each other. Use this ladder to know where you are and what to build next.
+    </p>
+    <table>
+      <thead><tr><th>Level</th><th>Name</th><th>What you have</th><th>Next move</th></tr></thead>
+      <tbody>
+        <tr><td>L0</td><td>Prompting</td><td>You drive every turn by hand.</td><td>Pick one recurring chore; write its skill.</td></tr>
+        <tr><td>L1</td><td>First heartbeat</td><td>One Tier-1 read-only loop reporting into an inbox.</td><td>Add a verifier; trust it; promote to Tier 2.</td></tr>
+        <tr><td>L2</td><td>Acting loops</td><td>A few loops that propose artifacts you approve.</td><td>Give them a shared memory layer.</td></tr>
+        <tr><td>L3</td><td>Shared memory</td><td>Loops read/write a common state (vault, board) and reference each other.</td><td>Add maker/checker sub-agents per loop.</td></tr>
+        <tr><td>L4</td><td>Operating system</td><td>Work + money + life loops run daily; you mostly review and decide.</td><td>Let a meta-loop triage which loops to run.</td></tr>
+        <tr><td>L5</td><td>Self-evolving</td><td>Loops propose changes to their own skills and workflows (dynamic workflows).</td><td>Hold the line: keep verification and judgment human.</td></tr>
+      </tbody>
+    </table>
+    <div class="note">
+      <strong>Where the frontier is going:</strong> Bishoyi&rsquo;s self-evolving autoresearch loops (evo) are L5 &mdash; a concurrent <em>meta loop</em> rewrites the running loop&rsquo;s harness because coordination is now code, not context. Worth watching, but note that even there the meta agent is read-only and hands kills/alerts to gated enforcers and humans: the judgment layer does not move. Climb deliberately; do not skip to L5 because it sounds impressive.
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Monitoring the Loops &mdash; A Single Pane of Glass?</h2>
+    <p>
+      Once you reach L3&ndash;L4 you are not running one loop, you are running a dozen across three tools. The obvious operational question follows: <strong>how do you see them all at once</strong> &mdash; what ran, what it cost, what it found, what is stuck, and how the loops feed each other? The short answer in mid-2026: each tool monitors <em>its own</em> loops reasonably well, but <strong>no product gives you a unified, cross-tool view &mdash; and none of them visualizes how loops interact.</strong> That gap is the proposal at the end of this section.
+    </p>
+
+    <h3>What each tool gives you today</h3>
+    <table>
+      <thead><tr><th>Tool</th><th>Where loops show up</th><th>What you can see</th><th>Scope &amp; limits</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>Codex</td>
+          <td><a href="https://developers.openai.com/codex/app/automations">Automations pane</a> + <strong>Triage inbox</strong> in the desktop sidebar (<code>codex://automations</code>)</td>
+          <td>Every automation and its runs; runs with findings land in Triage (filter all / unread); diffs, approve/push; runs with nothing to report auto-archive</td>
+          <td>Local to the desktop app (the app must be open / awake); per-run inbox, not a system view; one machine</td>
+        </tr>
+        <tr>
+          <td>Cursor</td>
+          <td><a href="https://cursor.com/cloud">Cloud Agents dashboard</a> at <code>cursor.com/agents</code> (web + mobile) + Automations</td>
+          <td>Active/running agents, environment + version history, scheduled/event-triggered runs, artifacts (videos, screenshots, logs) attached to PRs</td>
+          <td>The most dashboard-like, but centered on cloud <em>coding</em> agents in repos; not arbitrary loops; no dependency graph</td>
+        </tr>
+        <tr>
+          <td>Claude Code</td>
+          <td>No native dashboard; <code>/loop</code>, hooks, tasks, and subagents run in the terminal/session</td>
+          <td>Community observability tools read <code>~/.claude/</code> JSONL + hook events: session lists, subagent trees, token/cost, kanban task boards, even orchestration DAGs</td>
+          <td>Third-party, not official; per-machine; quality varies; you assemble it yourself</td>
+        </tr>
+      </tbody>
+    </table>
+    <div class="note">
+      <strong>The community has already shown the appetite.</strong> Tools like <a href="https://github.com/Zxela/claude-monitor">claude-monitor</a>, <a href="https://github.com/pedropauloai/claude-agent-monitor">CAM (&ldquo;mission control&rdquo;)</a>, and <a href="https://github.com/hoangsonww/claude-code-agent-monitor">Claude-Code-Agent-Monitor</a> build live dashboards by reading the artifacts agents leave on disk. One of them (<a href="https://github.com/fakirAyoub/claude-monitor">fakirAyoub/claude-monitor</a>) already reads <em>both</em> <code>~/.claude/</code> and <code>~/.codex/</code> &mdash; a hint that a unified view is feasible.
+    </div>
+
+    <h3>The gap: per-tool inboxes, no system view</h3>
+    <p>
+      Two things are missing, and the second is the important one:
+    </p>
+    <ul>
+      <li><strong>No cross-tool single pane.</strong> Your eval-triage loop might run in Cursor, your paper pipeline in Codex, your code-review loop in Claude Code. There is no one screen that shows all of them with status, last run, cost, and findings.</li>
+      <li><strong>No view of how loops <em>interact</em>.</strong> Every existing surface is a flat list of runs. None of them shows that <code>W7 &rarr; W8 &rarr; W9 &rarr; W2</code> form a chain, that they share <code>idea-index.md</code>, or that a stalled discovery loop is starving the experiment-generation loop downstream. The interactions are invisible.</li>
+    </ul>
+    <div class="note good">
+      <strong>The key insight that makes a unified dashboard buildable:</strong> in this guide&rsquo;s design, loops interact <em>through shared state files</em> &mdash; the memory spine. <code>discovery-queue.jsonl</code>, <code>idea-index.md</code>, <code>experiment-backlog.md</code>, <code>evals/triage-log.md</code>, the portfolio ledgers, the vault&rsquo;s daily notes. Those files <strong>are</strong> the edges of the loop graph. If a dashboard knows which loop reads and writes which artifact, it can reconstruct the entire interaction graph for free.
+    </div>
+
+    <h3>Proposal: a Loop Control Plane</h3>
+    <p>
+      Since the products will not give us a cross-tool, interaction-aware view, we should build one. Working name: <strong>Loop Control Plane</strong> (CLI <code>loopctl</code>, a local web dashboard). It is read-only observability over the loops you already run &mdash; it does not execute anything, so it has zero blast radius. It works by harvesting the same on-disk artifacts the community monitors use, plus a tiny registry that declares each loop&rsquo;s inputs and outputs.
+    </p>
+
+    <h4>Data sources to harvest</h4>
+    <div class="grid">
+      <div class="mini">
+        <b>Codex</b>
+        <span>Automations DB + <code>~/.codex/</code> session logs &rarr; automation list, run status, findings, tokens.</span>
+      </div>
+      <div class="mini">
+        <b>Claude Code</b>
+        <span><code>~/.claude/</code> JSONL transcripts, <code>tasks/</code>, and hook events &rarr; sessions, subagent trees, cost.</span>
+      </div>
+      <div class="mini">
+        <b>Cursor</b>
+        <span>Cloud Agents dashboard/API + local run logs &rarr; active agents, schedules, PR artifacts.</span>
+      </div>
+      <div class="mini">
+        <b>Shared memory (the edges)</b>
+        <span>The state files in the vault/repo &mdash; queues, ledgers, indices, triage logs &mdash; with their last-write timestamps.</span>
+      </div>
+    </div>
+
+    <h4>No hand-maintained registry &mdash; derive it from the automations</h4>
+    <p>
+      You should <strong>not</strong> hand-maintain a list of your loops. That would just be a second source of truth that drifts the moment you add, rename, or delete an automation. Every tool already stores each automation&rsquo;s definition &mdash; prompt, schedule, type, model, locus &mdash; so the control plane should <strong>discover the loops by reading those stores</strong>, and <strong>infer the read/write edges by observing what each run actually touches</strong>. The registry is a <em>derived view</em>, regenerated on every harvest, never authored.
+    </p>
+    <div class="grid">
+      <div class="mini">
+        <b>Discover the nodes automatically</b>
+        <span>Read each tool&rsquo;s own automation store: Codex&rsquo;s automations DB / <code>~/.codex/</code>, Cursor&rsquo;s Cloud Agents API, Claude Code&rsquo;s scheduled tasks + hooks / <code>~/.claude/</code>. Each entry already carries id, prompt, cadence, tool, and locus &mdash; that <em>is</em> your node list, for free.</span>
+      </div>
+      <div class="mini">
+        <b>Infer the edges automatically</b>
+        <span>Don&rsquo;t declare reads/writes &mdash; observe them. Three signals, strongest first: (1) <strong>run instrumentation</strong> &mdash; Claude Code hooks and Codex/Cursor run logs record the files each run edits; (2) <strong>mtime correlation</strong> &mdash; a write to <code>X</code> inside loop A&rsquo;s run window, then a read of <code>X</code> in loop B&rsquo;s, implies A&rarr;B; (3) <strong>prompt/skill parsing</strong> &mdash; extract referenced paths from the automation&rsquo;s own text as a hint.</span>
+      </div>
+    </div>
+    <p>
+      The result is the same dependency graph (loop B depends on loop A if B reads what A writes) &mdash; but produced by the system, so it is always in sync with the automations that actually exist.
+    </p>
+    <pre><code># DERIVED, not authored — regenerated on every harvest.
+# Sources: codex automations DB, cursor cloud-agents API, ~/.claude tasks+hooks.
+W7-paper-discovery   tool=codex        cadence="daily 07:00"  locus=github-action
+  observed-writes: [research/discovery-queue.jsonl]
+  observed-reads:  [research/themes.md]
+W8-paper-summarize   tool=claude-code  cadence="daily"        locus=local-terminal
+  observed-reads:  [research/discovery-queue.jsonl]
+  observed-writes: [research/idea-index.md, research/papers/]
+W9-experiment-gen    tool=cursor       cadence="weekly"       locus=cloud
+  observed-reads:  [research/idea-index.md]
+  observed-writes: [research/experiment-backlog.md]
+# inferred edges: W7 -> W8 -> W9   (no human declared these)</code></pre>
+    <div class="note">
+      <strong>The only thing a human might add</strong> is an optional thin <em>annotation</em> overlay &mdash; a friendlier display name, a manual grouping, a &ldquo;don&rsquo;t alert on this one&rdquo; flag &mdash; and even those default to values pulled from the automation&rsquo;s title. Nothing about the graph requires hand-maintenance; the annotations only decorate it.
+    </div>
+
+    <h4>The views</h4>
+    <div class="flow">
+      <div>Fleet board<small>every loop: tool, status, last run, next run, cost</small></div>
+      <div>Interaction graph<small>live DAG of loops linked by shared artifacts</small></div>
+      <div>Findings inbox<small>unified triage across Codex / Claude / Cursor</small></div>
+      <div>Cost &amp; budget<small>tokens + spend per loop, per day, with alerts</small></div>
+      <div>Health &amp; staleness<small>stuck runs, stale artifacts, starved downstreams</small></div>
+    </div>
+    <div class="grid">
+      <div class="mini">
+        <b>Fleet board</b>
+        <span>One row per loop across all three tools: status (running / idle / stalled / failed), last and next run, recent findings count, rolling token cost. The single screen the products don&rsquo;t give you.</span>
+      </div>
+      <div class="mini">
+        <b>Interaction graph</b>
+        <span>The differentiator. A live DAG where nodes are loops and edges are shared artifacts. Highlights chains (W7&rarr;W8&rarr;W9&rarr;W2), and flags a stalled upstream that is starving everything downstream.</span>
+      </div>
+      <div class="mini">
+        <b>Unified findings inbox</b>
+        <span>Merge Codex Triage, Claude task boards, and Cursor agent results into one prioritized queue, deduplicated, with links back to the source run.</span>
+      </div>
+      <div class="mini">
+        <b>Cost &amp; staleness alerts</b>
+        <span>Loops spend money while you sleep and silently rot when an upstream breaks. Surface token spend per loop and flag artifacts that should have updated but didn&rsquo;t.</span>
+      </div>
+    </div>
+
+    <h4>Build phases</h4>
+    <ol class="steps">
+      <li><strong>Read-only fleet board (week 1).</strong> Harvest the three tools&rsquo; logs + artifact mtimes into one SQLite store; render a static fleet table. No registry yet.</li>
+      <li><strong>Auto-discovery + interaction graph (week 2).</strong> Discover loops from each tool&rsquo;s automation store; infer edges from observed file reads/writes; render the DAG with status overlays.</li>
+      <li><strong>Unified inbox + cost (week 3).</strong> Normalize findings across tools into one queue; add per-loop token/cost rollups and budget alerts.</li>
+      <li><strong>Health &amp; staleness (week 4).</strong> Detect stalled runs and starved downstreams; push notifications when a chain breaks.</li>
+    </ol>
+    <div class="note">
+      <strong>Tech sketch:</strong> a small Go or Node service with file watchers (fsnotify / chokidar) over <code>~/.claude/</code>, <code>~/.codex/</code>, and the vault; SQLite for history; a React dashboard with a force-directed graph for the DAG. This is deliberately the same pattern the community Claude monitors already use &mdash; the new parts are the <em>cross-tool</em> harvest and the <em>artifact-inferred interaction graph</em>.
+    </div>
+    <div class="note good">
+      <strong>Why it belongs in this guide:</strong> a control plane is how you pay down the two debts that scale with the loop &mdash; it makes <em>cost</em> visible before the bill, and <em>comprehension</em> visible before the drift. It is the L4 &ldquo;operating system&rdquo; rung made literal: you stop chasing per-tool inboxes and start operating your whole loop fleet from one screen, while staying the engineer.
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Where Loops Run</h2>
+    <p>
+      A loop is only as reliable as the machine it runs on. Before you trust a loop to work overnight or while you are away, you have to answer one question: <strong>where does it actually execute, and what has to stay awake for it to fire?</strong> The answer is not uniform &mdash; it varies by tool, and getting it wrong is the most common reason a &ldquo;daily&rdquo; loop quietly stops running.
+    </p>
+    <div class="note warn">
+      <strong>The gotcha in one line:</strong> most automations run <em>locally</em> by default. A local loop dies when your laptop sleeps, reboots, drops VPN, or closes the app &mdash; silently. If a loop must run while you are away, it has to live somewhere that is always on.
+    </div>
+
+    <h3>The two execution models</h3>
+    <div class="grid">
+      <div class="mini">
+        <b>Local execution</b>
+        <span>The loop runs on your machine &mdash; inside a desktop app or a terminal session. Fast to set up, full access to your local checkout and tools, but it only runs while your machine is awake and the app/session is alive.</span>
+      </div>
+      <div class="mini">
+        <b>Remote / cloud execution</b>
+        <span>The loop runs on a remote VM, a server, or CI. It keeps going with your laptop closed, but needs its environment provisioned (repo, secrets, network) and is a step removed from your local state.</span>
+      </div>
+    </div>
+
+    <h3>Per-tool: where automations run &amp; what must stay awake</h3>
+    <table>
+      <thead><tr><th>Tool</th><th>Default locus</th><th>Laptop awake?</th><th>How to run it truly unattended</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>Codex</td>
+          <td><strong>Local</strong> &mdash; in the desktop app</td>
+          <td>Yes. App must be open; machine must not sleep. Enable <strong>&ldquo;Prevent sleep while running&rdquo;</strong> for overnight runs.</td>
+          <td>Move it server-side with the <strong>Codex SDK</strong> or a <strong>GitHub Action</strong>.</td>
+        </tr>
+        <tr>
+          <td>Cursor</td>
+          <td><strong>Cloud</strong> &mdash; Cloud Agents on remote VMs</td>
+          <td>No. Schedules/events fire in the cloud; you can close the laptop and check <code>cursor.com/agents</code> later.</td>
+          <td>Already remote &mdash; nothing extra needed. Provision the environment (repo, secrets, network).</td>
+        </tr>
+        <tr>
+          <td>Claude Code</td>
+          <td><strong>Local</strong> &mdash; terminal session</td>
+          <td>Yes. <code>/loop</code>, cron tasks, and hooks run in your local session and need the machine awake.</td>
+          <td>Push the loop to <strong>GitHub Actions</strong> or any always-on server / box.</td>
+        </tr>
+      </tbody>
+    </table>
+    <div class="note good">
+      <strong>Rule of thumb:</strong> if a loop must run overnight or while you are away, either (a) run it as a <strong>Cursor Cloud Agent</strong>, or (b) host the Codex/Claude loop on a <strong>server, GitHub Action, or always-on box</strong>. Keeping the laptop awake works for short windows but is the fragile option &mdash; it dies on sleep, reboots, and VPN drops.
+    </div>
+
+    <h3>The always-on Linux VM: your own loop host</h3>
+    <p>
+      You already have the best home for unattended loops: <strong>an always-on Linux VM</strong>. It is the <code>server</code> locus in its purest form &mdash; never sleeps, no GUI app to keep open, no dependence on a vendor&rsquo;s cloud or on GitHub Actions minutes. Treat it as your private, persistent loop host: the place where every loop that must run &ldquo;whether or not my laptop is open&rdquo; actually lives. It is also the natural home for the <strong>Loop Control Plane</strong> itself, which wants to be an always-on service watching artifacts and harvesting run logs.
+    </p>
+    <h4>What to run on it</h4>
+    <div class="grid">
+      <div class="mini">
+        <b>Headless agent loops</b>
+        <span>Run the <strong>Codex CLI/SDK</strong> and <strong>Claude Code</strong> headless on the VM &mdash; not the desktop GUI apps. Schedule them with <code>cron</code> or, better, <strong>systemd timers</strong> (restart-on-failure, journald logs, dependency ordering). This is how W1, W2, W7&ndash;W9, and P1&ndash;P3 get a reliable cadence.</span>
+      </div>
+      <div class="mini">
+        <b>The control plane</b>
+        <span>Host <code>loopctl</code> + its dashboard here as a long-lived service. The VM watches <code>~/.claude/</code>, <code>~/.codex/</code>, and the synced repo/vault, stores history in SQLite, and serves the fleet board / interaction graph on a port you reach over the network.</span>
+      </div>
+      <div class="mini">
+        <b>Shared memory, in one place</b>
+        <span>Keep the loops&rsquo; state files (queues, <code>idea-index.md</code>, ledgers, triage logs) on the VM and <strong>sync the Obsidian vault via git</strong>. Loops read/write the canonical copy on the VM; your laptop pulls when you want to review. One source of truth, always reachable.</span>
+      </div>
+      <div class="mini">
+        <b>Event triggers &amp; webhooks</b>
+        <span>Because it is always reachable, the VM can host webhook endpoints &mdash; a new CL, a Slack event, a finished training job can <em>trigger</em> a loop instead of waiting for the next cron tick.</span>
+      </div>
+    </div>
+    <h4>How to set it up</h4>
+    <ol class="steps">
+      <li><strong>Provision auth once.</strong> Install <code>nv-tools</code> and run its auth flow on the VM, plus any agent API keys and git credentials. The VM has no access to your laptop&rsquo;s tokens, so it needs its own.</li>
+      <li><strong>Sync the repo/vault.</strong> Clone the repo and the Obsidian vault on the VM; set a <code>git pull --rebase</code> + <code>push</code> cadence (or a systemd path unit) so memory stays consistent across machines.</li>
+      <li><strong>Schedule the loops.</strong> One systemd timer (or cron line) per loop, each invoking the headless agent with the loop&rsquo;s prompt/skill. Send stdout/stderr to journald so the control plane can harvest it.</li>
+      <li><strong>Run the control plane.</strong> Start <code>loopctl</code> as a systemd service; point it at <code>~/.claude/</code>, <code>~/.codex/</code>, and the synced repo so it auto-discovers the loops running right there.</li>
+    </ol>
+    <pre><code># /etc/systemd/system/loop-w7-discovery.timer
+[Timer]
+OnCalendar=*-*-* 07:00:00
+Persistent=true          # catch up if the VM was down at trigger time
+
+# /etc/systemd/system/loop-w7-discovery.service
+[Service]
+WorkingDirectory=/home/me/obsidian
+ExecStart=/usr/local/bin/codex exec --skill paper-discover
+# journald captures output -> loopctl harvests it for the fleet board</code></pre>
+    <div class="note warn">
+      <strong>Caveats to plan for:</strong> the VM has <strong>no GUI</strong>, so Codex/Claude <em>desktop</em> automations don&rsquo;t apply &mdash; use the CLI/SDK paths instead. It has <strong>no uncommitted local state</strong>, so anything depending on your working tree must be committed/synced first. And it needs its <strong>own secrets and network reach</strong> (VPN/proxy to internal services); provision them once and keep them off the repo. Keep destructive/irreversible actions human-confirmed even here &mdash; an always-on host makes a runaway loop run all night, not just until you close the laptop.
+    </div>
+    <div class="note good">
+      <strong>Net effect:</strong> the always-on VM turns &ldquo;loops that run when I happen to be online&rdquo; into a genuine 24/7 loop fleet, with one canonical memory and one dashboard &mdash; and it does it on hardware you control, without renting cloud agents or burning CI minutes.
+    </div>
+
+    <h3>Choosing a locus per loop</h3>
+    <p>
+      Match the home to the job. The right question is not &ldquo;which tool is best&rdquo; but &ldquo;what does <em>this</em> loop need?&rdquo;
+    </p>
+    <div class="grid">
+      <div class="mini">
+        <b>Keep it local when&hellip;</b>
+        <span>The loop is interactive or you are iterating on it; it needs your uncommitted local state; it runs only while you are at the keyboard anyway (e.g. a meeting-prep loop during work hours); or it touches private data you do not want on a remote VM.</span>
+      </div>
+      <div class="mini">
+        <b>Go remote/cloud when&hellip;</b>
+        <span>It must run overnight or on a fixed cadence regardless of you; it is long-running (training babysitter, multi-hour agent); it should survive sleep/reboots; or it is triggered by external events (a new CL, a webhook) that arrive when you are away.</span>
+      </div>
+    </div>
+    <div class="note">
+      <strong>Map it to the loops in this guide.</strong> The morning briefing (L1) and meeting prep (L2) are fine <em>local</em> &mdash; you are around when they matter. But the nightly eval-triage (W1), the training-run babysitter (W2), the daily paper-discovery pipeline (W7&ndash;W9), and the daily mark-to-market (P1) all belong on the <em>always-on Linux VM</em> so they fire whether or not your laptop is open. A loop that only runs &ldquo;when I happen to be online&rdquo; is not really a loop.
+    </div>
+
+    <h3>Surface the execution locus (also auto-derived)</h3>
+    <p>
+      Because the locus determines reliability, it should be a first-class field in the control plane &mdash; and like everything else, it is <strong>discovered, not declared</strong>. The tool already knows where each automation runs: a Cursor Cloud Agent is <code>cloud</code>, a Codex desktop automation is <code>local-app</code>, a Claude <code>/loop</code> is <code>local-terminal</code>, a loop wired into CI is <code>github-action</code>. The harvester reads that from each automation&rsquo;s definition and tags the node automatically, so the fleet board can flag which loops silently stop when your laptop sleeps &mdash; without you maintaining a thing.
+    </p>
+    <pre><code># DERIVED locus per loop — read from each tool's automation definition.
+W1-eval-triage      tool=cursor       locus=cloud           # runs regardless of my laptop
+L1-morning-briefing tool=claude-code  locus=local-terminal  # fine — I'm around when it matters
+W7-paper-discovery  tool=codex        locus=github-action   # moved off the laptop for reliability
+# locus ∈ {local-app, local-terminal, cloud, github-action, server} — inferred, not authored</code></pre>
+    <div class="note good">
+      <strong>Bottom line:</strong> decide each loop&rsquo;s home on purpose. Local is the easy default and the right call for things you babysit anyway; cloud/CI is the home for anything that has to run without you. The failure you are designing against is the silent one &mdash; a loop you <em>think</em> is running every night that actually stopped the first time your laptop went to sleep.
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Your First Week &mdash; A Concrete Rollout</h2>
+    <p>
+      Do not boil the ocean. Build one loop end-to-end, feel the shape, then replicate. A realistic week:
+    </p>
+    <div class="grid">
+      <div class="mini">
+        <b>Day 1 &mdash; Pick &amp; map</b>
+        <span>Choose the single chore that annoys you most (suggest: W5 standup synthesizer or L1 morning briefing). Fill in the Loop Design Canvas for it.</span>
+      </div>
+      <div class="mini">
+        <b>Day 2 &mdash; Write the skill</b>
+        <span>Capture the conventions, formats, and &ldquo;don&rsquo;t do X&rdquo; rules in a SKILL.md. Boring, specific description.</span>
+      </div>
+      <div class="mini">
+        <b>Day 3 &mdash; Wire the memory</b>
+        <span>Create the markdown/JSONL state file in the vault. Make the loop read it at start and append at end.</span>
+      </div>
+      <div class="mini">
+        <b>Day 4 &mdash; Schedule it (Tier 1)</b>
+        <span>Turn it into an automation on a daily cadence, read-only, reporting into an inbox/daily note.</span>
+      </div>
+      <div class="mini">
+        <b>Day 5 &mdash; Add the verifier</b>
+        <span>Add a checker sub-agent or a verifiable stop condition. Confirm it catches a deliberately bad run.</span>
+      </div>
+      <div class="mini">
+        <b>Day 6&ndash;7 &mdash; Observe &amp; tune</b>
+        <span>Let it run. Read every output. Tune the skill where it guessed wrong. Decide if it has earned Tier 2.</span>
+      </div>
+    </div>
+    <div class="note good">
+      <strong>The bar for &ldquo;it worked&rdquo;:</strong> after one week you should be reviewing the loop&rsquo;s output instead of doing the chore, and you should trust its &ldquo;nothing to report&rdquo; as much as its findings. That trust &mdash; earned, not assumed &mdash; is the whole game.
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Guardrails &amp; When NOT to Loop</h2>
+    <p>
+      Loops are leverage, and leverage cuts both ways. A few hard rules keep them an asset.
+    </p>
+    <div class="grid">
+      <div class="mini">
+        <b>Don&rsquo;t loop the irreversible</b>
+        <span>Anything destructive or hard to undo (sending external mail, spending real money, deleting, force-pushing) stays human-confirmed. Keep it at Tier 2 forever.</span>
+      </div>
+      <div class="mini">
+        <b>Don&rsquo;t loop the one-off</b>
+        <span>If it does not genuinely recur, a loop is overhead. Just run the agent once.</span>
+      </div>
+      <div class="mini">
+        <b>Don&rsquo;t loop what you can&rsquo;t verify</b>
+        <span>No verifiable stop condition means no unattended run. Escalate to a human instead of declaring done.</span>
+      </div>
+      <div class="mini">
+        <b>Cap the blast radius</b>
+        <span>Scope tokens, frequency, file paths, and write permissions per loop. A runaway loop should be annoying, not catastrophic.</span>
+      </div>
+      <div class="mini">
+        <b>Read on a cadence</b>
+        <span>Schedule yourself to actually read what your loops produced &mdash; that is how you pay down comprehension debt before it compounds.</span>
+      </div>
+      <div class="mini">
+        <b>Keep an opinion</b>
+        <span>The moment you are taking outputs without a view, you have surrendered. Designing the loop is the cure only if you stay the engineer.</span>
+      </div>
+    </div>
+    <p style="margin-top: 18px;">
+      Osmani&rsquo;s closing is the right note to end on: <strong>build the loop, but build it like someone who intends to stay the engineer, not just the person who presses go.</strong> Set up your loops &mdash; and remember that prompting your agents directly is still effective. It is about balance, and the loop will only ever be as good as the judgment you keep in the room.
+    </p>
+  </section>
+
+  <section class="card">
+    <h2>Appendix &mdash; Glossary &amp; Sources</h2>
+    <h3>Glossary</h3>
+    <table>
+      <thead><tr><th>Term</th><th>Meaning</th></tr></thead>
+      <tbody>
+        <tr><td>Loop engineering</td><td>Designing a system that prompts agents and decides next steps for you, on a cadence, instead of prompting them yourself.</td></tr>
+        <tr><td>Harness</td><td>The environment a single agent runs inside. Loop engineering sits one floor above it.</td></tr>
+        <tr><td>Automation</td><td>A scheduled prompt/skill that runs without you and reports findings.</td></tr>
+        <tr><td>Worktree</td><td>An isolated git checkout on its own branch so parallel agents don&rsquo;t collide.</td></tr>
+        <tr><td>Skill</td><td>A <code>SKILL.md</code> folder of codified project knowledge an agent loads when relevant.</td></tr>
+        <tr><td>Connector / MCP</td><td>An integration that lets the agent touch real tools (trackers, data, chat).</td></tr>
+        <tr><td>Sub-agent</td><td>A spawned agent with its own instructions/model, used to split maker from checker.</td></tr>
+        <tr><td>Memory / state</td><td>On-disk record (markdown, JSONL, board) of what is done and what is next.</td></tr>
+        <tr><td><code>/loop</code></td><td>Re-runs a prompt on a cadence.</td></tr>
+        <tr><td><code>/goal</code></td><td>Runs until a verifiable stop condition holds, checked by a separate model each turn.</td></tr>
+        <tr><td>Comprehension debt</td><td>The growing gap between what the loop shipped and what you understand.</td></tr>
+        <tr><td>Cognitive surrender</td><td>Taking loop output without forming an opinion; the failure mode of smooth loops.</td></tr>
+      </tbody>
+    </table>
+    <h3>Sources</h3>
+    <ul>
+      <li>Addy Osmani &mdash; <a href="https://addyosmani.com/blog/loop-engineering/">Loop Engineering</a> (Jun 7, 2026) &mdash; primary reference.</li>
+      <li>Rahul (@sairahul1) &mdash; <a href="https://x.com/sairahul1/status/2064277888216555684">Loops: What Every AI Engineer Needs to Know in 2026</a>.</li>
+      <li>elvis (@omarsar0) &mdash; <a href="https://x.com/omarsar0/status/2068008743153832264">From Prompting Agents to Loop Engineering</a>.</li>
+      <li>AlphaSignal AI &mdash; <a href="https://x.com/AlphaSignalAI/status/2066540692281971085">All about loop engineering (including the pitfalls)</a>.</li>
+      <li>Anatoli Kopadze &mdash; <a href="https://x.com/AnatoliKopadze/status/2068328135611822149">Loops explained: Claude, GPT, Mira and what actually works</a>.</li>
+      <li>Alok Bishoyi (@alokbishoyi97) &mdash; <a href="https://x.com/alokbishoyi97/status/2064281952631525741">Self-Evolving Autoresearch Workflow Loops</a>.</li>
+      <li>Attributed quotes: Peter Steinberger (OpenClaw creator, OpenAI) and Boris Cherny (head of Claude Code, Anthropic), via the sources above.</li>
+    </ul>
+  </section>
+
+      </div>
+    </div>
+
+    <p class="footer">
+      Loopcraft &mdash; a field guide to loop engineering, synthesized from the June 2026 loop-engineering discourse and adapted to Nemotron post-training, a personal investing lab, and daily-life workflows.
+    </p>
+  </main>
+
+  <script>
+    const slugify = (text) => text
+      .toLowerCase()
+      .replace(/&amp;/g, "and")
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "");
+
+    const toc = document.getElementById("generated-toc");
+    const sections = [...document.querySelectorAll(".content-col section")];
+    const tocLinks = new Map();
+    const tocGroups = new Map();
+
+    for (const section of sections) {
+      const heading = section.querySelector(":scope > h2");
+      if (!heading) continue;
+      if (!section.id) section.id = slugify(heading.textContent);
+
+      const group = document.createElement("div");
+      group.className = "toc-group";
+      const a = document.createElement("a");
+      a.className = "toc-parent";
+      a.href = "#" + section.id;
+      a.textContent = heading.textContent;
+      group.appendChild(a);
+
+      const children = document.createElement("div");
+      children.className = "toc-children";
+      const subheads = [...section.querySelectorAll("h3")];
+      for (const subhead of subheads) {
+        if (!subhead.id) subhead.id = `${section.id}-${slugify(subhead.textContent)}`;
+        const child = document.createElement("a");
+        child.href = "#" + subhead.id;
+        child.textContent = subhead.textContent.replace(/\s+/g, " ").trim();
+        children.appendChild(child);
+        tocLinks.set(subhead.id, child);
+      }
+      if (subheads.length > 0) group.appendChild(children);
+      toc.appendChild(group);
+      tocLinks.set(section.id, a);
+      tocGroups.set(section.id, group);
+    }
+
+    const setActiveTocLink = (id) => {
+      const active = tocLinks.get(id);
+      if (!active) return;
+      for (const link of tocLinks.values()) link.classList.remove("active");
+      for (const group of tocGroups.values()) group.classList.remove("current");
+      active.classList.add("active");
+      const currentSection = sections.find((section) => (
+        section.id === id || Boolean(section.querySelector(`#${CSS.escape(id)}`))
+      ));
+      if (currentSection) tocGroups.get(currentSection.id)?.classList.add("current");
+    };
+
+    const targets = sections
+      .flatMap((section) => [
+        { section, id: section.id },
+        ...[...section.querySelectorAll("h3[id]")].map((subhead) => ({ section: subhead, id: subhead.id })),
+      ])
+      .filter((target) => tocLinks.has(target.id));
+
+    let ticking = false;
+    const updateActiveTocLink = () => {
+      ticking = false;
+      const current = targets
+        .filter(({ section }) => section.getBoundingClientRect().top <= 220)
+        .at(-1) || targets[0];
+      if (current) setActiveTocLink(current.id);
+    };
+
+    window.addEventListener("scroll", () => {
+      if (ticking) return;
+      ticking = true;
+      requestAnimationFrame(updateActiveTocLink);
+    }, { passive: true });
+
+    window.addEventListener("hashchange", updateActiveTocLink);
+    if (window.location.hash) {
+      requestAnimationFrame(() => {
+        document.querySelector(window.location.hash)?.scrollIntoView();
+        updateActiveTocLink();
+      });
+    }
+    updateActiveTocLink();
+  </script>
+</body>
+</html>
