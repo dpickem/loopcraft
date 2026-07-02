@@ -136,6 +136,3 @@ are written to `~/workspace/loopcraft_memory/ledger/research/arxiv/` by default
 (`latest.md`, `latest.json`, archived `history/*.md/json`, `seen.json`,
 `papers.jsonl`).
 
-See [docs/arxiv_intel_automation.md](docs/arxiv_intel_automation.md) for Codex automation setup notes.
-
-See [docs/x_intel_automation.md](docs/x_intel_automation.md) for Codex automation setup notes.
