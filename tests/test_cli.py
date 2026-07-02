@@ -1,3 +1,5 @@
+"""Tests for the loopctl CLI commands, exit codes, and JSON envelope."""
+
 from __future__ import annotations
 
 import json
@@ -16,9 +18,11 @@ class StubRunner:
     vendor = "stub"
 
     def preflight(self, loop, config):  # noqa: ANN001
+        """Report a passing preflight (no external checks)."""
         return PreflightReport(vendor=self.vendor, ok=True, problems=[])
 
     def run(self, loop, ctx):  # noqa: ANN001
+        """Write each declared output and a log, then report done."""
         produced = []
         for path in ctx.resolved_outputs:
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -30,11 +34,13 @@ class StubRunner:
 
 
 def _env(monkeypatch, tmp_path: Path) -> None:
+    """Point loopctl at the repo source tree and a temp memory tree."""
     monkeypatch.setenv("LOOPCRAFT_SOURCE", str(REPO_ROOT))
     monkeypatch.setenv("LOOPCRAFT_MEMORY", str(tmp_path / "mem"))
 
 
 def test_validate_repo_loops(monkeypatch, tmp_path: Path, capsys) -> None:
+    """`loopctl validate` reports all shipped manifests as valid."""
     _env(monkeypatch, tmp_path)
     rc = cli.main(["validate"])
     assert rc == 0
@@ -42,6 +48,7 @@ def test_validate_repo_loops(monkeypatch, tmp_path: Path, capsys) -> None:
 
 
 def test_list_includes_slack_triage(monkeypatch, tmp_path: Path, capsys) -> None:
+    """`loopctl list` includes the slack-triage loop."""
     _env(monkeypatch, tmp_path)
     rc = cli.main(["list"])
     assert rc == 0
@@ -49,6 +56,7 @@ def test_list_includes_slack_triage(monkeypatch, tmp_path: Path, capsys) -> None
 
 
 def test_run_end_to_end_with_stub_runner(monkeypatch, tmp_path: Path, capsys) -> None:
+    """`loopctl run` stages assets, writes outputs, and records the run."""
     _env(monkeypatch, tmp_path)
     register_runner("stub", StubRunner)
 
@@ -87,6 +95,7 @@ def test_run_end_to_end_with_stub_runner(monkeypatch, tmp_path: Path, capsys) ->
 
 
 def test_run_prunes_old_worktrees(monkeypatch, tmp_path: Path) -> None:
+    """Old per-run worktrees are pruned to keep-last while records persist."""
     _env(monkeypatch, tmp_path)
     monkeypatch.setenv("LOOPCRAFT_WORKTREE_KEEP_LAST", "2")
     register_runner("stub", StubRunner)
@@ -103,12 +112,16 @@ def test_run_prunes_old_worktrees(monkeypatch, tmp_path: Path) -> None:
 
 
 def test_run_records_failure_on_preflight(monkeypatch, tmp_path: Path) -> None:
+    """A failed preflight records a failed run and does not execute."""
     _env(monkeypatch, tmp_path)
 
     class FailingRunner(StubRunner):
+        """Stub runner whose preflight always fails."""
+
         vendor = "failing"
 
         def preflight(self, loop, config):  # noqa: ANN001
+            """Report a failing preflight."""
             return PreflightReport(vendor=self.vendor, ok=False, problems=["nope"])
 
     register_runner("failing", FailingRunner)
@@ -124,6 +137,7 @@ def test_run_records_failure_on_preflight(monkeypatch, tmp_path: Path) -> None:
 
 
 def test_run_dry_run_with_stub(monkeypatch, tmp_path: Path, capsys) -> None:
+    """A dry run reports preflight OK and writes no outputs."""
     _env(monkeypatch, tmp_path)
     register_runner("stub", StubRunner)
     rc = cli.main(["run", "slack-triage", "--vendor", "stub", "--dry-run"])
@@ -135,12 +149,14 @@ def test_run_dry_run_with_stub(monkeypatch, tmp_path: Path, capsys) -> None:
 
 
 def test_unknown_loop_returns_error(monkeypatch, tmp_path: Path) -> None:
+    """Running an unknown loop exits with code 2."""
     _env(monkeypatch, tmp_path)
     rc = cli.main(["run", "does-not-exist"])
     assert rc == 2
 
 
 def test_list_json_envelope(monkeypatch, tmp_path: Path, capsys) -> None:
+    """`--json list` emits a consistent envelope listing the loops."""
     _env(monkeypatch, tmp_path)
     rc = cli.main(["--json", "list"])
     assert rc == 0
@@ -152,6 +168,7 @@ def test_list_json_envelope(monkeypatch, tmp_path: Path, capsys) -> None:
 
 
 def test_run_dry_run_json_envelope(monkeypatch, tmp_path: Path, capsys) -> None:
+    """`--json run --dry-run` emits the preflight/outputs in the envelope."""
     _env(monkeypatch, tmp_path)
     register_runner("stub", StubRunner)
     rc = cli.main(["--json", "run", "slack-triage", "--vendor", "stub", "--dry-run"])
@@ -186,9 +203,9 @@ def test_scheme_output_fails_validate_and_run(monkeypatch, tmp_path: Path) -> No
 def test_deps_check_loop_runs_preflight(monkeypatch, tmp_path: Path, capsys) -> None:
     """Finding 2: deps check --loop surfaces the loop's declared-dep preflight."""
     _env(monkeypatch, tmp_path)
-    from loopcraft.runners import codex as codex_module
+    from loopcraft.runners import capabilities as capabilities_module
 
-    monkeypatch.setitem(codex_module.AUTH_PROBES, "nv-tools", lambda config: "auth bundle 'nv-tools': boom")
+    monkeypatch.setitem(capabilities_module.AUTH_PROBES, "nv-tools", lambda config: "auth bundle 'nv-tools': boom")
     rc = cli.main(["deps", "check", "--loop", "slack-triage"])
     out = capsys.readouterr().out
     assert "preflight slack-triage" in out

@@ -1,3 +1,5 @@
+"""Tests for the Codex runner preflight, command/prompt build, and run loop."""
+
 from __future__ import annotations
 
 import subprocess
@@ -6,6 +8,7 @@ from types import SimpleNamespace
 
 from loopcraft.config import LoopcraftConfig
 from loopcraft.manifest import LoopManifest
+from loopcraft.runners import capabilities as capabilities_module
 from loopcraft.runners import codex as codex_module
 from loopcraft.runners import base as runner_base_module
 from loopcraft.runners.base import (
@@ -18,6 +21,7 @@ from loopcraft.runners.codex import CodexRunner
 
 
 def _config(tmp_path: Path) -> LoopcraftConfig:
+    """Return a config with a demo skill + verify file staged under tmp_path."""
     source = tmp_path / "src"
     (source / "skills" / "demo").mkdir(parents=True)
     (source / "skills" / "demo" / "SKILL.md").write_text("do the thing", encoding="utf-8")
@@ -26,6 +30,7 @@ def _config(tmp_path: Path) -> LoopcraftConfig:
 
 
 def _manifest(**overrides) -> LoopManifest:
+    """Return a demo loop manifest, with ``overrides`` merged in."""
     base = {
         "id": "demo",
         "name": "Demo",
@@ -44,6 +49,7 @@ def _manifest(**overrides) -> LoopManifest:
 
 
 def test_preflight_reports_missing_skill(tmp_path: Path) -> None:
+    """Preflight fails when the declared skill file does not exist."""
     config = _config(tmp_path)
     manifest = _manifest(logic={"skill": "skills/ghost/SKILL.md"})
     report = CodexRunner().preflight(manifest, config)
@@ -52,6 +58,7 @@ def test_preflight_reports_missing_skill(tmp_path: Path) -> None:
 
 
 def test_preflight_reports_missing_env(tmp_path: Path) -> None:
+    """Preflight reports a required env var that is not set."""
     config = _config(tmp_path)
     manifest = _manifest(depends_on={"env": ["LOOPCRAFT_DEFINITELY_UNSET_VAR"]})
     report = CodexRunner().preflight(manifest, config)
@@ -59,6 +66,7 @@ def test_preflight_reports_missing_env(tmp_path: Path) -> None:
 
 
 def test_run_writes_log_and_reports_done(tmp_path: Path, monkeypatch) -> None:
+    """A run that produces its output writes a log and reports done."""
     config = _config(tmp_path)
     manifest = _manifest()
     output = config.resolve_state_path("state/demo/out.md")
@@ -71,7 +79,7 @@ def test_run_writes_log_and_reports_done(tmp_path: Path, monkeypatch) -> None:
     ctx.workdir.mkdir(parents=True)
 
     def fake_run(cmd, **kwargs):  # noqa: ANN001
-        # Emulate the agent producing its declared output.
+        """Stubbed subprocess.run that writes the declared output and exits 0."""
         output.parent.mkdir(parents=True, exist_ok=True)
         output.write_text("# digest\n- item", encoding="utf-8")
         return SimpleNamespace(returncode=0, stdout="ok", stderr="")
@@ -103,7 +111,7 @@ def test_run_flags_stale_unrefreshed_output(tmp_path: Path, monkeypatch) -> None
     ctx.workdir.mkdir(parents=True)
 
     def fake_run(cmd, **kwargs):  # noqa: ANN001
-        # Exit 0 but leave the pre-existing output untouched.
+        """Stubbed subprocess.run that exits 0 without touching the output."""
         return SimpleNamespace(returncode=0, stdout="ok", stderr="")
 
     monkeypatch.setattr(runner_base_module.subprocess, "run", fake_run)
@@ -115,6 +123,7 @@ def test_run_flags_stale_unrefreshed_output(tmp_path: Path, monkeypatch) -> None
 
 
 def test_run_flags_missing_output(tmp_path: Path, monkeypatch) -> None:
+    """A clean exit that never produced a declared output is a failure."""
     config = _config(tmp_path)
     manifest = _manifest()
     output = config.resolve_state_path("state/demo/out.md")
@@ -127,6 +136,7 @@ def test_run_flags_missing_output(tmp_path: Path, monkeypatch) -> None:
     ctx.workdir.mkdir(parents=True)
 
     def fake_run(cmd, **kwargs):  # noqa: ANN001
+        """Stubbed subprocess.run that exits 0 producing nothing."""
         return SimpleNamespace(returncode=0, stdout="", stderr="")
 
     monkeypatch.setattr(runner_base_module.subprocess, "run", fake_run)
@@ -137,6 +147,7 @@ def test_run_flags_missing_output(tmp_path: Path, monkeypatch) -> None:
 
 
 def test_run_handles_missing_codex_binary(tmp_path: Path, monkeypatch) -> None:
+    """A missing codex binary yields a failed result with exit code 127."""
     config = _config(tmp_path)
     manifest = _manifest()
     output = config.resolve_state_path("state/demo/out.md")
@@ -149,6 +160,7 @@ def test_run_handles_missing_codex_binary(tmp_path: Path, monkeypatch) -> None:
     ctx.workdir.mkdir(parents=True)
 
     def boom(cmd, **kwargs):  # noqa: ANN001
+        """Stubbed subprocess.run that raises FileNotFoundError."""
         raise FileNotFoundError("codex")
 
     monkeypatch.setattr(runner_base_module.subprocess, "run", boom)
@@ -159,6 +171,7 @@ def test_run_handles_missing_codex_binary(tmp_path: Path, monkeypatch) -> None:
 
 
 def test_build_prompt_embeds_valid_skill(tmp_path: Path) -> None:
+    """The built prompt embeds the resolved skill text."""
     config = _config(tmp_path)
     manifest = _manifest()
     ctx = RunContext(config=config, workdir=tmp_path, log_path=tmp_path / "l")
@@ -178,6 +191,7 @@ def test_build_prompt_uses_safe_source_resolver(tmp_path: Path) -> None:
 
 
 def test_build_command_includes_model(tmp_path: Path) -> None:
+    """The built command passes the pinned model to codex."""
     config = _config(tmp_path)
     manifest = _manifest()
     ctx = RunContext(config=config, workdir=tmp_path, log_path=tmp_path / "l")
@@ -209,6 +223,7 @@ def test_build_command_scopes_sandbox_not_bypass(tmp_path: Path) -> None:
 
 
 def test_preflight_unknown_auth_bundle_reported(tmp_path: Path) -> None:
+    """An auth bundle with no registered probe is reported."""
     config = _config(tmp_path)
     manifest = _manifest(depends_on={"auth": ["mystery-bundle"]})
     report = CodexRunner().preflight(manifest, config)
@@ -216,32 +231,36 @@ def test_preflight_unknown_auth_bundle_reported(tmp_path: Path) -> None:
 
 
 def test_preflight_auth_probe_failure_reported(tmp_path: Path, monkeypatch) -> None:
+    """A failing auth probe surfaces its message in the report."""
     config = _config(tmp_path)
     manifest = _manifest(depends_on={"auth": ["nv-tools"]})
-    monkeypatch.setitem(codex_module.AUTH_PROBES, "nv-tools", lambda config: "auth bundle 'nv-tools': boom")
+    monkeypatch.setitem(capabilities_module.AUTH_PROBES, "nv-tools", lambda config: "auth bundle 'nv-tools': boom")
     report = CodexRunner().preflight(manifest, config)
     assert any("boom" in p for p in report.problems)
 
 
 def test_preflight_api_probe_failure_reported(tmp_path: Path, monkeypatch) -> None:
+    """A failing API probe surfaces its message in the report."""
     config = _config(tmp_path)
     manifest = _manifest(depends_on={"apis": ["slack"]})
-    monkeypatch.setitem(codex_module.API_PROBES, "slack", lambda config: "api 'slack': not configured")
+    monkeypatch.setitem(capabilities_module.API_PROBES, "slack", lambda config: "api 'slack': not configured")
     report = CodexRunner().preflight(manifest, config)
     assert any("slack" in p for p in report.problems)
 
 
 def test_preflight_passes_when_probes_ok(tmp_path: Path, monkeypatch) -> None:
+    """Preflight passes when the binary, probes, skill, and verify are OK."""
     config = _config(tmp_path)
     manifest = _manifest(depends_on={"auth": ["nv-tools"], "apis": ["slack"]})
     monkeypatch.setattr(codex_module.shutil, "which", lambda name: f"/usr/bin/{name}")
-    monkeypatch.setitem(codex_module.AUTH_PROBES, "nv-tools", lambda config: None)
-    monkeypatch.setitem(codex_module.API_PROBES, "slack", lambda config: None)
+    monkeypatch.setitem(capabilities_module.AUTH_PROBES, "nv-tools", lambda config: None)
+    monkeypatch.setitem(capabilities_module.API_PROBES, "slack", lambda config: None)
     report = CodexRunner().preflight(manifest, config)
     assert report.ok, report.problems
 
 
 def test_preflight_flags_unrecognized_model(tmp_path: Path) -> None:
+    """Preflight flags a model id that does not look like a Codex model."""
     config = _config(tmp_path)
     manifest = _manifest(runtime={"vendor": "codex", "model": "opus"})
     report = CodexRunner().preflight(manifest, config)
@@ -252,6 +271,7 @@ def test_preflight_flags_unrecognized_model(tmp_path: Path) -> None:
 
 
 def test_run_timeout_returns_stalled(tmp_path: Path, monkeypatch) -> None:
+    """Exceeding budget.max_runtime aborts the run and reports stalled."""
     config = _config(tmp_path)
     manifest = _manifest(budget={"max_runtime": "5m"})
     output = config.resolve_state_path("state/demo/out.md")
@@ -264,6 +284,7 @@ def test_run_timeout_returns_stalled(tmp_path: Path, monkeypatch) -> None:
     ctx.workdir.mkdir(parents=True)
 
     def fake_timeout(cmd, **kwargs):  # noqa: ANN001
+        """Stubbed subprocess.run that raises TimeoutExpired at the budget."""
         assert kwargs.get("timeout") == 300
         raise runner_base_module.subprocess.TimeoutExpired(cmd, kwargs.get("timeout"))
 

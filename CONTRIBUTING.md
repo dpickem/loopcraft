@@ -273,7 +273,11 @@ but irreversible actions must be approval-gated.
 Runtime adapters subclass `BaseRunner` in `src/loopcraft/runners/`:
 
 - `preflight(loop, config)`: report missing binaries, tools, auth, env vars,
-  model support, or skill files before a run starts.
+  model support, or skill files before a run starts. Reuse
+  `self.check_declared_capabilities(loop, config)` for the runtime-neutral checks
+  (skill/verify assets, tools, env, auth bundles, APIs) and add only
+  vendor-specific checks (the vendor binary and model id). The shared probe
+  registries live in `loopcraft.runners.capabilities`.
 - `run(loop, ctx)`: execute in an isolated worktree and return a normalized
   `RunResult`.
 

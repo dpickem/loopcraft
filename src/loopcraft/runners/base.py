@@ -17,6 +17,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from loopcraft.config import LoopcraftConfig, SourcePathError
 from loopcraft.manifest import LoopManifest
+from loopcraft.runners.capabilities import check_declared_capabilities
 
 STATUS_DONE = "done"
 STATUS_STALLED = "stalled"
@@ -85,6 +86,23 @@ class BaseRunner(ABC):
     def build_prompt(self, loop: LoopManifest, ctx: RunContext) -> str:
         """Build the initial prompt sent to the vendor runtime."""
         raise NotImplementedError
+
+    def check_declared_capabilities(self, loop: LoopManifest, config: LoopcraftConfig) -> list[str]:
+        """Return runtime-neutral problems for a loop's declared dependencies.
+
+        Validates the skill/verify assets, tools on PATH, required env vars, and
+        declared auth bundles/APIs via the shared capability registries. Vendor
+        runners call this from ``preflight`` and add only their own checks (e.g.
+        the vendor binary and model id).
+
+        Args:
+            loop: The loop manifest to check.
+            config: Resolved control-plane config.
+
+        Returns:
+            A list of problem strings (empty when all declared capabilities pass).
+        """
+        return check_declared_capabilities(loop, config)
 
     def writable_roots(self, ctx: RunContext) -> list[str]:
         """Return extra directories the loop is allowed to write to."""
