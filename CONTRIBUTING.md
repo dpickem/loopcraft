@@ -15,8 +15,9 @@ Before editing or submitting code, verify every item below:
 - Keep imports at module scope unless a command handler intentionally defers a
   heavy or circular import.
 - Keep all signatures fully typed; use `X | None`, parameterized collections,
-  and dataclasses for structured shapes.
-- Prefer `dataclass` models for manifest/config/run-result structures.
+  and Pydantic models for structured shapes.
+- Prefer Pydantic models (not dataclasses) for manifest/config/run-result
+  structures; they give validation, structured errors, and JSON serialization.
 - Do not add broad `type: ignore` comments; fix the type model instead, or
   document a narrow unavoidable exception.
 - Do not commit generated files (`__pycache__/`, `.pytest_cache/`, `var/`,
@@ -147,7 +148,14 @@ All behavior changes need tests:
 Tests must be offline by default. If an integration test is added later, it must
 be opt-in and auto-skip when credentials or runtime CLIs are missing.
 
-### 4. Imports
+### 4. Module Docstrings
+
+Every non-trivial source file must start with a module docstring. Use one short
+paragraph for simple files and two short paragraphs when the file owns an
+important boundary (runner adapter, manifest validation, store, API client, CLI).
+Tiny `__init__.py` files may stay docstring-only or empty.
+
+### 5. Imports
 
 Keep imports at module scope:
 
@@ -158,16 +166,29 @@ from loopcraft.manifest import LoopManifest
 Local imports are acceptable only when they avoid a real circular dependency or
 defer a heavy optional dependency from CLI startup.
 
-### 5. Docstrings
+Use absolute imports inside `loopcraft` source files. Prefer:
 
-Public modules, classes, functions, and methods should have useful docstrings.
-Use the level of detail the API deserves:
+```python
+from loopcraft.research_intel.x.config import IntelConfig
+```
+
+over relative imports such as:
+
+```python
+from .config import IntelConfig
+```
+
+### 6. Docstrings
+
+Public functions, methods, and classes must have useful PEP 257-style
+docstrings. Use the level of detail the API deserves:
 
 - First line: concise summary.
-- `Args`, `Returns`, and `Raises` where a public API benefits from them.
+- `Args`, `Returns`, and `Raises` for public APIs with parameters, return values,
+  or expected failures.
 - Shorter docstrings are fine for private helpers when the function is obvious.
 
-### 6. Type Annotations
+### 7. Type Annotations
 
 All function signatures should be fully typed.
 
@@ -176,17 +197,46 @@ def resolve_state_path(self, declared: str) -> Path:
     ...
 ```
 
-Use `X | None` instead of `Optional[X]`, parameterize collections
-(`list[str]`, `dict[str, object]`), and prefer dataclasses for structured data
-such as manifests, configs, preflight reports, run contexts, and run results.
+Use `X | None` instead of `Optional[X]`, parameterize collections, and do not
+quote return types unnecessarily when `from __future__ import annotations` is in
+use.
 
-### 7. Closed Vocabularies
+### 8. Structured Models
+
+Use Pydantic models for structured inputs/outputs that cross module boundaries:
+manifests, content configs, validation reports, runner contexts/results, and CLI
+JSON payloads. Pydantic gives validation, structured errors, and clear JSON
+serialization. Avoid ad hoc `dict[str, Any]` return types for public APIs.
+
+### 9. Closed Vocabularies and Constants
 
 For stable vocabularies such as vendors, loci, tiers, cadence types, and run
-statuses, keep the allowed values centralized and tested. As these vocabularies
-grow, prefer `Enum` / `StrEnum` over repeated string literals.
+statuses, use `Enum` / `StrEnum` rather than sets of magic strings. Put repeated
+constants (field names, default filenames, thresholds, score weights, retry
+limits, query fragments) at module scope or in a user-editable config structure.
+Do not scatter magic values through function bodies.
 
-### 8. No Routine Shell Scripts
+### 10. Retries
+
+Use `tenacity` for retryable network/API calls. Keep retry predicates narrow
+(specific exception types or status codes), cap attempts, and use bounded waits.
+Do not hand-roll retry loops in clients.
+
+### 11. Environment Access
+
+Centralize environment variable reads in config/loading code. Command handlers
+and clients should receive resolved config/token values rather than calling
+`os.environ` directly. Load `.env` once at the boundary (`loopctl`/CLI entry
+point) and keep direct environment interactions out of business logic.
+
+### 12. CLI Output
+
+CLIs should support agent-friendly JSON output for structured commands. Keep the
+shape consistent across commands: success/status, command name, data payload,
+and problems/errors. Human-readable text output can remain the default when it
+is useful, but JSON must be available for automation.
+
+### 13. No Routine Shell Scripts
 
 Routine workflows should be exposed through `make` targets or Python modules:
 
@@ -220,7 +270,7 @@ but irreversible actions must be approval-gated.
 
 ## Adding a Runtime Adapter
 
-Runtime adapters implement the `Runner` protocol in `src/loopcraft/runners/`:
+Runtime adapters subclass `BaseRunner` in `src/loopcraft/runners/`:
 
 - `preflight(loop, config)`: report missing binaries, tools, auth, env vars,
   model support, or skill files before a run starts.
