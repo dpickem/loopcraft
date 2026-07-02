@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 
 from loopcraft import cli
+from loopcraft.config import LoopcraftConfig
 from loopcraft.runners import register_runner
 from loopcraft.runners.base import PreflightReport, RunResult, STATUS_DONE
 
@@ -198,6 +199,38 @@ def test_scheme_output_fails_validate_and_run(monkeypatch, tmp_path: Path) -> No
 
     assert cli.main(["validate"]) == 1
     assert cli.main(["run", "demo"]) == 2
+
+
+def test_deps_check_optional_missing_does_not_fail(monkeypatch, tmp_path: Path, capsys) -> None:
+    """Missing optional/future-runtime binaries are reported but never fail the check."""
+    config = LoopcraftConfig(
+        source_path=tmp_path / "s",
+        memory_path=tmp_path / "m",
+        dependencies={"git": "git"},
+        optional_dependencies={"claude": "claude"},
+    )
+    monkeypatch.setattr(cli.shutil, "which", lambda name: "/usr/bin/git" if name == "git" else None)
+    rc = cli._cmd_deps_check(config, as_json=True)
+    payload = json.loads(capsys.readouterr().out)
+    assert rc == 0
+    assert payload["ok"] is True
+    assert payload["data"]["missing"] == []
+    assert payload["data"]["optional_missing"] == ["claude"]
+
+
+def test_deps_check_required_missing_fails(monkeypatch, tmp_path: Path, capsys) -> None:
+    """A missing required M1 binary fails the check."""
+    config = LoopcraftConfig(
+        source_path=tmp_path / "s",
+        memory_path=tmp_path / "m",
+        dependencies={"git": "git"},
+        optional_dependencies={},
+    )
+    monkeypatch.setattr(cli.shutil, "which", lambda name: None)
+    rc = cli._cmd_deps_check(config, as_json=True)
+    payload = json.loads(capsys.readouterr().out)
+    assert rc == 1
+    assert payload["data"]["missing"] == ["git"]
 
 
 def test_deps_check_loop_runs_preflight(monkeypatch, tmp_path: Path, capsys) -> None:

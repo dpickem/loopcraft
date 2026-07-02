@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from loopcraft.cli_output import emit
-from loopcraft.config import LoopcraftConfig
+from loopcraft.config import RUN_ID_ENV, LoopcraftConfig
 from loopcraft.env import load_dotenv
 from loopcraft.research_intel.x.client import XApiClient, XApiError
 from loopcraft.research_intel.x.config import IntelConfig, XApiTokens
@@ -87,19 +87,7 @@ class XIntelRunner:
         except MissingTokenError as exc:
             return _fail("run", 2, str(exc), as_json=as_json)
 
-        errors: list[str] = []
-        raw_posts: list[dict[str, Any]] = []
-        try:
-            for fetch in (
-                self._fetch_from_queries,
-                self._fetch_from_lists,
-                self._fetch_from_following,
-                self._fetch_from_author_handles,
-                self._fetch_from_snapshot,
-            ):
-                raw_posts.extend(fetch(client, dry_run=dry_run))
-        except XApiError as exc:
-            errors.append(str(exc))
+        raw_posts, errors = self._collect_raw_posts(client, dry_run=dry_run)
 
         ranked = rank_posts(raw_posts, self.config)
         top_posts = ranked[: self.config.ranking.top_posts]
@@ -108,6 +96,9 @@ class XIntelRunner:
         if not dry_run:
             self.store.save_posts(raw_posts)
             self.store.mark_seen([post["id"] for post in raw_posts if post.get("id")])
+            # Always (re)write source-state.json so this declared output exists and
+            # is refreshed even when no source produced a new high-water mark.
+            self.store.persist_source_state()
 
         markdown = render_digest(top_posts, raw_posts, errors, generated_at=now)
         payload = json.dumps(
@@ -120,10 +111,11 @@ class XIntelRunner:
             indent=2,
             ensure_ascii=False,
         )
+        run_stamp = self.loopcraft.env_value(RUN_ID_ENV) or now.strftime("%Y%m%dT%H%M%SZ")
         markdown_path, json_path = self.store.write_digest(
             markdown=markdown,
             payload=payload,
-            run_stamp=now.strftime("%Y%m%dT%H%M%SZ"),
+            run_stamp=run_stamp,
             date_stamp=now.strftime("%Y-%m-%d"),
         )
 
@@ -198,6 +190,38 @@ class XIntelRunner:
         return emit("discover-follows", as_json=as_json, ok=True, rc=0, data=data, lines=lines)
 
     # --- fetch phases -------------------------------------------------------
+    def _collect_raw_posts(
+        self, client: XApiClient, *, dry_run: bool
+    ) -> tuple[list[dict[str, Any]], list[str]]:
+        """Run every fetch phase, isolating failures so sources are independent.
+
+        Each phase (queries, lists, following, author handles, snapshot) is
+        wrapped individually: an ``XApiError`` in one source (e.g. a rate-limited
+        search endpoint) is recorded but does not skip the remaining sources, and
+        every error is accumulated rather than only the first.
+
+        Args:
+            client: The X API client.
+            dry_run: Whether to skip persisting per-source high-water marks.
+
+        Returns:
+            A tuple of (accumulated posts, per-source error messages).
+        """
+        raw_posts: list[dict[str, Any]] = []
+        errors: list[str] = []
+        for fetch in (
+            self._fetch_from_queries,
+            self._fetch_from_lists,
+            self._fetch_from_following,
+            self._fetch_from_author_handles,
+            self._fetch_from_snapshot,
+        ):
+            try:
+                raw_posts.extend(fetch(client, dry_run=dry_run))
+            except XApiError as exc:
+                errors.append(str(exc))
+        return raw_posts, errors
+
     def _fetch_from_queries(self, client: XApiClient, *, dry_run: bool) -> list[dict[str, Any]]:
         """Fetch posts for each configured search query."""
         posts: list[dict[str, Any]] = []

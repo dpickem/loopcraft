@@ -61,6 +61,23 @@ def asset_env_var(rel_path: str) -> str:
     return f"{ENV_PREFIX}_{token}"
 
 
+def local_override_path(path: Path) -> Path:
+    """Return the gitignored ``*.local.*`` sibling of ``path`` if it exists.
+
+    Implements the public/private split for whole config files: given
+    ``config/x_intel.yaml`` it returns ``config/x_intel.local.yaml`` when that
+    private override is present, otherwise the original public ``path``.
+
+    Args:
+        path: The public (committed) config file path.
+
+    Returns:
+        The private override path when it exists, else ``path`` unchanged.
+    """
+    local = path.with_name(f"{path.stem}.local{path.suffix}")
+    return local if local.exists() else path
+
+
 def resolve_overridable_list(
     *,
     env_var: str,

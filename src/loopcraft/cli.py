@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from loopcraft.cli_output import emit as _emit
-from loopcraft.config import LoopcraftConfig
+from loopcraft.config import RUN_ID_ENV, LoopcraftConfig
 from loopcraft.env import load_dotenv
 from loopcraft.manifest import LoopManifest, load_all
 from loopcraft.runners import RunContext, get_runner
@@ -206,6 +206,9 @@ def _run_execute(
         workdir=worktree,
         log_path=worktree / "run.log",
         resolved_outputs=resolved_outputs,
+        # Hand the control-plane run id to any direct CLI the loop invokes so its
+        # run-scoped history archives match the manifest's {{run_id}} outputs.
+        env={RUN_ID_ENV: run_id},
     )
 
     result = runner.run(manifest, ctx)
@@ -444,26 +447,53 @@ def _cmd_logs(config: LoopcraftConfig, loop_id: str, *, as_json: bool) -> int:
     )
 
 
-def _cmd_deps_check(config: LoopcraftConfig, *, loop_id: str | None = None, as_json: bool = False) -> int:
-    """Check external binaries on PATH and optionally a loop's adapter preflight."""
-    dependencies: list[dict[str, Any]] = []
+def _probe_dependency_table(table: dict[str, str]) -> tuple[list[dict[str, Any]], list[str]]:
+    """Probe a name->binary table on PATH; return (per-dep records, missing names)."""
+    records: list[dict[str, Any]] = []
     missing: list[str] = []
-    lines: list[str] = []
-    for name, binary in config.dependencies.items():
-        found = shutil.which(binary) if not binary.startswith("/") else binary
-        dependencies.append({"name": name, "binary": binary, "found": bool(found)})
-        lines.append(f"[{'ok ' if found else 'MISSING'}] {name}")
+    for name, binary in table.items():
+        found = binary if binary.startswith("/") else shutil.which(binary)
+        records.append({"name": name, "binary": binary, "found": bool(found)})
         if not found:
             missing.append(name)
+    return records, missing
+
+
+def _cmd_deps_check(config: LoopcraftConfig, *, loop_id: str | None = None, as_json: bool = False) -> int:
+    """Check dependencies, or (with ``--loop``) only that loop's preflight.
+
+    Without ``--loop``: required M1 binaries are probed and a missing one fails
+    the check, while optional/future-runtime binaries are reported but never fail
+    it. With ``--loop <id>``: only the selected loop's adapter preflight runs, so
+    the check reflects exactly that loop's declared runtime and dependencies.
+    """
+    if loop_id:
+        rc, preflight_data, preflight_lines = _preflight_loop(config, loop_id)
+        return _emit(
+            "deps.check",
+            as_json=as_json,
+            ok=rc == 0,
+            rc=rc,
+            data={"loop": loop_id, "preflight": preflight_data},
+            lines=[line.lstrip("\n") for line in preflight_lines],
+        )
+
+    required, missing = _probe_dependency_table(config.dependencies)
+    optional, optional_missing = _probe_dependency_table(config.optional_dependencies)
     rc = 1 if missing else 0
 
-    preflight_data: dict[str, Any] | None = None
-    if loop_id:
-        preflight_rc, preflight_data, preflight_lines = _preflight_loop(config, loop_id)
-        rc = preflight_rc or rc
-        lines.extend(preflight_lines)
+    lines = [f"[{'ok ' if dep['found'] else 'MISSING'}] {dep['name']}" for dep in required]
+    lines += [
+        f"[{'ok ' if dep['found'] else 'optional'}] {dep['name']} (future runtime)"
+        for dep in optional
+    ]
 
-    data = {"dependencies": dependencies, "missing": missing, "preflight": preflight_data}
+    data = {
+        "dependencies": required,
+        "missing": missing,
+        "optional_dependencies": optional,
+        "optional_missing": optional_missing,
+    }
     return _emit("deps.check", as_json=as_json, ok=rc == 0, rc=rc, data=data, lines=lines)
 
 

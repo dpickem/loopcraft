@@ -37,8 +37,12 @@ Override the memory location at runtime with `LOOPCRAFT_MEMORY`.
 
 > Requires the `codex` CLI and `nv-tools` on PATH to actually run `slack-triage`;
 > `make check` reports anything missing before a run rather than failing at 3am.
-> Claude/Cursor adapters, the scheduler, harvester, and UI arrive in later
-> milestones (M2+).
+> `loopctl deps check` fails only on the **required** M1 binaries
+> (`python`, `git`, `codex`, `nv-tools`); **optional** future-runtime binaries
+> (`claude`, `cursor-agent`) are reported but never fail the check, so a
+> Codex-only M1 setup stays green. Use `loopctl deps check --loop <id>` to check
+> just one loop's declared runtime and dependencies. Claude/Cursor adapters, the
+> scheduler, harvester, and UI arrive in later milestones (M2+).
 
 ### M2 Tasks
 
@@ -115,7 +119,9 @@ Fill in `X_API_BEARER_TOKEN` in `.env` before running. Tune the committed public
 defaults in `config/x_intel.yaml`, or create a gitignored
 `config/x_intel.local.yaml` for private/local overrides (including a private
 `sources.following_snapshot`, e.g. `config/x_following_snapshot.local.json`).
-Outputs are written to
+When a `*.local.yaml` sibling exists it is preferred automatically whether the
+loop runs via `make`/`loopctl run` or the direct CLI, and the control plane
+stages the effective config into the isolated run worktree. Outputs are written to
 `~/workspace/loopcraft_memory/ledger/research/x/` by default (`latest.md`,
 `latest.json`, archived `history/*.md/json`, `seen.json`, `source-state.json`,
 `posts.jsonl`).
@@ -136,7 +142,9 @@ make run LOOP=arxiv-intel
 ```
 
 Tune the committed public defaults in `config/arxiv_intel.yaml`, or create a
-gitignored `config/arxiv_intel.local.yaml` for private/local overrides. Outputs
+gitignored `config/arxiv_intel.local.yaml` for private/local overrides. A
+`*.local.yaml` sibling is preferred automatically (via `make`/`loopctl run` or
+the direct CLI) and staged into the run worktree by the control plane. Outputs
 are written to `~/workspace/loopcraft_memory/ledger/research/arxiv/` by default
 (`latest.md`, `latest.json`, archived `history/*.md/json`, `seen.json`,
 `papers.jsonl`).

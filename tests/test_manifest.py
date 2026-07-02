@@ -191,6 +191,26 @@ def test_slack_verify_file_mentions_cursor() -> None:
     assert "state/slack/seen.json" in text
 
 
+def test_research_skills_do_not_self_invoke_loopctl() -> None:
+    """A loop's own skill must never tell its headless run to re-enter the loop.
+
+    Instructing the in-loop agent to run `loopctl run <self>` / `make run
+    LOOP=<self>` would recurse; the research skills must use the direct CLI.
+    """
+    cases = [
+        ("arxiv-intel", "arxiv-intelligence-reporting", "loopcraft.research_intel.arxiv.cli"),
+        ("x-intel", "x-intelligence-reporting", "loopcraft.research_intel.x.cli"),
+    ]
+    for loop_id, skill_dir, direct_module in cases:
+        text = (REPO_ROOT / "skills" / skill_dir / "SKILL.md").read_text(encoding="utf-8")
+        assert f"make run LOOP={loop_id}" not in text
+        assert f"loopctl run {loop_id}" not in text
+        assert f"loopcraft.cli run {loop_id}" not in text
+        # It must point at the deterministic direct CLI and warn against recursion.
+        assert f"{direct_module} run" in text
+        assert "recurse" in text.lower()
+
+
 def test_shipped_loops_reference_existing_verify_files() -> None:
     """Every shipped manifest points logic.verify at a real, colocated file."""
     loops_dir = REPO_ROOT / "loops"

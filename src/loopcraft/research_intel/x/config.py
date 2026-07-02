@@ -9,6 +9,8 @@ from typing import Any
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from loopcraft.settings import local_override_path
+
 
 class _ContentModel(BaseModel):
     """Base model for X content-definition data."""
@@ -137,8 +139,14 @@ class IntelConfig(_ContentModel):
 
     @classmethod
     def load(cls, path: Path) -> IntelConfig:
-        """Load a YAML content-definition file."""
-        raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        """Load a YAML content-definition file, preferring a ``.local.`` override.
+
+        If a gitignored ``<name>.local.yaml`` sibling exists next to ``path`` it
+        is loaded instead, so private overrides work whether the CLI is invoked
+        directly or via a Makefile target.
+        """
+        effective = local_override_path(path)
+        raw = yaml.safe_load(effective.read_text(encoding="utf-8")) or {}
         return cls.from_dict(raw)
 
     @classmethod

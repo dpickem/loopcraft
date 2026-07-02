@@ -9,7 +9,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from loopcraft.cli_output import emit
-from loopcraft.config import LoopcraftConfig
+from loopcraft.config import RUN_ID_ENV, LoopcraftConfig
 from loopcraft.research_intel.arxiv.client import ArxivApiError, ArxivClient
 from loopcraft.research_intel.arxiv.config import ArxivIntelConfig
 from loopcraft.research_intel.arxiv.digest import render_digest
@@ -89,10 +89,11 @@ def run(
         indent=2,
         ensure_ascii=False,
     )
+    run_stamp = loopcraft.env_value(RUN_ID_ENV) or now.strftime("%Y%m%dT%H%M%SZ")
     markdown_path, json_path = store.write_digest(
         markdown=markdown,
         payload=payload,
-        run_stamp=now.strftime("%Y%m%dT%H%M%SZ"),
+        run_stamp=run_stamp,
         date_stamp=now.strftime("%Y-%m-%d"),
     )
 

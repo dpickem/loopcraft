@@ -116,10 +116,25 @@ class IntelStore:
         latest_id = str(max(ids))
         state = self._source_state()
         state[source_key] = latest_id
+        self._write_source_state(state)
+
+    def persist_source_state(self) -> Path:
+        """(Re)write ``source-state.json`` so the declared output always exists.
+
+        Rewrites the current per-source high-water map (``{}`` on a fresh loop),
+        which both creates the file on first run and refreshes its mtime so the
+        control plane's declared-output freshness check passes even when no source
+        produced a new high-water mark this run.
+        """
+        return self._write_source_state(self._source_state())
+
+    def _write_source_state(self, state: dict[str, str]) -> Path:
+        """Serialize the per-source high-water map to ``source-state.json``."""
         self.source_state_path.write_text(
             json.dumps(state, indent=2, sort_keys=True, ensure_ascii=False) + "\n",
             encoding="utf-8",
         )
+        return self.source_state_path
 
     def save_posts(self, posts: list[dict[str, Any]]) -> None:
         """Merge ``posts`` into the JSONL post store, deduped by id."""

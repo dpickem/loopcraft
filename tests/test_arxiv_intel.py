@@ -143,6 +143,40 @@ def test_arxiv_loads_yaml_content_config() -> None:
     assert "recursive self-improvement" in config.ranking.keywords
 
 
+def test_arxiv_run_produces_manifest_outputs_for_control_plane_run_id(tmp_path, monkeypatch) -> None:
+    """The direct arXiv CLI writes exactly the manifest outputs for a given run id.
+
+    Simulates the control plane handing the loop its run id via LOOPCRAFT_RUN_ID
+    and asserts every declared `arxiv-intel` output (including the run-scoped
+    history archives) resolves to a file the direct workflow actually wrote.
+    """
+    from loopcraft.manifest import LoopManifest
+    from loopcraft.research_intel.arxiv import cli as arxiv_cli
+
+    run_id = "20260101T000000Z-deadbeef"
+    monkeypatch.setenv("LOOPCRAFT_SOURCE", str(REPO_ROOT))
+    monkeypatch.setenv("LOOPCRAFT_MEMORY", str(tmp_path / "mem"))
+    monkeypatch.setenv("LOOPCRAFT_RUN_ID", run_id)
+    monkeypatch.setattr(arxiv_cli.ArxivClient, "search_recent", lambda self, config: [])
+
+    rc = arxiv_cli.run(str(REPO_ROOT / "config" / "arxiv_intel.yaml"))
+    assert rc == 0
+
+    loopcraft = LoopcraftConfig.load(REPO_ROOT)
+    manifest = LoopManifest.load(REPO_ROOT / "loops" / "arxiv-intel.yaml")
+    for declared in manifest.outputs:
+        resolved = loopcraft.resolve_state_template(declared, run_id=run_id, date="2026-01-01")
+        assert resolved.exists(), f"missing declared output: {declared} -> {resolved}"
+
+
+def test_arxiv_config_load_prefers_local_override(tmp_path) -> None:
+    """ArxivIntelConfig.load reads a gitignored .local. sibling when present."""
+    (tmp_path / "arxiv_intel.yaml").write_text("ranking: {top_papers: 5}\n", encoding="utf-8")
+    (tmp_path / "arxiv_intel.local.yaml").write_text("ranking: {top_papers: 42}\n", encoding="utf-8")
+    config = ArxivIntelConfig.load(tmp_path / "arxiv_intel.yaml")
+    assert config.ranking.top_papers == 42
+
+
 def test_arxiv_store_uses_json_ledger_files(tmp_path) -> None:
     """The arXiv store persists papers/seen ids as JSON(L) in the ledger."""
     config = LoopcraftConfig(source_path=tmp_path / "src", memory_path=tmp_path / "mem")

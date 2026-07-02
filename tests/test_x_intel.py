@@ -8,6 +8,8 @@ from pathlib import Path
 
 from loopcraft.env import load_dotenv
 from loopcraft.config import LoopcraftConfig
+from loopcraft.research_intel.x.cli import XIntelRunner
+from loopcraft.research_intel.x.client import XApiError
 from loopcraft.research_intel.x.config import IntelConfig, OutputPaths
 from loopcraft.research_intel.x.digest import render_digest
 from loopcraft.research_intel.x.follow_discovery import discover_candidates, render_follow_candidates
@@ -249,6 +251,81 @@ def test_discover_candidates_drops_irrelevant_mention_only_profiles() -> None:
     )
 
     assert candidates == []
+
+
+def test_collect_raw_posts_isolates_failing_sources() -> None:
+    """One source raising XApiError does not skip the others; all errors collect."""
+    runner = XIntelRunner.__new__(XIntelRunner)
+
+    def ok(client, *, dry_run):  # noqa: ANN001
+        """Healthy fetch phase that returns one post."""
+        return [{"id": "ok"}]
+
+    def boom_rate_limit(client, *, dry_run):  # noqa: ANN001
+        """Fetch phase that fails with a rate-limit error."""
+        raise XApiError("rate limit on search")
+
+    def boom_lists(client, *, dry_run):  # noqa: ANN001
+        """Fetch phase that fails with a list-access error."""
+        raise XApiError("list access denied")
+
+    runner._fetch_from_queries = boom_rate_limit
+    runner._fetch_from_lists = boom_lists
+    runner._fetch_from_following = ok
+    runner._fetch_from_author_handles = ok
+    runner._fetch_from_snapshot = ok
+
+    posts, errors = runner._collect_raw_posts(client=None, dry_run=True)
+
+    # The three healthy sources still contribute posts...
+    assert len(posts) == 3
+    # ...and both independent failures are accumulated, not just the first.
+    assert errors == ["rate limit on search", "list access denied"]
+
+
+def test_x_run_writes_declared_outputs_with_run_id(tmp_path, monkeypatch) -> None:
+    """A default-config X run writes every declared output, keyed by run id.
+
+    Covers two findings at once: the run-scoped history archives use the
+    control-plane run id (LOOPCRAFT_RUN_ID), and source-state.json is always
+    written even with the shipped empty-source config.
+    """
+    run_id = "20260101T000000Z-cafef00d"
+    monkeypatch.setenv("LOOPCRAFT_RUN_ID", run_id)
+
+    runner = XIntelRunner.__new__(XIntelRunner)
+    runner.loopcraft = LoopcraftConfig(source_path=tmp_path / "src", memory_path=tmp_path / "mem")
+    runner.config = IntelConfig.from_dict({})
+    runner.store = IntelStore(runner.loopcraft, runner.config.output)
+    runner._client = lambda **kwargs: object()  # empty sources => never used
+
+    rc = runner.run(dry_run=False)
+    assert rc == 0
+
+    base = tmp_path / "mem" / "ledger" / "research" / "x"
+    assert (base / "history" / f"{run_id}.md").exists()
+    assert (base / "history" / f"{run_id}.json").exists()
+    assert (base / "source-state.json").exists()
+    assert (base / "seen.json").exists()
+    assert (base / "posts.jsonl").exists()
+    assert (base / "latest.md").exists()
+
+
+def test_x_persist_source_state_initializes_empty_file(tmp_path) -> None:
+    """persist_source_state creates source-state.json even with no high-water marks."""
+    config = LoopcraftConfig(source_path=tmp_path / "src", memory_path=tmp_path / "mem")
+    store = IntelStore(config, OutputPaths(source_state_path=Path("state/source-state.json")))
+    path = store.persist_source_state()
+    assert path.exists()
+    assert path.read_text(encoding="utf-8").strip() == "{}"
+
+
+def test_x_config_load_prefers_local_override(tmp_path) -> None:
+    """IntelConfig.load reads a gitignored .local. sibling when present."""
+    (tmp_path / "x_intel.yaml").write_text("ranking: {top_posts: 5}\n", encoding="utf-8")
+    (tmp_path / "x_intel.local.yaml").write_text("ranking: {top_posts: 42}\n", encoding="utf-8")
+    config = IntelConfig.load(tmp_path / "x_intel.yaml")
+    assert config.ranking.top_posts == 42
 
 
 def test_x_output_defaults_are_memory_state_paths() -> None:

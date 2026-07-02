@@ -332,6 +332,12 @@ Conventions and helpers:
   `skills/slack-triage/channels.txt` → `LOOPCRAFT_SLACK_TRIAGE_CHANNELS`.
 - Use `loopcraft.settings.resolve_overridable_list(...)` for list-valued config so
   precedence is consistent.
+- For whole-file configs (e.g. a loop's `content.config` YAML), use
+  `loopcraft.settings.local_override_path(...)`: a gitignored `<name>.local.<ext>`
+  sibling is preferred automatically. The research-intel config loaders do this,
+  and `stage_loop_assets()` stages both the public `content.config` and any
+  `*.local.*` sibling into the run worktree (the local file shadows the public
+  one), so a headless run sees the effective config.
 - `.gitignore` ignores `*.local.*`; never commit a `*.local.*` file.
 - A public file must contain **no** confidential entries — only comments and
   safe placeholders. Add a test that the public file has no active (uncommented)

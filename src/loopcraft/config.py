@@ -49,6 +49,10 @@ DEFAULT_VENDOR = "codex"
 DEFAULT_HOST = "vm"
 DEFAULT_MEMORY_PATH = "~/workspace/loopcraft_memory"
 
+#: Env var the control plane sets so a loop's direct CLI names its run-scoped
+#: history archives with the same run id the manifest ``{{run_id}}`` outputs use.
+RUN_ID_ENV = "LOOPCRAFT_RUN_ID"
+
 #: Prefixes that mark a declared path as a ledger/state file the store owns.
 #: Anything else (``linear:...``, ``s3://...``) is a non-file target the store
 #: does not resolve, so it is exempt from state-path validation.
@@ -129,6 +133,7 @@ class LoopcraftConfig(BaseModel):
     host: str = DEFAULT_HOST
     worktree_keep_last: int = DEFAULT_WORKTREE_KEEP_LAST
     dependencies: dict[str, str] = Field(default_factory=dict)
+    optional_dependencies: dict[str, str] = Field(default_factory=dict)
     artifact_store: str | None = None
     extra: dict[str, object] = Field(default_factory=dict)
 
@@ -249,7 +254,8 @@ class LoopcraftConfig(BaseModel):
             keep_last = DEFAULT_WORKTREE_KEEP_LAST
         keep_last = max(0, min(keep_last, MAX_WORKTREE_KEEP_LAST))
 
-        dependencies = _load_project_dependencies(source)
+        dependencies = _load_project_dependencies(source, "dependencies")
+        optional_dependencies = _load_project_dependencies(source, "optional-dependencies")
 
         known = {
             "default_vendor",
@@ -268,6 +274,7 @@ class LoopcraftConfig(BaseModel):
             host=str(raw.get("host", DEFAULT_HOST)),
             worktree_keep_last=keep_last,
             dependencies=dependencies,
+            optional_dependencies=optional_dependencies,
             artifact_store=(
                 str(raw["artifact_store"]) if raw.get("artifact_store") else None
             ),
@@ -284,17 +291,23 @@ def _find_source_root() -> Path:
     return here
 
 
-def _load_project_dependencies(source: Path) -> dict[str, str]:
-    """Load external Loopcraft binary dependencies from pyproject.toml."""
+def _load_project_dependencies(source: Path, table: str) -> dict[str, str]:
+    """Load an external Loopcraft binary-dependency table from pyproject.toml.
+
+    Args:
+        source: Source tree root containing ``pyproject.toml``.
+        table: Sub-table name under ``[tool.loopcraft]`` (``dependencies`` for
+            required M1 binaries or ``optional-dependencies`` for future runtimes).
+
+    Returns:
+        A mapping of dependency name to the binary probed on PATH (empty when the
+        file or table is absent).
+    """
     pyproject_file = source / PYPROJECT_FILENAME
     if not pyproject_file.exists():
         return {}
     raw = tomllib.loads(pyproject_file.read_text(encoding="utf-8"))
-    declared = (
-        raw.get("tool", {})
-        .get("loopcraft", {})
-        .get("dependencies", {})
-    )
+    declared = raw.get("tool", {}).get("loopcraft", {}).get(table, {})
     if isinstance(declared, dict):
         return {str(k): str(v) for k, v in declared.items()}
     return {}

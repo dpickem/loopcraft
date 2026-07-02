@@ -121,6 +121,34 @@ def test_local_file_shadows_public(tmp_path: Path) -> None:
     assert not (workdir / "skills" / "slack-triage" / "channels.local.txt").exists()
 
 
+def test_stage_loop_assets_stages_content_config_with_local_override(tmp_path: Path) -> None:
+    """Staging materializes manifest.content.config and overlays its .local. sibling."""
+    source = _source_tree(tmp_path)
+    (source / "config").mkdir()
+    (source / "config" / "x_intel.yaml").write_text("ranking:\n  top_posts: 5\n", encoding="utf-8")
+    (source / "config" / "x_intel.local.yaml").write_text("ranking:\n  top_posts: 99\n", encoding="utf-8")
+    config = LoopcraftConfig(source_path=source, memory_path=tmp_path / "mem")
+    manifest = LoopManifest.from_dict(
+        {
+            "id": "x-intel",
+            "name": "X",
+            "logic": {"skill": "skills/slack-triage/SKILL.md"},
+            "content": {"config": "config/x_intel.yaml"},
+            "cadence": {"type": "cron", "at": "0 9 * * *"},
+        },
+        source_path=source / "loops" / "x-intel.yaml",
+    )
+    workdir = tmp_path / "wt"
+
+    stage_loop_assets(config, manifest, workdir, environ={})
+
+    staged_config = workdir / "config" / "x_intel.yaml"
+    assert staged_config.exists()
+    # The private override shadows the public file, and the .local. copy is removed.
+    assert "99" in staged_config.read_text(encoding="utf-8")
+    assert not (workdir / "config" / "x_intel.local.yaml").exists()
+
+
 def test_stage_rejects_traversing_skill(tmp_path: Path) -> None:
     """Finding 2 (review 02): an escaping logic.skill is refused at staging."""
     source = _source_tree(tmp_path)

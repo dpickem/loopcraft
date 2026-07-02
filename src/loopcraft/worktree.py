@@ -62,6 +62,49 @@ def _apply_env_overrides(workdir: Path, environ: dict[str, str]) -> None:
         asset.write_text(header + "\n".join(entries) + "\n", encoding="utf-8")
 
 
+def _stage_content_config(
+    config: LoopcraftConfig, manifest: LoopManifest, workdir: Path
+) -> list[Path]:
+    """Stage the loop's ``content.config`` file (and its ``.local.`` sibling).
+
+    Materializes the effective content config into the run worktree preserving its
+    source-relative path (e.g. ``config/x_intel.yaml``). A gitignored
+    ``*.local.*`` sibling is staged alongside it so :func:`_apply_local_shadowing`
+    overlays the private override, keeping the public/private split intact.
+
+    Args:
+        config: Resolved control-plane config used to resolve source paths.
+        manifest: The loop manifest whose ``content.config`` is staged.
+        workdir: The run worktree root.
+
+    Returns:
+        The list of staged destination paths (empty when no content config).
+
+    Raises:
+        SourcePathError: If ``content.config`` escapes the source tree.
+    """
+    declared = manifest.content.config
+    if not declared:
+        return []
+    rel = PurePosixPath(safe_source_relpath(declared))
+    src = config.resolve_source_path(declared)
+    staged: list[Path] = []
+    if src.is_file():
+        dest = (workdir / rel).resolve()
+        _assert_under(workdir, dest)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src, dest)
+        staged.append(dest)
+    local_src = src.with_name(f"{src.stem}{_LOCAL_MARKER}{src.suffix.lstrip('.')}")
+    if local_src.is_file():
+        dest_local = (workdir / rel.parent / local_src.name).resolve()
+        _assert_under(workdir, dest_local)
+        dest_local.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(local_src, dest_local)
+        staged.append(dest_local)
+    return staged
+
+
 def stage_loop_assets(
     config: LoopcraftConfig,
     manifest: LoopManifest,
@@ -122,6 +165,8 @@ def stage_loop_assets(
         dest.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(manifest.source_path, dest)
         staged.append(dest)
+
+    staged += _stage_content_config(config, manifest, workdir)
 
     _apply_local_shadowing(workdir)
     _apply_env_overrides(workdir, environ)
