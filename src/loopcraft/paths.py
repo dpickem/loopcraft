@@ -1,0 +1,71 @@
+"""Reusable path validation and containment helpers.
+
+Loopcraft has two important filesystem boundaries: the source tree, which holds
+code/manifests/skills, and the memory ledger, which holds private durable state.
+This module centralizes the normalization rules for paths that cross those
+boundaries so callers do not each invent their own traversal checks.
+"""
+
+from __future__ import annotations
+
+import os
+from pathlib import Path, PurePosixPath
+
+
+def safe_relpath(
+    declared: str,
+    *,
+    prefixes: tuple[str, ...] = (),
+    kind: str,
+    allow_colon: bool = False,
+) -> str:
+    """Validate and normalize a POSIX-style relative path.
+
+    Args:
+        declared: Path string from config or a manifest.
+        prefixes: Optional leading path segments to strip before returning.
+        kind: Human-readable label used in exception messages.
+        allow_colon: Whether ``:`` is allowed in path segments.
+
+    Returns:
+        A normalized POSIX-style relative path with any accepted prefix removed.
+
+    Raises:
+        ValueError: If the path is empty, absolute, has ``..`` traversal, has an
+            invalid segment, or has a scheme/drive head.
+    """
+    rel = declared.strip()
+    if not rel:
+        raise ValueError(f"empty {kind} path")
+    if rel.startswith("/") or os.path.isabs(rel) or PurePosixPath(rel).is_absolute():
+        raise ValueError(f"absolute {kind} path is not allowed: {declared!r}")
+    head = rel.split("/", 1)[0]
+    if ":" in head and not allow_colon:
+        raise ValueError(f"scheme/drive {kind} path is not allowed: {declared!r}")
+    parts = list(PurePosixPath(rel).parts)
+    if prefixes and parts and parts[0] in prefixes:
+        parts = parts[1:]
+    if not parts:
+        raise ValueError(f"{kind} path has no file after prefix: {declared!r}")
+    if any(part == ".." for part in parts):
+        raise ValueError(f"'..' is not allowed in a {kind} path: {declared!r}")
+    if any(part in ("", ".") or (":" in part and not allow_colon) for part in parts):
+        raise ValueError(f"invalid segment in {kind} path: {declared!r}")
+    return "/".join(parts)
+
+
+def assert_under(root: Path, candidate: Path, *, label: str) -> None:
+    """Assert that ``candidate`` is inside ``root``.
+
+    Args:
+        root: Allowed root directory.
+        candidate: Path to check.
+        label: Human-readable label for errors.
+
+    Raises:
+        ValueError: If the candidate escapes the root directory.
+    """
+    root_norm = os.path.normpath(str(root))
+    cand_norm = os.path.normpath(str(candidate))
+    if cand_norm != root_norm and not cand_norm.startswith(root_norm + os.sep):
+        raise ValueError(f"{label} escapes allowed root: {candidate}")

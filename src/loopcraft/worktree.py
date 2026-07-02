@@ -1,12 +1,20 @@
+"""Staging of loop assets into an isolated per-run worktree.
+
+Copies the manifest, its declared skill, and referenced config into a scratch
+worktree, materializing public/private overrides so relative paths resolve during
+a headless run without leaking secrets into the source tree.
+"""
+
 from __future__ import annotations
 
 import os
 import shutil
 from pathlib import Path, PurePosixPath
 
-from .config import LoopcraftConfig, safe_source_relpath
-from .manifest import LoopManifest
-from .settings import asset_env_var, split_env_list
+from loopcraft.config import LoopcraftConfig, safe_source_relpath
+from loopcraft.manifest import LoopManifest
+from loopcraft.paths import assert_under
+from loopcraft.settings import asset_env_var, split_env_list
 
 #: Marker that identifies a private override file: ``channels.local.txt``.
 _LOCAL_MARKER = ".local."
@@ -14,10 +22,7 @@ _LOCAL_MARKER = ".local."
 
 def _assert_under(root: Path, candidate: Path) -> None:
     """Guard that ``candidate`` stays inside ``root`` (no traversal escape)."""
-    root_norm = os.path.normpath(str(root))
-    cand_norm = os.path.normpath(str(candidate))
-    if cand_norm != root_norm and not cand_norm.startswith(root_norm + os.sep):
-        raise ValueError(f"staged path escapes the run worktree: {candidate}")
+    assert_under(root, candidate, label="run worktree")
 
 
 def _apply_local_shadowing(workdir: Path) -> None:

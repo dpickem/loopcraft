@@ -1,11 +1,22 @@
+"""Runtime-agnostic runner base class.
+
+``BaseRunner`` owns the shared headless-run lifecycle — output snapshotting,
+timeout enforcement, logging, stale-output detection, and result assembly — and
+defines the abstract hooks (``preflight``, ``build_command``, ``build_prompt``)
+that each vendor runner implements.
+"""
+
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+import os
+import subprocess
+from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Protocol, runtime_checkable
 
-from ..config import LoopcraftConfig
-from ..manifest import LoopManifest
+from pydantic import BaseModel, ConfigDict, Field
+
+from loopcraft.config import LoopcraftConfig, SourcePathError
+from loopcraft.manifest import LoopManifest
 
 STATUS_DONE = "done"
 STATUS_STALLED = "stalled"
@@ -13,28 +24,31 @@ STATUS_FAILED = "failed"
 STATUS_NEEDS_APPROVAL = "needs_approval"
 
 
-@dataclass(frozen=True)
-class PreflightReport:
+class _RunnerModel(BaseModel):
+    """Base model for runner data structures."""
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+
+class PreflightReport(_RunnerModel):
     """Result of checking that a vendor can satisfy a loop before running it."""
 
     vendor: str
     ok: bool
-    problems: list[str] = field(default_factory=list)
+    problems: list[str] = Field(default_factory=list)
 
 
-@dataclass
-class RunContext:
+class RunContext(_RunnerModel):
     """Everything a runner needs to execute one loop, isolated from others."""
 
     config: LoopcraftConfig
     workdir: Path
     log_path: Path
-    resolved_outputs: list[Path] = field(default_factory=list)
-    env: dict[str, str] = field(default_factory=dict)
+    resolved_outputs: list[Path] = Field(default_factory=list)
+    env: dict[str, str] = Field(default_factory=dict)
 
 
-@dataclass
-class RunResult:
+class RunResult(_RunnerModel):
     """Normalized outcome of a headless run, across vendors."""
 
     status: str
@@ -43,24 +57,152 @@ class RunResult:
     cost_usd: float | None = None
     iterations: int | None = None
     log_path: Path | None = None
-    outputs: list[str] = field(default_factory=list)
-    problems: list[str] = field(default_factory=list)
+    outputs: list[str] = Field(default_factory=list)
+    problems: list[str] = Field(default_factory=list)
 
 
-@runtime_checkable
-class Runner(Protocol):
-    """The one narrow seam that delivers vendor portability.
+class BaseRunner(ABC):
+    """Common headless runner behavior shared by vendor adapters.
 
-    A runner translates a normalized loop invocation into a headless run on a
-    specific vendor, then returns a normalized result.
+    Vendor subclasses provide the command and prompt; the base class handles
+    output directory preparation, timeout enforcement, log capture, stale-output
+    detection, and normalized `RunResult` construction.
     """
 
     vendor: str
 
+    @abstractmethod
     def preflight(self, loop: LoopManifest, config: LoopcraftConfig) -> PreflightReport:
         """Check this vendor can satisfy the loop (binary, auth, env, skill)."""
-        ...
+        raise NotImplementedError
+
+    @abstractmethod
+    def build_command(self, loop: LoopManifest, ctx: RunContext) -> list[str]:
+        """Build the vendor command argv for one loop invocation."""
+        raise NotImplementedError
+
+    @abstractmethod
+    def build_prompt(self, loop: LoopManifest, ctx: RunContext) -> str:
+        """Build the initial prompt sent to the vendor runtime."""
+        raise NotImplementedError
+
+    def writable_roots(self, ctx: RunContext) -> list[str]:
+        """Return extra directories the loop is allowed to write to."""
+        roots = {str(p.parent.resolve()) for p in ctx.resolved_outputs}
+        return sorted(roots)
+
+    def _load_source_text(self, ctx: RunContext, declared: str | None) -> str:
+        """Read a source-relative markdown asset (skill/verify) safely.
+
+        Returns the file's text, or an empty string when ``declared`` is unset,
+        unsafe (rejected earlier by preflight), or missing.
+        """
+        if not declared:
+            return ""
+        try:
+            path = ctx.config.resolve_source_path(declared)
+        except SourcePathError:
+            return ""
+        if not path.exists():
+            return ""
+        return path.read_text(encoding="utf-8")
 
     def run(self, loop: LoopManifest, ctx: RunContext) -> RunResult:
         """Execute the loop headless in an isolated worktree; return the result."""
-        ...
+        prompt = self.build_prompt(loop, ctx)
+        cmd = self.build_command(loop, ctx)
+
+        ctx.log_path.parent.mkdir(parents=True, exist_ok=True)
+        for output in ctx.resolved_outputs:
+            output.parent.mkdir(parents=True, exist_ok=True)
+        env = {**os.environ, **ctx.env}
+        pre_mtimes = {
+            p: (p.stat().st_mtime_ns if p.exists() else None) for p in ctx.resolved_outputs
+        }
+
+        try:
+            timeout_s = loop.budget.max_runtime_s
+        except ValueError:
+            timeout_s = None
+
+        try:
+            completed = subprocess.run(
+                cmd,
+                input=prompt,
+                cwd=str(ctx.workdir),
+                env=env,
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=timeout_s,
+            )
+        except FileNotFoundError:
+            ctx.log_path.write_text(prompt, encoding="utf-8")
+            return RunResult(
+                status=STATUS_FAILED,
+                exit_code=127,
+                log_path=ctx.log_path,
+                problems=[f"{self.vendor} command not found on PATH"],
+            )
+        except subprocess.TimeoutExpired as exc:
+            partial_out = exc.stdout or ""
+            partial_err = exc.stderr or ""
+            if isinstance(partial_out, bytes):
+                partial_out = partial_out.decode("utf-8", "replace")
+            if isinstance(partial_err, bytes):
+                partial_err = partial_err.decode("utf-8", "replace")
+            log = (
+                f"$ {' '.join(cmd)}\n\n--- PROMPT ---\n{prompt}\n\n"
+                f"--- TIMEOUT after {timeout_s}s ---\n"
+                f"--- STDOUT (partial) ---\n{partial_out}\n"
+                f"--- STDERR (partial) ---\n{partial_err}\n"
+            )
+            ctx.log_path.write_text(log, encoding="utf-8")
+            return RunResult(
+                status=STATUS_STALLED,
+                exit_code=None,
+                log_path=ctx.log_path,
+                problems=[
+                    f"exceeded budget.max_runtime ({loop.budget.max_runtime}); "
+                    f"aborted after {timeout_s}s"
+                ],
+            )
+
+        log = (
+            f"$ {' '.join(cmd)}\n\n--- PROMPT ---\n{prompt}\n\n"
+            f"--- STDOUT ---\n{completed.stdout}\n--- STDERR ---\n{completed.stderr}\n"
+        )
+        ctx.log_path.write_text(log, encoding="utf-8")
+
+        missing = [p for p in ctx.resolved_outputs if not p.exists()]
+        stale = [
+            p
+            for p in ctx.resolved_outputs
+            if p.exists()
+            and pre_mtimes[p] is not None
+            and p.stat().st_mtime_ns == pre_mtimes[p]
+        ]
+        stale_set = set(stale)
+        produced = [str(p) for p in ctx.resolved_outputs if p.exists() and p not in stale_set]
+
+        if completed.returncode != 0:
+            problems = [f"{self.vendor} exited {completed.returncode}"]
+        else:
+            problems = [f"declared output not produced: {p}" for p in missing]
+            problems += [f"declared output not refreshed this run: {p}" for p in stale]
+        status = (
+            STATUS_DONE
+            if completed.returncode == 0 and not missing and not stale
+            else STATUS_FAILED
+        )
+
+        return RunResult(
+            status=status,
+            exit_code=completed.returncode,
+            log_path=ctx.log_path,
+            outputs=produced,
+            problems=problems,
+        )
+
+
+Runner = BaseRunner

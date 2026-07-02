@@ -1,39 +1,77 @@
+"""Loop manifest models, loading, and validation.
+
+Loop manifests define runtime selection, cadence, dependency declarations, and
+the ledger I/O contract. The module uses Pydantic models for typed structure and
+returns structured validation reports so the CLI and future UI can render issues
+without parsing ad hoc strings.
+"""
+
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
+from enum import StrEnum
 from pathlib import Path, PurePosixPath
 from typing import Any
 
+import networkx as nx
 import yaml
+from pydantic import BaseModel, ConfigDict, Field
 
-from .config import (
+from loopcraft.config import (
     STATE_PREFIX,
-    SourcePathError,
-    StatePathError,
+    MemoryDir,
     is_state_path,
     safe_source_relpath,
     safe_state_relpath,
 )
 
-VALID_VENDORS = {"codex", "claude", "cursor"}
-VALID_LOCI = {"vm", "cloud", "local"}
-VALID_TIERS = {"observe", "propose", "act"}
-VALID_CADENCE_TYPES = {"cron", "event", "on-artifact"}
-
-#: Supported duration suffixes for ``budget.max_runtime`` mapped to seconds.
 _DURATION_UNITS = {"s": 1, "m": 60, "h": 3600}
 _DURATION_RE = re.compile(r"^\s*(\d+)\s*([smh])\s*$", re.IGNORECASE)
 
 
-def parse_duration(value: str | None) -> int | None:
-    """Parse a duration like ``10m``/``30s``/``1h`` into whole seconds.
+class Vendor(StrEnum):
+    """Runtime adapter vendors supported by manifests."""
 
-    Returns None when ``value`` is None. Raises on an unparseable string so a
-    malformed ``budget.max_runtime`` surfaces at validation, not at 3am.
+    CODEX = "codex"
+    CLAUDE = "claude"
+    CURSOR = "cursor"
+
+
+class Locus(StrEnum):
+    """Execution locations supported by manifests."""
+
+    VM = "vm"
+    CLOUD = "cloud"
+    LOCAL = "local"
+
+
+class Tier(StrEnum):
+    """Loop autonomy levels."""
+
+    OBSERVE = "observe"
+    PROPOSE = "propose"
+    ACT = "act"
+
+
+class CadenceType(StrEnum):
+    """Trigger styles supported by manifests."""
+
+    CRON = "cron"
+    EVENT = "event"
+    ON_ARTIFACT = "on-artifact"
+
+
+def parse_duration(value: str | None) -> int | None:
+    """Parse a duration like ``10m``/``30s``/``1h`` into seconds.
+
+    Args:
+        value: Duration string or None.
+
+    Returns:
+        Whole seconds, or None when unset.
 
     Raises:
-        ValueError: If ``value`` is non-empty but not a recognized duration.
+        ValueError: If the string is not in ``Ns`` / ``Nm`` / ``Nh`` form.
     """
     if value is None:
         return None
@@ -48,21 +86,30 @@ class ManifestError(Exception):
     """Raised when a manifest cannot be parsed or fails validation."""
 
 
-@dataclass(frozen=True)
-class Runtime:
-    vendor: str | None = None
+class _ManifestModel(BaseModel):
+    """Base Pydantic model for manifest structures."""
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class Runtime(_ManifestModel):
+    """Runtime adapter selection."""
+
+    vendor: Vendor | None = None
     model: str | None = None
     reasoning_effort: str | None = None
 
 
-@dataclass(frozen=True)
-class Cadence:
-    type: str = "cron"
+class Cadence(_ManifestModel):
+    """Loop trigger configuration."""
+
+    type: CadenceType = CadenceType.CRON
     at: str | None = None
 
 
-@dataclass(frozen=True)
-class Budget:
+class Budget(_ManifestModel):
+    """Execution budget limits."""
+
     max_turns: int | None = None
     max_tokens: int | None = None
     max_runtime: str | None = None
@@ -78,105 +125,112 @@ class Budget:
         return parse_duration(self.max_runtime)
 
 
-@dataclass(frozen=True)
-class DependsOn:
-    apis: list[str] = field(default_factory=list)
-    tools: list[str] = field(default_factory=list)
-    auth: list[str] = field(default_factory=list)
-    env: list[str] = field(default_factory=list)
-    loops: list[str] = field(default_factory=list)
+class DependsOn(_ManifestModel):
+    """External and upstream dependencies declared by a loop."""
+
+    apis: list[str] = Field(default_factory=list)
+    tools: list[str] = Field(default_factory=list)
+    auth: list[str] = Field(default_factory=list)
+    env: list[str] = Field(default_factory=list)
+    loops: list[str] = Field(default_factory=list)
 
 
-@dataclass(frozen=True)
-class Content:
+class Content(_ManifestModel):
+    """Content definition references consumed by loop logic."""
+
     config: str | None = None
 
 
-@dataclass(frozen=True)
-class Logic:
+class Logic(_ManifestModel):
+    """Skill and verification references.
+
+    Both ``skill`` and ``verify`` are source-relative paths to markdown files
+    (the ``verify`` file is colocated with the skill and spells out the loop's
+    goal/stop conditions). Keeping ``verify`` in a dedicated file lets it define
+    completion criteria far more thoroughly than a one-line manifest string.
+    """
+
     skill: str | None = None
     verify: str | None = None
 
 
-@dataclass(frozen=True)
-class Approval:
+class Approval(_ManifestModel):
+    """Human approval policy."""
+
     required: bool = False
 
 
-@dataclass(frozen=True)
-class LoopManifest:
+class ValidationIssue(_ManifestModel):
+    """One manifest validation problem."""
+
+    scope: str
+    message: str
+    path: str | None = None
+
+    def render(self) -> str:
+        """Render this issue as a concise text message."""
+        prefix = f"{self.scope}: " if self.scope else ""
+        return f"{prefix}{self.message}"
+
+
+class ValidationReport(_ManifestModel):
+    """Structured validation result."""
+
+    issues: list[ValidationIssue] = Field(default_factory=list)
+
+    @property
+    def ok(self) -> bool:
+        """Whether the validation report has no issues."""
+        return not self.issues
+
+    def messages(self) -> list[str]:
+        """Return issues as legacy human-readable messages."""
+        return [issue.render() for issue in self.issues]
+
+
+class LoopManifest(_ManifestModel):
+    """One loop manifest."""
+
     id: str
     name: str
-    description: str
-    runtime: Runtime
-    locus: str
-    cadence: Cadence
-    tier: str
-    budget: Budget
-    depends_on: DependsOn
-    content: Content
-    inputs: list[str]
-    outputs: list[str]
-    artifacts: list[dict[str, Any]]
-    logic: Logic
-    approval: Approval
+    description: str = ""
+    runtime: Runtime = Field(default_factory=Runtime)
+    locus: Locus = Locus.VM
+    cadence: Cadence = Field(default_factory=Cadence)
+    tier: Tier = Tier.OBSERVE
+    budget: Budget = Field(default_factory=Budget)
+    depends_on: DependsOn = Field(default_factory=DependsOn)
+    content: Content = Field(default_factory=Content)
+    inputs: list[str] = Field(default_factory=list)
+    outputs: list[str] = Field(default_factory=list)
+    artifacts: list[dict[str, Any]] = Field(default_factory=list)
+    logic: Logic = Field(default_factory=Logic)
+    approval: Approval = Field(default_factory=Approval)
     source_path: Path | None = None
 
     @classmethod
-    def from_dict(cls, raw: dict[str, Any], *, source_path: Path | None = None) -> "LoopManifest":
+    def from_dict(cls, raw: dict[str, Any], *, source_path: Path | None = None) -> LoopManifest:
+        """Parse a manifest from a raw mapping.
+
+        Args:
+            raw: Parsed YAML mapping.
+            source_path: Optional source file path.
+
+        Returns:
+            Parsed manifest model.
+        """
         if not isinstance(raw, dict):
             raise ManifestError("manifest root must be a mapping")
-
-        runtime_raw = raw.get("runtime") or {}
-        cadence_raw = raw.get("cadence") or {}
-        budget_raw = raw.get("budget") or {}
-        deps_raw = raw.get("depends_on") or {}
-        content_raw = raw.get("content") or {}
-        logic_raw = raw.get("logic") or {}
-        approval_raw = raw.get("approval") or {}
-
-        return cls(
-            id=str(raw.get("id", "")),
-            name=str(raw.get("name", "")),
-            description=str(raw.get("description", "")),
-            runtime=Runtime(
-                vendor=_opt_str(runtime_raw.get("vendor")),
-                model=_opt_str(runtime_raw.get("model")),
-                reasoning_effort=_opt_str(runtime_raw.get("reasoning_effort")),
-            ),
-            locus=str(raw.get("locus", "vm")),
-            cadence=Cadence(
-                type=str(cadence_raw.get("type", "cron")),
-                at=_opt_str(cadence_raw.get("at")),
-            ),
-            tier=str(raw.get("tier", "observe")),
-            budget=Budget(
-                max_turns=_opt_int(budget_raw.get("max_turns")),
-                max_tokens=_opt_int(budget_raw.get("max_tokens")),
-                max_runtime=_opt_str(budget_raw.get("max_runtime")),
-                max_consecutive_failures=_opt_int(budget_raw.get("max_consecutive_failures")),
-            ),
-            depends_on=DependsOn(
-                apis=_str_list(deps_raw.get("apis")),
-                tools=_str_list(deps_raw.get("tools")),
-                auth=_str_list(deps_raw.get("auth")),
-                env=_str_list(deps_raw.get("env")),
-                loops=_str_list(deps_raw.get("loops")),
-            ),
-            content=Content(config=_opt_str(content_raw.get("config"))),
-            inputs=_str_list(raw.get("inputs")),
-            outputs=_str_list(raw.get("outputs")),
-            artifacts=list(raw.get("artifacts") or []),
-            logic=Logic(
-                skill=_opt_str(logic_raw.get("skill")),
-                verify=_opt_str(logic_raw.get("verify")),
-            ),
-            approval=Approval(required=bool(approval_raw.get("required", False))),
-            source_path=source_path,
-        )
+        payload = dict(raw)
+        payload["source_path"] = source_path
+        try:
+            return cls.model_validate(payload)
+        except Exception as exc:
+            raise ManifestError(str(exc)) from exc
 
     @classmethod
-    def load(cls, path: Path | str) -> "LoopManifest":
+    def load(cls, path: Path | str) -> LoopManifest:
+        """Load one YAML manifest from disk."""
         path = Path(path)
         try:
             raw = yaml.safe_load(path.read_text(encoding="utf-8"))
@@ -185,43 +239,38 @@ class LoopManifest:
         return cls.from_dict(raw or {}, source_path=path)
 
     def effective_vendor(self, default_vendor: str) -> str:
+        """Return this manifest's vendor, or the global default."""
         return self.runtime.vendor or default_vendor
 
-    def validate(self) -> list[str]:
-        """Return a list of validation problems (empty == valid)."""
-        problems: list[str] = []
+    def validation_report(self) -> ValidationReport:
+        """Validate this manifest and return structured issues."""
+        issues: list[ValidationIssue] = []
 
         if not self.id:
-            problems.append("missing required field: id")
+            issues.append(ValidationIssue(scope="id", message="missing required field"))
         if not self.name:
-            problems.append("missing required field: name")
-        if self.runtime.vendor and self.runtime.vendor not in VALID_VENDORS:
-            problems.append(
-                f"runtime.vendor '{self.runtime.vendor}' not in {sorted(VALID_VENDORS)}"
-            )
-        if self.locus not in VALID_LOCI:
-            problems.append(f"locus '{self.locus}' not in {sorted(VALID_LOCI)}")
-        if self.tier not in VALID_TIERS:
-            problems.append(f"tier '{self.tier}' not in {sorted(VALID_TIERS)}")
-        if self.cadence.type not in VALID_CADENCE_TYPES:
-            problems.append(
-                f"cadence.type '{self.cadence.type}' not in {sorted(VALID_CADENCE_TYPES)}"
-            )
-        if self.cadence.type == "cron" and not self.cadence.at:
-            problems.append("cadence.type 'cron' requires cadence.at")
+            issues.append(ValidationIssue(scope="name", message="missing required field"))
+        if self.cadence.type == CadenceType.CRON and not self.cadence.at:
+            issues.append(ValidationIssue(scope="cadence", message="cron requires cadence.at"))
         if not self.logic.skill:
-            problems.append("missing required field: logic.skill")
+            issues.append(ValidationIssue(scope="logic.skill", message="missing required field"))
         else:
             try:
                 safe_source_relpath(self.logic.skill)
-            except SourcePathError as exc:
-                problems.append(f"logic.skill: {exc}")
+            except Exception as exc:
+                issues.append(ValidationIssue(scope="logic.skill", message=str(exc)))
 
         if self.content.config:
             try:
                 safe_source_relpath(self.content.config)
-            except SourcePathError as exc:
-                problems.append(f"content.config: {exc}")
+            except Exception as exc:
+                issues.append(ValidationIssue(scope="content.config", message=str(exc)))
+
+        if self.logic.verify:
+            try:
+                safe_source_relpath(self.logic.verify)
+            except Exception as exc:
+                issues.append(ValidationIssue(scope="logic.verify", message=str(exc)))
 
         for label, declared in (
             *(("inputs", p) for p in self.inputs),
@@ -229,7 +278,9 @@ class LoopManifest:
         ):
             rel = declared.strip()
             if PurePosixPath(rel).is_absolute() or rel.startswith("/"):
-                problems.append(f"{label}: absolute path is not allowed: {declared!r}")
+                issues.append(
+                    ValidationIssue(scope=label, message=f"absolute path is not allowed: {declared!r}")
+                )
                 continue
             parts = PurePosixPath(rel).parts
             if parts and parts[0] == STATE_PREFIX:
@@ -237,48 +288,38 @@ class LoopManifest:
                 # the ledger and must not escape it.
                 try:
                     safe_state_relpath(declared)
-                except StatePathError as exc:
-                    problems.append(f"{label}: {exc}")
+                except Exception as exc:
+                    issues.append(ValidationIssue(scope=label, message=str(exc)))
             elif is_state_path(declared):
                 # A bare ledger-relative path (e.g. ``slack/out.md`` or
                 # ``ledger/...``) is a lower-level Store API, not manifest
                 # vocabulary. Require the explicit ``state/`` prefix here.
-                problems.append(
-                    f"{label}: '{declared}' must use the 'state/...' prefix"
+                issues.append(
+                    ValidationIssue(scope=label, message=f"'{declared}' must use the 'state/...' prefix")
                 )
             else:
                 # M1 only knows how to resolve ledger ``state/...`` paths. External
                 # sinks (e.g. ``linear:project/Daily``) need an artifact/sink
                 # abstraction that lands in a later milestone; reject until then so
                 # validation and run resolution agree.
-                problems.append(
-                    f"{label}: external sink '{declared}' is not supported in M1 "
-                    f"(only ledger 'state/...' paths)"
+                issues.append(
+                    ValidationIssue(
+                        scope=label,
+                        message=f"external sink '{declared}' is not supported in M1 (only ledger 'state/...' paths)",
+                    )
                 )
 
         if self.budget.max_runtime is not None:
             try:
                 self.budget.max_runtime_s
             except ValueError as exc:
-                problems.append(f"budget.max_runtime: {exc}")
+                issues.append(ValidationIssue(scope="budget.max_runtime", message=str(exc)))
 
-        return problems
+        return ValidationReport(issues=issues)
 
-
-def _opt_str(value: Any) -> str | None:
-    return str(value) if value is not None else None
-
-
-def _opt_int(value: Any) -> int | None:
-    return int(value) if value is not None else None
-
-
-def _str_list(value: Any) -> list[str]:
-    if value is None:
-        return []
-    if isinstance(value, str):
-        return [value]
-    return [str(item) for item in value]
+    def validate(self) -> list[str]:
+        """Return validation problems as human-readable messages."""
+        return self.validation_report().messages()
 
 
 def load_all(loops_dir: Path | str) -> tuple[list[LoopManifest], list[str]]:
@@ -290,7 +331,7 @@ def load_all(loops_dir: Path | str) -> tuple[list[LoopManifest], list[str]]:
     """
     loops_dir = Path(loops_dir)
     manifests: list[LoopManifest] = []
-    problems: list[str] = []
+    issues: list[ValidationIssue] = []
 
     if not loops_dir.exists():
         return manifests, [f"loops directory not found: {loops_dir}"]
@@ -299,30 +340,33 @@ def load_all(loops_dir: Path | str) -> tuple[list[LoopManifest], list[str]]:
         try:
             manifest = LoopManifest.load(path)
         except ManifestError as exc:
-            problems.append(str(exc))
+            issues.append(ValidationIssue(scope=path.name, message=str(exc)))
             continue
         for problem in manifest.validate():
-            problems.append(f"{path.name}: {problem}")
+            issues.append(ValidationIssue(scope=path.name, message=problem))
         manifests.append(manifest)
 
     seen_ids: set[str] = set()
     for manifest in manifests:
         if manifest.id in seen_ids:
-            problems.append(f"duplicate loop id: {manifest.id}")
+            issues.append(ValidationIssue(scope=manifest.id, message="duplicate loop id"))
         seen_ids.add(manifest.id)
 
     for manifest in manifests:
         for upstream in manifest.depends_on.loops:
             if upstream not in seen_ids:
-                problems.append(
-                    f"{manifest.id}: depends_on.loops references unknown loop '{upstream}'"
+                issues.append(
+                    ValidationIssue(
+                        scope=manifest.id,
+                        message=f"depends_on.loops references unknown loop '{upstream}'",
+                    )
                 )
 
-    problems.extend(_detect_cycles(manifests))
-    return manifests, problems
+    issues.extend(_detect_cycles(manifests).issues)
+    return manifests, [issue.render() for issue in issues]
 
 
-def _detect_cycles(manifests: list[LoopManifest]) -> list[str]:
+def _detect_cycles(manifests: list[LoopManifest]) -> ValidationReport:
     """Detect cycles in the loop dependency graph.
 
     An edge ``A -> B`` means B depends on A: B lists A in ``depends_on.loops``,
@@ -333,40 +377,27 @@ def _detect_cycles(manifests: list[LoopManifest]) -> list[str]:
         for output in manifest.outputs:
             producers.setdefault(_norm(output), manifest.id)
 
-    graph: dict[str, set[str]] = {m.id: set() for m in manifests}
+    graph = nx.DiGraph()
+    graph.add_nodes_from(manifest.id for manifest in manifests)
     for manifest in manifests:
         for upstream in manifest.depends_on.loops:
             if upstream in graph:
-                graph[upstream].add(manifest.id)
+                graph.add_edge(upstream, manifest.id)
         for input_path in manifest.inputs:
             producer = producers.get(_norm(input_path))
             if producer and producer != manifest.id:
-                graph[producer].add(manifest.id)
+                graph.add_edge(producer, manifest.id)
 
-    problems: list[str] = []
-    state: dict[str, int] = {}  # 0=unvisited, 1=in-stack, 2=done
-
-    def visit(node: str, stack: list[str]) -> None:
-        state[node] = 1
-        stack.append(node)
-        for neighbor in sorted(graph.get(node, ())):
-            if state.get(neighbor, 0) == 0:
-                visit(neighbor, stack)
-            elif state.get(neighbor) == 1:
-                cycle = stack[stack.index(neighbor):] + [neighbor]
-                problems.append("dependency cycle: " + " -> ".join(cycle))
-        stack.pop()
-        state[node] = 2
-
-    for manifest in manifests:
-        if state.get(manifest.id, 0) == 0:
-            visit(manifest.id, [])
-
-    return problems
+    issues = [
+        ValidationIssue(scope="dependency_graph", message="dependency cycle: " + " -> ".join(cycle + [cycle[0]]))
+        for cycle in nx.simple_cycles(graph)
+    ]
+    return ValidationReport(issues=issues)
 
 
 def _norm(path: str) -> str:
+    """Normalize a declared path for producer/consumer graph matching."""
     parts = Path(path.strip()).parts
-    if parts and parts[0] in {"state", "ledger"}:
+    if parts and parts[0] in {STATE_PREFIX, MemoryDir.LEDGER.value}:
         parts = parts[1:]
     return str(Path(*parts)) if parts else ""

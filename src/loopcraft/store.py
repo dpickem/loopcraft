@@ -1,18 +1,29 @@
+"""Sanctioned persistence into the memory tree.
+
+Every loop records a common set of run fields through this store, which owns the
+``ledger/runs/`` run records that the harvester reindexes from. Loops may also
+persist their own custom, loop-specific state (seen sets, queues, digests) under
+the ledger through this same store API (or the ledger-backed helpers built on
+top of it); the rule is that nothing stands up an out-of-band side database. So
+"single sanctioned persistence path" means one storage model — required run
+records plus loop-specific ledger files — not a single file.
+"""
+
 from __future__ import annotations
 
 import json
 import re
 import uuid
-from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from .config import LoopcraftConfig
+from pydantic import BaseModel, Field
+
+from loopcraft.config import LoopcraftConfig
 
 
-@dataclass
-class RunRecord:
+class RunRecord(BaseModel):
     """Durable, per-run telemetry written to the ledger at finish.
 
     This is the authoritative input the harvester (M4) reindexes from, so the
@@ -22,7 +33,7 @@ class RunRecord:
     run_id: str
     loop: str
     vendor: str
-    model: str | None
+    model: str | None = None
     status: str
     started_at: str
     ended_at: str | None = None
@@ -31,22 +42,25 @@ class RunRecord:
     tokens: int | None = None
     cost_usd: float | None = None
     iterations: int | None = None
-    inputs: list[str] = field(default_factory=list)
-    outputs: list[str] = field(default_factory=list)
-    artifacts: list[str] = field(default_factory=list)
+    inputs: list[str] = Field(default_factory=list)
+    outputs: list[str] = Field(default_factory=list)
+    artifacts: list[str] = Field(default_factory=list)
     log_path: str | None = None
-    problems: list[str] = field(default_factory=list)
+    problems: list[str] = Field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        """Return a plain JSON-serializable dict of this record."""
+        return self.model_dump()
 
 
 class Store:
     """The single sanctioned persistence path into the memory tree.
 
-    Loops never stand up their own side databases. Small/seen/queue state and
-    findings go to the ledger (markdown/JSONL); produced files go to the
-    artifact store; run metadata goes to per-run records under ``ledger/runs/``.
+    Loops never stand up their own side databases. Every run writes a common
+    :class:`RunRecord` under ``ledger/runs/``; small/seen/queue state and findings
+    go to the ledger (markdown/JSONL); produced files go to the artifact store.
+    Loop-specific state is allowed, but only through this ledger-backed storage
+    model — never an out-of-band database.
     """
 
     def __init__(self, config: LoopcraftConfig) -> None:
@@ -59,6 +73,7 @@ class Store:
         return f"{stamp}-{uuid.uuid4().hex[:8]}"
 
     def record_run(self, record: RunRecord) -> Path:
+        """Write one run record to ``ledger/runs/`` and return its path."""
         self.config.runs_dir.mkdir(parents=True, exist_ok=True)
         path = self.config.runs_dir / _run_record_filename(record.loop, record.run_id)
         path.write_text(
@@ -82,7 +97,10 @@ class Store:
                 continue
             if data.get("loop") != loop_id:
                 continue
-            records.append(RunRecord(**{k: data.get(k) for k in _RUN_FIELDS}))
+            fields = {
+                k: data[k] for k in _RUN_FIELDS if k in data and data[k] is not None
+            }
+            records.append(RunRecord(**fields))
         records.sort(key=lambda r: r.started_at)
         return records
 
@@ -111,7 +129,7 @@ class Store:
         return path
 
 
-_RUN_FIELDS = tuple(RunRecord.__dataclass_fields__.keys())
+_RUN_FIELDS = tuple(RunRecord.model_fields.keys())
 
 
 def _run_record_filename(loop_id: str, run_id: str) -> str:

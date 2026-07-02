@@ -1,6 +1,8 @@
+"""Runner package exports and the vendor runner factory."""
+
 from __future__ import annotations
 
-from .base import (
+from loopcraft.runners.base import (
     PreflightReport,
     RunContext,
     Runner,
@@ -10,7 +12,7 @@ from .base import (
     STATUS_NEEDS_APPROVAL,
     STATUS_STALLED,
 )
-from .codex import CodexRunner
+from loopcraft.runners.codex import CodexRunner
 
 _RUNNERS: dict[str, type[Runner]] = {
     "codex": CodexRunner,

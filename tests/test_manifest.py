@@ -6,6 +6,7 @@ import pytest
 
 from loopcraft.manifest import (
     LoopManifest,
+    ManifestError,
     _detect_cycles,
     load_all,
     parse_duration,
@@ -42,10 +43,10 @@ def test_missing_required_fields_are_reported() -> None:
 
 
 def test_enum_validation() -> None:
-    manifest = LoopManifest.from_dict(_minimal(tier="boss", locus="moon"))
-    problems = manifest.validate()
-    assert any("tier" in p for p in problems)
-    assert any("locus" in p for p in problems)
+    with pytest.raises(ManifestError) as exc:
+        LoopManifest.from_dict(_minimal(tier="boss", locus="moon"))
+    assert "tier" in str(exc.value)
+    assert "locus" in str(exc.value)
 
 
 def test_cron_requires_at() -> None:
@@ -63,14 +64,14 @@ def test_effective_vendor_falls_back_to_default() -> None:
 def test_cycle_detection_via_io_contract() -> None:
     a = LoopManifest.from_dict(_minimal(id="a", inputs=["state/x"], outputs=["state/y"]))
     b = LoopManifest.from_dict(_minimal(id="b", inputs=["state/y"], outputs=["state/x"]))
-    problems = _detect_cycles([a, b])
+    problems = _detect_cycles([a, b]).messages()
     assert any("cycle" in p for p in problems)
 
 
 def test_no_cycle_for_linear_chain() -> None:
     a = LoopManifest.from_dict(_minimal(id="a", outputs=["state/y"]))
     b = LoopManifest.from_dict(_minimal(id="b", inputs=["state/y"], outputs=["state/z"]))
-    assert _detect_cycles([a, b]) == []
+    assert _detect_cycles([a, b]).ok
 
 
 def test_repo_slack_triage_manifest_is_valid() -> None:
@@ -107,7 +108,7 @@ def test_self_cursor_is_not_a_cycle() -> None:
     loop = LoopManifest.from_dict(
         _minimal(inputs=["state/slack/seen.json"], outputs=["state/slack/seen.json"])
     )
-    assert _detect_cycles([loop]) == []
+    assert _detect_cycles([loop]).ok
 
 
 @pytest.mark.parametrize(
@@ -166,10 +167,20 @@ def test_state_prefixed_paths_are_accepted() -> None:
     assert ok.validate() == []
 
 
-def test_slack_skill_verify_mentions_cursor() -> None:
-    """Finding 3 (review 03): the skill verify rubric names the seen.json cursor."""
-    text = (REPO_ROOT / "skills" / "slack-triage" / "SKILL.md").read_text(encoding="utf-8")
-    assert "state/slack/seen.json updated" in text
+def test_slack_verify_file_mentions_cursor() -> None:
+    """The dedicated verify file names the seen.json cursor as a stop condition."""
+    text = (REPO_ROOT / "skills" / "slack-triage" / "verify.md").read_text(encoding="utf-8")
+    assert "state/slack/seen.json" in text
+
+
+def test_shipped_loops_reference_existing_verify_files() -> None:
+    """Every shipped manifest points logic.verify at a real, colocated file."""
+    loops_dir = REPO_ROOT / "loops"
+    manifests = [LoopManifest.load(p) for p in sorted(loops_dir.glob("*.yaml"))]
+    assert manifests
+    for manifest in manifests:
+        assert manifest.logic.verify, f"{manifest.id} missing logic.verify"
+        assert (REPO_ROOT / manifest.logic.verify).is_file()
 
 
 def test_unsafe_skill_paths_are_reported() -> None:

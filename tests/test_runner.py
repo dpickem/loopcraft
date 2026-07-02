@@ -7,6 +7,7 @@ from types import SimpleNamespace
 from loopcraft.config import LoopcraftConfig
 from loopcraft.manifest import LoopManifest
 from loopcraft.runners import codex as codex_module
+from loopcraft.runners import base as runner_base_module
 from loopcraft.runners.base import (
     RunContext,
     STATUS_DONE,
@@ -20,6 +21,7 @@ def _config(tmp_path: Path) -> LoopcraftConfig:
     source = tmp_path / "src"
     (source / "skills" / "demo").mkdir(parents=True)
     (source / "skills" / "demo" / "SKILL.md").write_text("do the thing", encoding="utf-8")
+    (source / "skills" / "demo" / "verify.md").write_text("out exists", encoding="utf-8")
     return LoopcraftConfig(source_path=source, memory_path=tmp_path / "mem")
 
 
@@ -32,7 +34,10 @@ def _manifest(**overrides) -> LoopManifest:
         "cadence": {"type": "cron", "at": "0 9 * * *"},
         "tier": "observe",
         "outputs": ["state/demo/out.md"],
-        "logic": {"skill": "skills/demo/SKILL.md", "verify": "out exists"},
+        "logic": {
+            "skill": "skills/demo/SKILL.md",
+            "verify": "skills/demo/verify.md",
+        },
     }
     base.update(overrides)
     return LoopManifest.from_dict(base)
@@ -71,7 +76,7 @@ def test_run_writes_log_and_reports_done(tmp_path: Path, monkeypatch) -> None:
         output.write_text("# digest\n- item", encoding="utf-8")
         return SimpleNamespace(returncode=0, stdout="ok", stderr="")
 
-    monkeypatch.setattr(codex_module.subprocess, "run", fake_run)
+    monkeypatch.setattr(runner_base_module.subprocess, "run", fake_run)
     result = CodexRunner().run(manifest, ctx)
 
     assert result.status == STATUS_DONE
@@ -101,7 +106,7 @@ def test_run_flags_stale_unrefreshed_output(tmp_path: Path, monkeypatch) -> None
         # Exit 0 but leave the pre-existing output untouched.
         return SimpleNamespace(returncode=0, stdout="ok", stderr="")
 
-    monkeypatch.setattr(codex_module.subprocess, "run", fake_run)
+    monkeypatch.setattr(runner_base_module.subprocess, "run", fake_run)
     result = CodexRunner().run(manifest, ctx)
 
     assert result.status == STATUS_FAILED
@@ -124,7 +129,7 @@ def test_run_flags_missing_output(tmp_path: Path, monkeypatch) -> None:
     def fake_run(cmd, **kwargs):  # noqa: ANN001
         return SimpleNamespace(returncode=0, stdout="", stderr="")
 
-    monkeypatch.setattr(codex_module.subprocess, "run", fake_run)
+    monkeypatch.setattr(runner_base_module.subprocess, "run", fake_run)
     result = CodexRunner().run(manifest, ctx)
 
     assert result.status == STATUS_FAILED
@@ -146,7 +151,7 @@ def test_run_handles_missing_codex_binary(tmp_path: Path, monkeypatch) -> None:
     def boom(cmd, **kwargs):  # noqa: ANN001
         raise FileNotFoundError("codex")
 
-    monkeypatch.setattr(codex_module.subprocess, "run", boom)
+    monkeypatch.setattr(runner_base_module.subprocess, "run", boom)
     result = CodexRunner().run(manifest, ctx)
 
     assert result.status == STATUS_FAILED
@@ -157,7 +162,7 @@ def test_build_prompt_embeds_valid_skill(tmp_path: Path) -> None:
     config = _config(tmp_path)
     manifest = _manifest()
     ctx = RunContext(config=config, workdir=tmp_path, log_path=tmp_path / "l")
-    prompt = CodexRunner()._build_prompt(manifest, ctx)
+    prompt = CodexRunner().build_prompt(manifest, ctx)
     assert "do the thing" in prompt
 
 
@@ -168,7 +173,7 @@ def test_build_prompt_uses_safe_source_resolver(tmp_path: Path) -> None:
     secret.write_text("TOPSECRET", encoding="utf-8")
     manifest = _manifest(logic={"skill": "../secret.md", "verify": "x"})
     ctx = RunContext(config=config, workdir=tmp_path, log_path=tmp_path / "l")
-    prompt = CodexRunner()._build_prompt(manifest, ctx)
+    prompt = CodexRunner().build_prompt(manifest, ctx)
     assert "TOPSECRET" not in prompt
 
 
@@ -176,7 +181,7 @@ def test_build_command_includes_model(tmp_path: Path) -> None:
     config = _config(tmp_path)
     manifest = _manifest()
     ctx = RunContext(config=config, workdir=tmp_path, log_path=tmp_path / "l")
-    cmd = CodexRunner()._build_command(manifest, ctx)
+    cmd = CodexRunner().build_command(manifest, ctx)
     assert cmd[0] == "codex"
     assert "--model" in cmd and "gpt-5.5-medium" in cmd
 
@@ -192,7 +197,7 @@ def test_build_command_scopes_sandbox_not_bypass(tmp_path: Path) -> None:
         log_path=tmp_path / "l",
         resolved_outputs=[out],
     )
-    cmd = CodexRunner()._build_command(manifest, ctx)
+    cmd = CodexRunner().build_command(manifest, ctx)
     assert "--dangerously-bypass-approvals-and-sandbox" not in cmd
     assert cmd[cmd.index("-s") + 1] == "workspace-write"
     assert "sandbox_workspace_write.network_access=true" in cmd
@@ -213,7 +218,7 @@ def test_preflight_unknown_auth_bundle_reported(tmp_path: Path) -> None:
 def test_preflight_auth_probe_failure_reported(tmp_path: Path, monkeypatch) -> None:
     config = _config(tmp_path)
     manifest = _manifest(depends_on={"auth": ["nv-tools"]})
-    monkeypatch.setitem(codex_module.AUTH_PROBES, "nv-tools", lambda: "auth bundle 'nv-tools': boom")
+    monkeypatch.setitem(codex_module.AUTH_PROBES, "nv-tools", lambda config: "auth bundle 'nv-tools': boom")
     report = CodexRunner().preflight(manifest, config)
     assert any("boom" in p for p in report.problems)
 
@@ -221,7 +226,7 @@ def test_preflight_auth_probe_failure_reported(tmp_path: Path, monkeypatch) -> N
 def test_preflight_api_probe_failure_reported(tmp_path: Path, monkeypatch) -> None:
     config = _config(tmp_path)
     manifest = _manifest(depends_on={"apis": ["slack"]})
-    monkeypatch.setitem(codex_module.API_PROBES, "slack", lambda: "api 'slack': not configured")
+    monkeypatch.setitem(codex_module.API_PROBES, "slack", lambda config: "api 'slack': not configured")
     report = CodexRunner().preflight(manifest, config)
     assert any("slack" in p for p in report.problems)
 
@@ -230,8 +235,8 @@ def test_preflight_passes_when_probes_ok(tmp_path: Path, monkeypatch) -> None:
     config = _config(tmp_path)
     manifest = _manifest(depends_on={"auth": ["nv-tools"], "apis": ["slack"]})
     monkeypatch.setattr(codex_module.shutil, "which", lambda name: f"/usr/bin/{name}")
-    monkeypatch.setitem(codex_module.AUTH_PROBES, "nv-tools", lambda: None)
-    monkeypatch.setitem(codex_module.API_PROBES, "slack", lambda: None)
+    monkeypatch.setitem(codex_module.AUTH_PROBES, "nv-tools", lambda config: None)
+    monkeypatch.setitem(codex_module.API_PROBES, "slack", lambda config: None)
     report = CodexRunner().preflight(manifest, config)
     assert report.ok, report.problems
 
@@ -260,9 +265,9 @@ def test_run_timeout_returns_stalled(tmp_path: Path, monkeypatch) -> None:
 
     def fake_timeout(cmd, **kwargs):  # noqa: ANN001
         assert kwargs.get("timeout") == 300
-        raise codex_module.subprocess.TimeoutExpired(cmd, kwargs.get("timeout"))
+        raise runner_base_module.subprocess.TimeoutExpired(cmd, kwargs.get("timeout"))
 
-    monkeypatch.setattr(codex_module.subprocess, "run", fake_timeout)
+    monkeypatch.setattr(runner_base_module.subprocess, "run", fake_timeout)
     result = CodexRunner().run(manifest, ctx)
 
     assert result.status == STATUS_STALLED

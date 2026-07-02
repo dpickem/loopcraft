@@ -1,27 +1,58 @@
+"""Control-plane configuration and ledger/source path resolution.
+
+``LoopcraftConfig`` is the single object that wires the source tree (code,
+manifests, skills) to the memory tree (ledger, artifacts, run DB) and centralizes
+environment access. It also exposes the validated state/source path resolvers so
+loop I/O can never escape its tree.
+"""
+
 from __future__ import annotations
 
 import os
 import tomllib
-from dataclasses import dataclass, field
+from enum import StrEnum
 from pathlib import Path, PurePosixPath
+
+from pydantic import BaseModel, ConfigDict, Field
+
+from loopcraft.paths import assert_under, safe_relpath
 
 CONFIG_FILENAME = "loopcraft.toml"
 PYPROJECT_FILENAME = "pyproject.toml"
 
+
+class SourceDir(StrEnum):
+    """Closed vocabulary of top-level directories in the source tree."""
+
+    LOOPS = "loops"
+    SKILLS = "skills"
+    AGENTS = "agents"
+
+
+class MemoryDir(StrEnum):
+    """Closed vocabulary of top-level directories in the memory tree."""
+
+    LEDGER = "ledger"
+    ARTIFACTS = "artifacts"
+    RUNS = "runs"
+
+
 # Loop-facing state paths are declared with this prefix (e.g. ``state/slack/x.md``)
 # and resolve into the ledger directory of the memory tree.
 STATE_PREFIX = "state"
-LEDGER_DIRNAME = "ledger"
-ARTIFACTS_DIRNAME = "artifacts"
-RUNS_DIRNAME = "runs"
 DB_FILENAME = "loopcraft.db"
 DEFAULT_WORKTREE_KEEP_LAST = 100
 MAX_WORKTREE_KEEP_LAST = 100
 
+#: Global defaults for control-plane settings (overridable via env/toml).
+DEFAULT_VENDOR = "codex"
+DEFAULT_HOST = "vm"
+DEFAULT_MEMORY_PATH = "~/workspace/loopcraft_memory"
+
 #: Prefixes that mark a declared path as a ledger/state file the store owns.
 #: Anything else (``linear:...``, ``s3://...``) is a non-file target the store
 #: does not resolve, so it is exempt from state-path validation.
-_STATE_PATH_PREFIXES = (STATE_PREFIX, LEDGER_DIRNAME)
+_STATE_PATH_PREFIXES = (STATE_PREFIX, MemoryDir.LEDGER.value)
 
 
 class StatePathError(ValueError):
@@ -43,20 +74,10 @@ def safe_source_relpath(declared: str) -> str:
         SourcePathError: If the path is empty, absolute, scheme-qualified, or
             contains a ``..`` segment.
     """
-    rel = declared.strip()
-    if not rel:
-        raise SourcePathError("empty source path")
-    if rel.startswith("/") or os.path.isabs(rel) or PurePosixPath(rel).is_absolute():
-        raise SourcePathError(f"absolute source path is not allowed: {declared!r}")
-    head = rel.split("/", 1)[0]
-    if ":" in head:
-        raise SourcePathError(f"scheme/drive source path is not allowed: {declared!r}")
-    parts = list(PurePosixPath(rel).parts)
-    if any(part == ".." for part in parts):
-        raise SourcePathError(f"'..' is not allowed in a source path: {declared!r}")
-    if any(":" in part or part in ("", ".") for part in parts):
-        raise SourcePathError(f"invalid segment in source path: {declared!r}")
-    return "/".join(parts)
+    try:
+        return safe_relpath(declared, kind="source")
+    except ValueError as exc:
+        raise SourcePathError(str(exc)) from exc
 
 
 def is_state_path(declared: str) -> bool:
@@ -87,67 +108,55 @@ def safe_state_relpath(declared: str) -> str:
     Raises:
         StatePathError: If the path is empty, absolute, or escapes the ledger.
     """
-    rel = declared.strip()
-    if not rel:
-        raise StatePathError("empty state path")
-    if rel.startswith("/") or os.path.isabs(rel) or PurePosixPath(rel).is_absolute():
-        raise StatePathError(f"absolute state path is not allowed: {declared!r}")
-
-    parts = list(PurePosixPath(rel).parts)
-    if parts and parts[0] in _STATE_PATH_PREFIXES:
-        parts = parts[1:]
-    if not parts:
-        raise StatePathError(f"state path has no file after prefix: {declared!r}")
-    if any(part == ".." for part in parts):
-        raise StatePathError(f"'..' is not allowed in a state path: {declared!r}")
-    # Defense in depth: a Windows drive or UNC head would survive the checks above.
-    if any(":" in part or part in ("", ".") for part in parts):
-        raise StatePathError(f"invalid segment in state path: {declared!r}")
-    return "/".join(parts)
+    try:
+        return safe_relpath(declared, prefixes=_STATE_PATH_PREFIXES, kind="state")
+    except ValueError as exc:
+        raise StatePathError(str(exc)) from exc
 
 
-@dataclass(frozen=True)
-class LoopcraftConfig:
+class LoopcraftConfig(BaseModel):
     """Resolved control-plane configuration.
 
     Connects the source tree (manifests, skills, code) to the memory tree
     (ledger + artifacts + run-history DB).
     """
 
+    model_config = ConfigDict(frozen=True)
+
     source_path: Path
     memory_path: Path
-    default_vendor: str = "codex"
-    host: str = "vm"
+    default_vendor: str = DEFAULT_VENDOR
+    host: str = DEFAULT_HOST
     worktree_keep_last: int = DEFAULT_WORKTREE_KEEP_LAST
-    dependencies: dict[str, str] = field(default_factory=dict)
+    dependencies: dict[str, str] = Field(default_factory=dict)
     artifact_store: str | None = None
-    extra: dict[str, object] = field(default_factory=dict)
+    extra: dict[str, object] = Field(default_factory=dict)
 
     # --- source-tree locations ---------------------------------------------
     @property
     def loops_dir(self) -> Path:
-        return self.source_path / "loops"
+        return self.source_path / SourceDir.LOOPS
 
     @property
     def skills_dir(self) -> Path:
-        return self.source_path / "skills"
+        return self.source_path / SourceDir.SKILLS
 
     @property
     def agents_dir(self) -> Path:
-        return self.source_path / "agents"
+        return self.source_path / SourceDir.AGENTS
 
     # --- memory-tree locations ---------------------------------------------
     @property
     def ledger_dir(self) -> Path:
-        return self.memory_path / LEDGER_DIRNAME
+        return self.memory_path / MemoryDir.LEDGER
 
     @property
     def artifacts_dir(self) -> Path:
-        return self.memory_path / ARTIFACTS_DIRNAME
+        return self.memory_path / MemoryDir.ARTIFACTS
 
     @property
     def runs_dir(self) -> Path:
-        return self.ledger_dir / RUNS_DIRNAME
+        return self.ledger_dir / MemoryDir.RUNS
 
     @property
     def db_path(self) -> Path:
@@ -165,11 +174,10 @@ class LoopcraftConfig:
         """
         rel = safe_state_relpath(declared)
         resolved = self.ledger_dir / rel
-        # Defense in depth: confirm the normalized path stays inside the ledger.
-        ledger_root = os.path.normpath(str(self.ledger_dir))
-        candidate = os.path.normpath(str(resolved))
-        if candidate != ledger_root and not candidate.startswith(ledger_root + os.sep):
-            raise StatePathError(f"state path escapes the ledger tree: {declared!r}")
+        try:
+            assert_under(self.ledger_dir, resolved, label="state path")
+        except ValueError as exc:
+            raise StatePathError(str(exc)) from exc
         return resolved
 
     def resolve_state_template(self, declared: str, *, run_id: str, date: str) -> Path:
@@ -190,14 +198,18 @@ class LoopcraftConfig:
         """
         rel = safe_source_relpath(declared)
         resolved = self.source_path / rel
-        src_root = os.path.normpath(str(self.source_path))
-        candidate = os.path.normpath(str(resolved))
-        if candidate != src_root and not candidate.startswith(src_root + os.sep):
-            raise SourcePathError(f"source path escapes the source tree: {declared!r}")
+        try:
+            assert_under(self.source_path, resolved, label="source path")
+        except ValueError as exc:
+            raise SourcePathError(str(exc)) from exc
         return resolved
 
+    def env_value(self, name: str) -> str | None:
+        """Return one environment value through the central config object."""
+        return os.environ.get(name)
+
     @classmethod
-    def load(cls, source_path: Path | str | None = None) -> "LoopcraftConfig":
+    def load(cls, source_path: Path | str | None = None) -> LoopcraftConfig:
         """Load configuration from ``loopcraft.toml`` in the source tree.
 
         Environment overrides (handy for tests and per-host tweaks):
@@ -217,7 +229,7 @@ class LoopcraftConfig:
             raw = tomllib.loads(config_file.read_text(encoding="utf-8"))
 
         memory_raw = os.environ.get("LOOPCRAFT_MEMORY") or str(
-            raw.get("memory_path", "~/workspace/loopcraft_memory")
+            raw.get("memory_path", DEFAULT_MEMORY_PATH)
         )
         memory = Path(memory_raw).expanduser().resolve()
 
@@ -245,8 +257,8 @@ class LoopcraftConfig:
             source_path=source,
             memory_path=memory,
             default_vendor=os.environ.get("LOOPCRAFT_VENDOR")
-            or str(raw.get("default_vendor", "codex")),
-            host=str(raw.get("host", "vm")),
+            or str(raw.get("default_vendor", DEFAULT_VENDOR)),
+            host=str(raw.get("host", DEFAULT_HOST)),
             worktree_keep_last=keep_last,
             dependencies=dependencies,
             artifact_store=(

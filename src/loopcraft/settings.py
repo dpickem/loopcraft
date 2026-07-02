@@ -1,9 +1,3 @@
-from __future__ import annotations
-
-import os
-import re
-from pathlib import Path, PurePosixPath
-
 """Public/private configuration split — the prevailing loopcraft pattern.
 
 A committed *public* config file holds only non-confidential placeholders. Real
@@ -16,6 +10,12 @@ values are *private* and are resolved at run time, highest precedence first:
 The control plane resolves the effective value and materializes it into the
 isolated run worktree, so confidential data never has to live in the source repo.
 """
+
+from __future__ import annotations
+
+import os
+import re
+from pathlib import Path, PurePosixPath
 
 #: Prefix for environment variables that override a skill asset file.
 ENV_PREFIX = "LOOPCRAFT"
