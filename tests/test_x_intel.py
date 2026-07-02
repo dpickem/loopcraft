@@ -11,6 +11,8 @@ from loopcraft.research_intel.x.follow_discovery import discover_candidates, ren
 from loopcraft.research_intel.x.ranking import rank_posts, score_post
 from loopcraft.research_intel.x.store import IntelStore
 
+REPO_ROOT = Path(__file__).resolve().parents[1]
+
 
 def _config() -> IntelConfig:
     return IntelConfig.from_dict(
@@ -243,6 +245,12 @@ def test_x_output_defaults_are_memory_state_paths() -> None:
     assert config.output.source_state_path.as_posix() == "state/research/x/source-state.json"
     assert config.output.history_dir.as_posix() == "state/research/x/history"
     assert config.output.latest_markdown.as_posix() == "state/research/x/latest.md"
+
+
+def test_x_loads_yaml_content_config() -> None:
+    config = IntelConfig.load(REPO_ROOT / "config" / "x_intel.yaml")
+    assert "sama" in config.frontier_labs.high_priority_handles
+    assert "loopcraft" in config.ranking.keywords
 
 
 def test_x_store_uses_json_ledger_files(tmp_path) -> None:

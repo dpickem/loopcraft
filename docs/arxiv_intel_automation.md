@@ -4,8 +4,8 @@ The arXiv workflow fetches abstract metadata from the official arXiv API, ranks 
 
 ## Local Setup
 
-1. Tune `config/arxiv_intel.json` categories and terms if needed. If the changes
-   are private/local, use gitignored `config/arxiv_intel.local.json` instead.
+1. Tune `config/arxiv_intel.yaml` categories and terms if needed. If the changes
+   are private/local, use gitignored `config/arxiv_intel.local.yaml` instead.
 2. Relevant fields:
    - `sources.categories`: arXiv categories such as `cs.AI`, `cs.CL`, `cs.LG`, `stat.ML`.
    - `sources.search_terms`: abstract/title search terms for foundation models, LLMs, post-training, agentic workflows, loop engineering, RSI, and self-improving systems.

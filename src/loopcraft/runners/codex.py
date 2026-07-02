@@ -337,6 +337,8 @@ class CodexRunner:
         lines.append("## Runtime context")
         lines.append(f"- source tree (repo with Makefile/config/src): {ctx.config.source_path}")
         lines.append(f"- run worktree (staged loop assets, current cwd): {ctx.workdir}")
+        if loop.content.config:
+            lines.append(f"- content definition: {loop.content.config}")
         lines.append(
             "- If the skill invokes a repo-local CLI or Makefile target, run it from the source tree."
         )

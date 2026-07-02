@@ -88,6 +88,11 @@ class DependsOn:
 
 
 @dataclass(frozen=True)
+class Content:
+    config: str | None = None
+
+
+@dataclass(frozen=True)
 class Logic:
     skill: str | None = None
     verify: str | None = None
@@ -109,6 +114,7 @@ class LoopManifest:
     tier: str
     budget: Budget
     depends_on: DependsOn
+    content: Content
     inputs: list[str]
     outputs: list[str]
     artifacts: list[dict[str, Any]]
@@ -125,6 +131,7 @@ class LoopManifest:
         cadence_raw = raw.get("cadence") or {}
         budget_raw = raw.get("budget") or {}
         deps_raw = raw.get("depends_on") or {}
+        content_raw = raw.get("content") or {}
         logic_raw = raw.get("logic") or {}
         approval_raw = raw.get("approval") or {}
 
@@ -156,6 +163,7 @@ class LoopManifest:
                 env=_str_list(deps_raw.get("env")),
                 loops=_str_list(deps_raw.get("loops")),
             ),
+            content=Content(config=_opt_str(content_raw.get("config"))),
             inputs=_str_list(raw.get("inputs")),
             outputs=_str_list(raw.get("outputs")),
             artifacts=list(raw.get("artifacts") or []),
@@ -208,6 +216,12 @@ class LoopManifest:
                 safe_source_relpath(self.logic.skill)
             except SourcePathError as exc:
                 problems.append(f"logic.skill: {exc}")
+
+        if self.content.config:
+            try:
+                safe_source_relpath(self.content.config)
+            except SourcePathError as exc:
+                problems.append(f"content.config: {exc}")
 
         for label, declared in (
             *(("inputs", p) for p in self.inputs),

@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+import yaml
 
 
 @dataclass(frozen=True)
@@ -23,7 +24,7 @@ class RankingConfig:
 
 
 @dataclass(frozen=True)
-class OutputConfig:
+class OutputPaths:
     seen_path: Path
     papers_path: Path
     digest_dir: Path
@@ -36,17 +37,24 @@ class OutputConfig:
 class ArxivIntelConfig:
     sources: SourcesConfig
     ranking: RankingConfig
-    output: OutputConfig
+    output: OutputPaths = OutputPaths(
+        seen_path=Path("state/research/arxiv/seen.json"),
+        papers_path=Path("state/research/arxiv/papers.jsonl"),
+        digest_dir=Path("state/research/arxiv/digests"),
+        history_dir=Path("state/research/arxiv/history"),
+        latest_markdown=Path("state/research/arxiv/latest.md"),
+        latest_json=Path("state/research/arxiv/latest.json"),
+    )
 
     @classmethod
     def load(cls, path: Path) -> "ArxivIntelConfig":
-        return cls.from_dict(json.loads(path.read_text(encoding="utf-8")))
+        raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        return cls.from_dict(raw)
 
     @classmethod
     def from_dict(cls, raw: dict[str, Any]) -> "ArxivIntelConfig":
         sources = raw.get("sources", {})
         ranking = raw.get("ranking", {})
-        output = raw.get("output", {})
         return cls(
             sources=SourcesConfig(
                 categories=[str(value) for value in sources.get("categories", ["cs.AI", "cs.CL", "cs.LG", "stat.ML"])],
@@ -61,14 +69,6 @@ class ArxivIntelConfig:
                 negative_keywords={
                     str(term).lower(): int(weight) for term, weight in ranking.get("negative_keywords", {}).items()
                 },
-            ),
-            output=OutputConfig(
-                seen_path=Path(output.get("seen_path", "state/research/arxiv/seen.json")),
-                papers_path=Path(output.get("papers_path", "state/research/arxiv/papers.jsonl")),
-                digest_dir=Path(output.get("digest_dir", "state/research/arxiv/digests")),
-                history_dir=Path(output.get("history_dir", "state/research/arxiv/history")),
-                latest_markdown=Path(output.get("latest_markdown", "state/research/arxiv/latest.md")),
-                latest_json=Path(output.get("latest_json", "state/research/arxiv/latest.json")),
             ),
         )
 

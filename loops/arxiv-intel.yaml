@@ -28,6 +28,9 @@ depends_on:
   env: []
   loops: []
 
+content:
+  config: config/arxiv_intel.yaml
+
 inputs:
   - state/research/arxiv/seen.json
 outputs:

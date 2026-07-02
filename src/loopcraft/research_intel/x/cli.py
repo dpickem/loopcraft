@@ -29,7 +29,7 @@ def main(argv: list[str] | None = None) -> int:
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     run_parser = subparsers.add_parser("run", help="Fetch, rank, and write a daily X digest.")
-    run_parser.add_argument("--config", default="config/x_intel.json", help="Path to JSON config.")
+    run_parser.add_argument("--config", default="config/x_intel.yaml", help="Path to YAML content config.")
     run_parser.add_argument("--dry-run", action="store_true", help="Fetch and rank without writing seen state.")
 
     snapshot_parser = subparsers.add_parser(
@@ -44,7 +44,7 @@ def main(argv: list[str] | None = None) -> int:
         "discover-follows",
         help="Recommend new X accounts to follow from the latest intelligence digest.",
     )
-    discover_parser.add_argument("--config", default="config/x_intel.json", help="Path to JSON config.")
+    discover_parser.add_argument("--config", default="config/x_intel.yaml", help="Path to YAML content config.")
     discover_parser.add_argument("--digest-json", help="Digest JSON path. Defaults to latest digest in config.")
     discover_parser.add_argument("--output-dir", help="Output directory. Defaults to config.output.follow_candidates_dir.")
     discover_parser.add_argument("--top", type=int, default=25, help="Maximum candidates to emit.")

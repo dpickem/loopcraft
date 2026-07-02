@@ -95,8 +95,10 @@ def test_research_intel_manifests_archive_latest_outputs() -> None:
     manifests, _ = load_all(REPO_ROOT / "loops")
     arxiv = next(m for m in manifests if m.id == "arxiv-intel")
     x_intel = next(m for m in manifests if m.id == "x-intel")
+    assert arxiv.content.config == "config/arxiv_intel.yaml"
     assert "state/research/arxiv/history/{{run_id}}.md" in arxiv.outputs
     assert "state/research/arxiv/history/{{run_id}}.json" in arxiv.outputs
+    assert x_intel.content.config == "config/x_intel.yaml"
     assert "state/research/x/history/{{run_id}}.md" in x_intel.outputs
     assert "state/research/x/history/{{run_id}}.json" in x_intel.outputs
 

@@ -29,6 +29,9 @@ depends_on:
   env: [X_API_BEARER_TOKEN]
   loops: []
 
+content:
+  config: config/x_intel.yaml
+
 inputs:
   - state/research/x/seen.json
   - state/research/x/source-state.json

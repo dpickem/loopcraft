@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+import yaml
 
 
 @dataclass(frozen=True)
@@ -38,7 +39,7 @@ class RankingConfig:
 
 
 @dataclass(frozen=True)
-class OutputConfig:
+class OutputPaths:
     seen_path: Path
     posts_path: Path
     source_state_path: Path
@@ -54,11 +55,20 @@ class IntelConfig:
     sources: SourcesConfig
     frontier_labs: FrontierLabsConfig
     ranking: RankingConfig
-    output: OutputConfig
+    output: OutputPaths = OutputPaths(
+        seen_path=Path("state/research/x/seen.json"),
+        posts_path=Path("state/research/x/posts.jsonl"),
+        source_state_path=Path("state/research/x/source-state.json"),
+        digest_dir=Path("state/research/x/digests"),
+        history_dir=Path("state/research/x/history"),
+        latest_markdown=Path("state/research/x/latest.md"),
+        latest_json=Path("state/research/x/latest.json"),
+        follow_candidates_dir=Path("state/research/x/follow-candidates"),
+    )
 
     @classmethod
     def load(cls, path: Path) -> "IntelConfig":
-        raw = json.loads(path.read_text(encoding="utf-8"))
+        raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
         return cls.from_dict(raw)
 
     @classmethod
@@ -66,8 +76,6 @@ class IntelConfig:
         sources = raw.get("sources", {})
         labs = raw.get("frontier_labs", {})
         ranking = raw.get("ranking", {})
-        output = raw.get("output", {})
-
         return cls(
             sources=SourcesConfig(
                 list_ids=[str(value) for value in sources.get("list_ids", [])],
@@ -119,18 +127,6 @@ class IntelConfig:
                     str(term).lower(): int(weight) for term, weight in ranking.get("negative_keywords", {}).items()
                 },
                 keywords={str(term).lower(): int(weight) for term, weight in ranking.get("keywords", {}).items()},
-            ),
-            output=OutputConfig(
-                seen_path=Path(output.get("seen_path", "state/research/x/seen.json")),
-                posts_path=Path(output.get("posts_path", "state/research/x/posts.jsonl")),
-                source_state_path=Path(output.get("source_state_path", "state/research/x/source-state.json")),
-                digest_dir=Path(output.get("digest_dir", "state/research/x/digests")),
-                history_dir=Path(output.get("history_dir", "state/research/x/history")),
-                latest_markdown=Path(output.get("latest_markdown", "state/research/x/latest.md")),
-                latest_json=Path(output.get("latest_json", "state/research/x/latest.json")),
-                follow_candidates_dir=Path(
-                    output.get("follow_candidates_dir", "state/research/x/follow-candidates")
-                ),
             ),
         )
 

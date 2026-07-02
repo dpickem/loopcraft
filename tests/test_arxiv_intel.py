@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from pathlib import Path
 
 from loopcraft.research_intel.arxiv.client import build_search_query, parse_feed
 from loopcraft.research_intel.arxiv.config import ArxivIntelConfig
 from loopcraft.research_intel.arxiv.digest import render_digest
 from loopcraft.research_intel.arxiv.ranking import rank_papers, score_paper
 from loopcraft.research_intel.arxiv.store import ArxivStore
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 def _config() -> ArxivIntelConfig:
@@ -121,6 +124,12 @@ def test_arxiv_output_defaults_are_memory_state_paths() -> None:
     assert config.output.papers_path.as_posix() == "state/research/arxiv/papers.jsonl"
     assert config.output.history_dir.as_posix() == "state/research/arxiv/history"
     assert config.output.latest_markdown.as_posix() == "state/research/arxiv/latest.md"
+
+
+def test_arxiv_loads_yaml_content_config() -> None:
+    config = ArxivIntelConfig.load(REPO_ROOT / "config" / "arxiv_intel.yaml")
+    assert "cs.AI" in config.sources.categories
+    assert "recursive self-improvement" in config.ranking.keywords
 
 
 def test_arxiv_store_uses_json_ledger_files(tmp_path) -> None:

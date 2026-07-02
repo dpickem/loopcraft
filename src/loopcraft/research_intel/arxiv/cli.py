@@ -20,7 +20,7 @@ def main(argv: list[str] | None = None) -> int:
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     run_parser = subparsers.add_parser("run", help="Fetch, rank, and write a daily arXiv digest.")
-    run_parser.add_argument("--config", default="config/arxiv_intel.json", help="Path to JSON config.")
+    run_parser.add_argument("--config", default="config/arxiv_intel.yaml", help="Path to YAML content config.")
     run_parser.add_argument("--dry-run", action="store_true", help="Fetch and rank without writing seen state.")
     run_parser.add_argument("--include-seen", action="store_true", help="Include papers already seen in prior runs.")
 

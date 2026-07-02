@@ -34,7 +34,7 @@ description: Summarize arXiv paper intelligence digests for ML, AI, foundation/f
 
 ```bash
 make daily-arxiv-intel
-PYTHONPATH=src python -m loopcraft.research_intel.arxiv.cli run --config config/arxiv_intel.json --include-seen
+PYTHONPATH=src python -m loopcraft.research_intel.arxiv.cli run --config config/arxiv_intel.yaml --include-seen
 PYTHONPATH=src python -m loopcraft.cli run arxiv-intel
 PYTHONPATH=src python -m pytest -q
 ```

@@ -5,8 +5,8 @@ The X intelligence workflow is a first-class Loopcraft loop. It can be run throu
 
 ## Local Setup
 
-1. Tune `config/x_intel.json` sources if needed. If the changes are private/local,
-   use gitignored `config/x_intel.local.json` instead.
+1. Tune `config/x_intel.yaml` sources if needed. If the changes are private/local,
+   use gitignored `config/x_intel.local.yaml` instead.
 2. Add one or more official X API sources:
    - `sources.following_snapshot`: preferred local snapshot of accounts you follow.
    - `sources.list_ids`: preferred for curated feeds.
@@ -32,7 +32,7 @@ With `X_API_OAUTH2_ACCESS_TOKEN` from an OAuth 2.0 user-context flow, `snapshot-
 ```bash
 make run LOOP=x-intel
 make daily-x-intel
-python -m loopcraft.research_intel.x.cli discover-follows --config config/x_intel.json
+python -m loopcraft.research_intel.x.cli discover-follows --config config/x_intel.yaml
 ```
 
 The command prints the generated digest path and writes Markdown plus JSON files into the
@@ -44,7 +44,7 @@ loopcraft memory ledger under `state/research/x/`. Follow recommendations are wr
 Run this daily in `/Users/dpickem/workspace/loopcraft`:
 
 ```text
-Run make run LOOP=x-intel. Then run python -m loopcraft.research_intel.x.cli discover-follows --config config/x_intel.json. Read state/research/x/latest.md and any follow-candidate paths printed by the commands. Summarize the most important posts for ML, AI, foundation/frontier model practice, harness engineering, loop engineering, loopcraft, agents, evals, and tool use. Highlight posts from frontier-lab authors separately. Include promising new people or organizations to follow, with evidence links. If either command reports X API rate limits, auth failures, or other errors, report those first and include the raw error summary.
+Run make run LOOP=x-intel. Then run python -m loopcraft.research_intel.x.cli discover-follows --config config/x_intel.yaml. Read state/research/x/latest.md and any follow-candidate paths printed by the commands. Summarize the most important posts for ML, AI, foundation/frontier model practice, harness engineering, loop engineering, loopcraft, agents, evals, and tool use. Highlight posts from frontier-lab authors separately. Include promising new people or organizations to follow, with evidence links. If either command reports X API rate limits, auth failures, or other errors, report those first and include the raw error summary.
 ```
 
 ## Notes

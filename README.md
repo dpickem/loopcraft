@@ -108,12 +108,12 @@ This repo includes a Loopcraft loop plus a direct CLI that uses the official X A
 cp .env.example .env
 python -m loopcraft.research_intel.x.cli snapshot-following
 make run LOOP=x-intel
-python -m loopcraft.research_intel.x.cli discover-follows --config config/x_intel.json
+python -m loopcraft.research_intel.x.cli discover-follows --config config/x_intel.yaml
 ```
 
 Fill in `X_API_BEARER_TOKEN` in `.env` before running. Tune the committed public
-defaults in `config/x_intel.json`, or create a gitignored
-`config/x_intel.local.json` for private/local overrides. Outputs are written to
+defaults in `config/x_intel.yaml`, or create a gitignored
+`config/x_intel.local.yaml` for private/local overrides. Outputs are written to
 `~/workspace/loopcraft_memory/ledger/research/x/` by default (`latest.md`,
 `latest.json`, archived `history/*.md/json`, `seen.json`, `source-state.json`,
 `posts.jsonl`).
@@ -130,8 +130,8 @@ This repo also includes an arXiv abstract-first Loopcraft loop for ML, foundatio
 make run LOOP=arxiv-intel
 ```
 
-Tune the committed public defaults in `config/arxiv_intel.json`, or create a
-gitignored `config/arxiv_intel.local.json` for private/local overrides. Outputs
+Tune the committed public defaults in `config/arxiv_intel.yaml`, or create a
+gitignored `config/arxiv_intel.local.yaml` for private/local overrides. Outputs
 are written to `~/workspace/loopcraft_memory/ledger/research/arxiv/` by default
 (`latest.md`, `latest.json`, archived `history/*.md/json`, `seen.json`,
 `papers.jsonl`).
