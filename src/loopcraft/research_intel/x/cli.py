@@ -14,6 +14,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from loopcraft.cli_output import emit
 from loopcraft.config import LoopcraftConfig
 from loopcraft.env import load_dotenv
 from loopcraft.research_intel.x.client import XApiClient, XApiError
@@ -39,6 +40,14 @@ _DEFAULT_SNAPSHOT_OUTPUT = "config/x_following_snapshot.local.json"
 
 class MissingTokenError(RuntimeError):
     """Raised when no X API token is available for a requested operation."""
+
+
+def _fail(command: str, rc: int, message: str, *, as_json: bool) -> int:
+    """Emit a failure result: a JSON error envelope, or a stderr message."""
+    if as_json:
+        return emit(command, as_json=True, ok=False, rc=rc, data={"error": message}, lines=[])
+    print(f"ERROR: {message}", file=sys.stderr)
+    return rc
 
 
 class XIntelRunner:
@@ -71,13 +80,12 @@ class XIntelRunner:
             )
         return XApiClient(token)
 
-    def run(self, *, dry_run: bool = False) -> int:
+    def run(self, *, dry_run: bool = False, as_json: bool = False) -> int:
         """Fetch, rank, and write a daily X digest; return a process exit code."""
         try:
             client = self._client()
         except MissingTokenError as exc:
-            print(f"ERROR: {exc}", file=sys.stderr)
-            return 2
+            return _fail("run", 2, str(exc), as_json=as_json)
 
         errors: list[str] = []
         raw_posts: list[dict[str, Any]] = []
@@ -119,20 +127,27 @@ class XIntelRunner:
             date_stamp=now.strftime("%Y-%m-%d"),
         )
 
-        print(f"DIGEST_MARKDOWN={markdown_path}")
-        print(f"DIGEST_JSON={json_path}")
-        if errors:
+        ok = not errors
+        data = {
+            "markdown_path": str(markdown_path),
+            "json_path": str(json_path),
+            "post_count": len(raw_posts),
+            "errors": errors,
+        }
+        lines = [f"DIGEST_MARKDOWN={markdown_path}", f"DIGEST_JSON={json_path}"]
+        rc = emit("run", as_json=as_json, ok=ok, rc=0 if ok else 1, data=data, lines=lines)
+        if not as_json and errors:
             print("ERROR_SUMMARY=" + " | ".join(errors), file=sys.stderr)
-            return 1
-        return 0
+        return rc
 
-    def discover_follows(self, *, digest_json: str | None, output_dir: str | None, top: int) -> int:
+    def discover_follows(
+        self, *, digest_json: str | None, output_dir: str | None, top: int, as_json: bool = False
+    ) -> int:
         """Recommend new accounts to follow from the latest digest."""
         try:
             client = self._client()
         except MissingTokenError as exc:
-            print(f"ERROR: {exc}", file=sys.stderr)
-            return 2
+            return _fail("discover-follows", 2, str(exc), as_json=as_json)
 
         digest_path = Path(digest_json) if digest_json else self.store.latest_digest_json()
         digest = json.loads(digest_path.read_text(encoding="utf-8"))
@@ -142,8 +157,7 @@ class XIntelRunner:
         try:
             profiles = client.users_by_usernames([c["username"] for c in initial])
         except XApiError as exc:
-            print(f"ERROR: {exc}", file=sys.stderr)
-            return 1
+            return _fail("discover-follows", 1, str(exc), as_json=as_json)
 
         candidates = discover_candidates(
             digest,
@@ -172,9 +186,16 @@ class XIntelRunner:
             date_stamp=generated_at.strftime("%Y-%m-%d"),
             output_dir=output_dir,
         )
-        print(f"FOLLOW_CANDIDATES_MARKDOWN={markdown_path}")
-        print(f"FOLLOW_CANDIDATES_JSON={json_path}")
-        return 0
+        data = {
+            "markdown_path": str(markdown_path),
+            "json_path": str(json_path),
+            "candidate_count": len(candidates),
+        }
+        lines = [
+            f"FOLLOW_CANDIDATES_MARKDOWN={markdown_path}",
+            f"FOLLOW_CANDIDATES_JSON={json_path}",
+        ]
+        return emit("discover-follows", as_json=as_json, ok=True, rc=0, data=data, lines=lines)
 
     # --- fetch phases -------------------------------------------------------
     def _fetch_from_queries(self, client: XApiClient, *, dry_run: bool) -> list[dict[str, Any]]:
@@ -249,18 +270,25 @@ class XIntelRunner:
             self.store.remember_source_highwater(source_key, fetched)
 
 
-def snapshot_following(output_path: str, *, user_id: str | None = None, username: str | None = None) -> int:
+def snapshot_following(
+    output_path: str,
+    *,
+    user_id: str | None = None,
+    username: str | None = None,
+    as_json: bool = False,
+) -> int:
     """Fetch followed accounts and write a private snapshot for focused searches."""
     load_dotenv()
     tokens = XApiTokens.from_env()
     token = tokens.token(require_user_context=not (user_id or username))
     if not token:
-        print(
-            "ERROR: X_API_OAUTH2_ACCESS_TOKEN is required for snapshot-following "
+        return _fail(
+            "snapshot-following",
+            2,
+            "X_API_OAUTH2_ACCESS_TOKEN is required for snapshot-following "
             "without --username or --user-id.",
-            file=sys.stderr,
+            as_json=as_json,
         )
-        return 2
 
     client = XApiClient(token)
     try:
@@ -272,8 +300,7 @@ def snapshot_following(output_path: str, *, user_id: str | None = None, username
             current_user = client.current_user()
         followed_users = client.following_users(str(current_user["id"]))
     except XApiError as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
-        return 1
+        return _fail("snapshot-following", 1, str(exc), as_json=as_json)
 
     output = Path(output_path)
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -284,9 +311,9 @@ def snapshot_following(output_path: str, *, user_id: str | None = None, username
         "users": sorted(followed_users, key=lambda user: str(user.get("username", "")).lower()),
     }
     output.write_text(json.dumps(snapshot, indent=2, ensure_ascii=False), encoding="utf-8")
-    print(f"FOLLOWING_SNAPSHOT={output}")
-    print(f"FOLLOWING_COUNT={len(followed_users)}")
-    return 0
+    data = {"snapshot_path": str(output), "following_count": len(followed_users)}
+    lines = [f"FOLLOWING_SNAPSHOT={output}", f"FOLLOWING_COUNT={len(followed_users)}"]
+    return emit("snapshot-following", as_json=as_json, ok=True, rc=0, data=data, lines=lines)
 
 
 def _snapshot_handles(path: Path) -> list[str]:
@@ -300,6 +327,7 @@ def _snapshot_handles(path: Path) -> list[str]:
 def _build_parser() -> argparse.ArgumentParser:
     """Build the argument parser for the X intelligence CLI."""
     parser = argparse.ArgumentParser(prog="loopcraft-x-intel")
+    parser.add_argument("--json", action="store_true", help="Emit a structured JSON result envelope.")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     run_parser = subparsers.add_parser("run", help="Fetch, rank, and write a daily X digest.")
@@ -333,12 +361,17 @@ def main(argv: list[str] | None = None) -> int:
     """Parse arguments and dispatch to the requested X intelligence command."""
     args = _build_parser().parse_args(argv)
     if args.command == "run":
-        return XIntelRunner(args.config).run(dry_run=args.dry_run)
+        return XIntelRunner(args.config).run(dry_run=args.dry_run, as_json=args.json)
     if args.command == "snapshot-following":
-        return snapshot_following(args.output, user_id=args.user_id, username=args.username)
+        return snapshot_following(
+            args.output, user_id=args.user_id, username=args.username, as_json=args.json
+        )
     if args.command == "discover-follows":
         return XIntelRunner(args.config).discover_follows(
-            digest_json=args.digest_json, output_dir=args.output_dir, top=args.top
+            digest_json=args.digest_json,
+            output_dir=args.output_dir,
+            top=args.top,
+            as_json=args.json,
         )
     return 2
 

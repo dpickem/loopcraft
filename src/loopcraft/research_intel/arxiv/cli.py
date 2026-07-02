@@ -8,8 +8,8 @@ import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
+from loopcraft.cli_output import emit
 from loopcraft.config import LoopcraftConfig
-
 from loopcraft.research_intel.arxiv.client import ArxivApiError, ArxivClient
 from loopcraft.research_intel.arxiv.config import ArxivIntelConfig
 from loopcraft.research_intel.arxiv.digest import render_digest
@@ -18,7 +18,9 @@ from loopcraft.research_intel.arxiv.store import ArxivStore
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Parse arguments and dispatch the arXiv intelligence command."""
     parser = argparse.ArgumentParser(prog="loopcraft-arxiv-intel")
+    parser.add_argument("--json", action="store_true", help="Emit a structured JSON result envelope.")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     run_parser = subparsers.add_parser("run", help="Fetch, rank, and write a daily arXiv digest.")
@@ -28,11 +30,28 @@ def main(argv: list[str] | None = None) -> int:
 
     args = parser.parse_args(argv)
     if args.command == "run":
-        return run(args.config, dry_run=args.dry_run, include_seen=args.include_seen)
+        return run(args.config, dry_run=args.dry_run, include_seen=args.include_seen, as_json=args.json)
     return 2
 
 
-def run(config_path: str, *, dry_run: bool = False, include_seen: bool = False) -> int:
+def run(
+    config_path: str,
+    *,
+    dry_run: bool = False,
+    include_seen: bool = False,
+    as_json: bool = False,
+) -> int:
+    """Fetch, rank, and write a daily arXiv digest.
+
+    Args:
+        config_path: Path to the YAML content-definition file.
+        dry_run: If True, do not persist seen/paper state.
+        include_seen: If True, keep papers already seen in prior runs.
+        as_json: If True, emit the structured JSON envelope instead of text.
+
+    Returns:
+        Process exit code (0 on success, 1 if fetch errors occurred).
+    """
     loopcraft = LoopcraftConfig.load()
     config = ArxivIntelConfig.load(Path(config_path))
     store = ArxivStore(loopcraft, config.output)
@@ -58,9 +77,6 @@ def run(config_path: str, *, dry_run: bool = False, include_seen: bool = False) 
         store.save_papers(raw_papers)
         store.mark_seen([paper["id"] for paper in raw_papers if paper.get("id")])
 
-    stamp = now.strftime("%Y-%m-%d")
-    run_stamp = now.strftime("%Y%m%dT%H%M%SZ")
-
     markdown = render_digest(top_papers, raw_papers, errors, generated_at=now)
     payload = json.dumps(
         {
@@ -76,15 +92,27 @@ def run(config_path: str, *, dry_run: bool = False, include_seen: bool = False) 
     markdown_path, json_path = store.write_digest(
         markdown=markdown,
         payload=payload,
-        run_stamp=run_stamp,
-        date_stamp=stamp,
+        run_stamp=now.strftime("%Y%m%dT%H%M%SZ"),
+        date_stamp=now.strftime("%Y-%m-%d"),
     )
 
-    print(f"ARXIV_DIGEST_MARKDOWN={markdown_path}")
-    print(f"ARXIV_DIGEST_JSON={json_path}")
-    if errors:
+    ok = not errors
+    data = {
+        "markdown_path": str(markdown_path),
+        "json_path": str(json_path),
+        "paper_count": len(raw_papers),
+        "ranked_count": len(ranked),
+        "errors": errors,
+    }
+    lines = [
+        f"ARXIV_DIGEST_MARKDOWN={markdown_path}",
+        f"ARXIV_DIGEST_JSON={json_path}",
+    ]
+    rc = emit("run", as_json=as_json, ok=ok, rc=0 if ok else 1, data=data, lines=lines)
+    if not as_json and errors:
         print("ERROR_SUMMARY=" + " | ".join(errors), file=sys.stderr)
-        return 1
-    return 0
+    return rc
+
+
 if __name__ == "__main__":
     raise SystemExit(main())

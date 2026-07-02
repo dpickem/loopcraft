@@ -9,7 +9,6 @@ addition to human-readable text output.
 from __future__ import annotations
 
 import argparse
-import json
 import shutil
 import sys
 import time
@@ -17,6 +16,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from loopcraft.cli_output import emit as _emit
 from loopcraft.config import LoopcraftConfig
 from loopcraft.env import load_dotenv
 from loopcraft.manifest import LoopManifest, load_all
@@ -27,22 +27,6 @@ from loopcraft.worktree import stage_loop_assets
 
 #: Scratch area (under the memory tree) for per-run worktrees.
 _WORKTREES_SUBPATH = ("var", "worktrees")
-
-
-def _emit(command: str, *, as_json: bool, ok: bool, rc: int, data: dict[str, Any], lines: list[str]) -> int:
-    """Render a command result and return its exit code.
-
-    In JSON mode a single ``{command, ok, exit_code, data}`` object is printed to
-    stdout; otherwise the pre-formatted human ``lines`` are printed. Returning
-    ``rc`` lets callers ``return _emit(...)`` directly.
-    """
-    if as_json:
-        envelope = {"command": command, "ok": ok, "exit_code": rc, "data": data}
-        print(json.dumps(envelope, indent=2, ensure_ascii=False, default=str))
-    else:
-        for line in lines:
-            print(line)
-    return rc
 
 
 def main(argv: list[str] | None = None) -> int:
