@@ -249,6 +249,7 @@ def test_x_output_defaults_are_memory_state_paths() -> None:
 
 def test_x_loads_yaml_content_config() -> None:
     config = IntelConfig.load(REPO_ROOT / "config" / "x_intel.yaml")
+    assert config.sources.following_snapshot is None
     assert "sama" in config.frontier_labs.high_priority_handles
     assert "loopcraft" in config.ranking.keywords
 

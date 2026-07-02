@@ -1,7 +1,7 @@
 sources:
   list_ids: []
   following_user_ids: []
-  following_snapshot: config/x_following_snapshot.json
+  following_snapshot: null
   search_queries: []
   author_handles: []
 frontier_labs:

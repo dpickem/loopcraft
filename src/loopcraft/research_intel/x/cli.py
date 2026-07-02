@@ -36,7 +36,11 @@ def main(argv: list[str] | None = None) -> int:
         "snapshot-following",
         help="Fetch followed accounts and write a repo snapshot for focused daily searches.",
     )
-    snapshot_parser.add_argument("--output", default="config/x_following_snapshot.json", help="Snapshot JSON path.")
+    snapshot_parser.add_argument(
+        "--output",
+        default="config/x_following_snapshot.local.json",
+        help="Private snapshot JSON path (gitignored by *.local.*).",
+    )
     snapshot_parser.add_argument("--user-id", help="X user ID to snapshot. Defaults to /2/users/me.")
     snapshot_parser.add_argument("--username", help="X username to resolve and snapshot.")
 

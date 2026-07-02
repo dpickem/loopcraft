@@ -113,14 +113,19 @@ python -m loopcraft.research_intel.x.cli discover-follows --config config/x_inte
 
 Fill in `X_API_BEARER_TOKEN` in `.env` before running. Tune the committed public
 defaults in `config/x_intel.yaml`, or create a gitignored
-`config/x_intel.local.yaml` for private/local overrides. Outputs are written to
+`config/x_intel.local.yaml` for private/local overrides (including a private
+`sources.following_snapshot`, e.g. `config/x_following_snapshot.local.json`).
+Outputs are written to
 `~/workspace/loopcraft_memory/ledger/research/x/` by default (`latest.md`,
 `latest.json`, archived `history/*.md/json`, `seen.json`, `source-state.json`,
 `posts.jsonl`).
 
 For `snapshot-following`, set `X_API_OAUTH2_ACCESS_TOKEN` from X's OAuth 2.0 Authorization Code with PKCE flow. Client ID/secret alone are not enough for `/2/users/me`.
 
-`discover-follows` reads the latest digest, filters out accounts already in `config/x_following_snapshot.json`, hydrates candidate profiles through X, and writes follow recommendations under `~/workspace/loopcraft_memory/ledger/research/x/follow-candidates/`.
+`discover-follows` reads the latest digest, filters out accounts from the
+configured private following snapshot when one exists, hydrates candidate
+profiles through X, and writes follow recommendations under
+`~/workspace/loopcraft_memory/ledger/research/x/follow-candidates/`.
 
 ## Daily arXiv Intelligence
 
