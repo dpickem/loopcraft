@@ -140,6 +140,28 @@ def test_unknown_loop_returns_error(monkeypatch, tmp_path: Path) -> None:
     assert rc == 2
 
 
+def test_list_json_envelope(monkeypatch, tmp_path: Path, capsys) -> None:
+    _env(monkeypatch, tmp_path)
+    rc = cli.main(["--json", "list"])
+    assert rc == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["command"] == "list"
+    assert payload["ok"] is True
+    assert payload["exit_code"] == 0
+    assert any(loop["id"] == "slack-triage" for loop in payload["data"]["loops"])
+
+
+def test_run_dry_run_json_envelope(monkeypatch, tmp_path: Path, capsys) -> None:
+    _env(monkeypatch, tmp_path)
+    register_runner("stub", StubRunner)
+    rc = cli.main(["--json", "run", "slack-triage", "--vendor", "stub", "--dry-run"])
+    assert rc == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["command"] == "run"
+    assert payload["data"]["preflight"]["ok"] is True
+    assert payload["data"]["resolved_outputs"]
+
+
 def test_scheme_output_fails_validate_and_run(monkeypatch, tmp_path: Path) -> None:
     """Finding 3 (review 02): a scheme output is rejected by validate and by run."""
     source = tmp_path / "src"
@@ -166,7 +188,7 @@ def test_deps_check_loop_runs_preflight(monkeypatch, tmp_path: Path, capsys) -> 
     _env(monkeypatch, tmp_path)
     from loopcraft.runners import codex as codex_module
 
-    monkeypatch.setitem(codex_module.AUTH_PROBES, "nv-tools", lambda: "auth bundle 'nv-tools': boom")
+    monkeypatch.setitem(codex_module.AUTH_PROBES, "nv-tools", lambda config: "auth bundle 'nv-tools': boom")
     rc = cli.main(["deps", "check", "--loop", "slack-triage"])
     out = capsys.readouterr().out
     assert "preflight slack-triage" in out
