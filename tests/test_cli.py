@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from loopcraft import cli
 from loopcraft.config import LoopcraftConfig
 from loopcraft.runners import register_runner
@@ -38,6 +40,19 @@ def _env(monkeypatch, tmp_path: Path) -> None:
     """Point loopctl at the repo source tree and a temp memory tree."""
     monkeypatch.setenv("LOOPCRAFT_SOURCE", str(REPO_ROOT))
     monkeypatch.setenv("LOOPCRAFT_MEMORY", str(tmp_path / "mem"))
+
+
+def _demo_source(monkeypatch, tmp_path: Path, manifest_text: str, filename: str = "demo.yaml") -> Path:
+    """Build a temp source tree with one skill and one manifest; point loopctl at it."""
+    source = tmp_path / "src"
+    (source / "loops").mkdir(parents=True)
+    skill_dir = source / "skills" / "demo"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text("body", encoding="utf-8")
+    (source / "loops" / filename).write_text(manifest_text, encoding="utf-8")
+    monkeypatch.setenv("LOOPCRAFT_SOURCE", str(source))
+    monkeypatch.setenv("LOOPCRAFT_MEMORY", str(tmp_path / "mem"))
+    return source
 
 
 def test_validate_repo_loops(monkeypatch, tmp_path: Path, capsys) -> None:
@@ -93,6 +108,9 @@ def test_run_end_to_end_with_stub_runner(monkeypatch, tmp_path: Path, capsys) ->
     assert data["vendor"] == "stub"
     assert str(cursor) in data["outputs"]
     assert str(archive_outputs[0]) in data["outputs"]
+    # Finding 4 (review 05): produced outputs and the declared contract are
+    # recorded as distinct fields with one semantic across statuses.
+    assert "state/slack/triage-latest.md" in data["declared_outputs"]
 
 
 def test_run_prunes_old_worktrees(monkeypatch, tmp_path: Path) -> None:
@@ -135,6 +153,10 @@ def test_run_records_failure_on_preflight(monkeypatch, tmp_path: Path) -> None:
     data = json.loads(records[0].read_text(encoding="utf-8"))
     assert data["status"] == "failed"
     assert data["problems"] == ["nope"]
+    # Finding 4 (review 05): execution never started, so nothing was produced;
+    # the declared contract is preserved in its own field.
+    assert data["outputs"] == []
+    assert "state/slack/triage-latest.md" in data["declared_outputs"]
 
 
 def test_run_dry_run_with_stub(monkeypatch, tmp_path: Path, capsys) -> None:
@@ -154,6 +176,128 @@ def test_unknown_loop_returns_error(monkeypatch, tmp_path: Path) -> None:
     _env(monkeypatch, tmp_path)
     rc = cli.main(["run", "does-not-exist"])
     assert rc == 2
+
+
+@pytest.mark.parametrize(
+    "bad_id",
+    ["../outside", "/etc/passwd", "demo/../../x", "state/../escape", "Demo", "a b"],
+)
+def test_run_rejects_non_canonical_loop_ids(monkeypatch, tmp_path: Path, capsys, bad_id: str) -> None:
+    """Finding 1 (review 05): the CLI loop selector is not a file-path input."""
+    _env(monkeypatch, tmp_path)
+    rc = cli.main(["--json", "run", bad_id])
+    payload = json.loads(capsys.readouterr().out)
+    assert rc == 2
+    assert payload["ok"] is False
+    assert "invalid loop id" in payload["data"]["error"]
+
+
+def test_run_rejects_filename_id_mismatch(monkeypatch, tmp_path: Path, capsys) -> None:
+    """Finding 1 (review 05): the advertised id and the executed id must agree."""
+    _demo_source(
+        monkeypatch,
+        tmp_path,
+        "id: other\n"
+        "name: Demo\n"
+        "cadence: {type: cron, at: '0 9 * * *'}\n"
+        "logic: {skill: skills/demo/SKILL.md}\n",
+    )
+    rc = cli.main(["--json", "run", "demo"])
+    payload = json.loads(capsys.readouterr().out)
+    assert rc == 2
+    assert "does not match filename stem" in payload["data"]["error"]
+
+
+def test_worktree_dir_and_prune_reject_escaping_ids(tmp_path: Path) -> None:
+    """Finding 1 (review 05): worktree paths are contained under the scratch root."""
+    config = LoopcraftConfig(source_path=tmp_path / "s", memory_path=tmp_path / "m")
+    for bad_id in ("/tmp/loopcraft-escaped", "../../escape"):
+        with pytest.raises(ValueError, match="escapes"):
+            cli._worktree_dir(config, bad_id, "run-id")
+        with pytest.raises(ValueError, match="escapes"):
+            cli._prune_loop_worktrees(config, bad_id, keep_last=1)
+    # An absolute run id must not escape either.
+    with pytest.raises(ValueError, match="escapes"):
+        cli._worktree_dir(config, "demo", "/tmp/loopcraft-escaped")
+
+
+def test_run_reports_malformed_yaml_as_structured_error(monkeypatch, tmp_path: Path, capsys) -> None:
+    """Finding 3 (review 05): broken YAML yields a JSON failure, not a traceback."""
+    _demo_source(monkeypatch, tmp_path, "id: [unclosed\n")
+    rc = cli.main(["--json", "run", "demo"])
+    payload = json.loads(capsys.readouterr().out)
+    assert rc == 2
+    assert payload["ok"] is False
+    assert "invalid YAML" in payload["data"]["error"]
+
+
+def test_run_reports_schema_invalid_manifest_as_structured_error(monkeypatch, tmp_path: Path, capsys) -> None:
+    """Finding 3 (review 05): a Pydantic schema error becomes a command failure."""
+    _demo_source(
+        monkeypatch,
+        tmp_path,
+        "id: demo\n"
+        "name: Demo\n"
+        "tier: boss\n"
+        "cadence: {type: cron, at: '0 9 * * *'}\n"
+        "logic: {skill: skills/demo/SKILL.md}\n",
+    )
+    rc = cli.main(["--json", "run", "demo"])
+    payload = json.loads(capsys.readouterr().out)
+    assert rc == 2
+    assert payload["ok"] is False
+    assert "tier" in payload["data"]["error"]
+
+
+def test_list_and_status_surface_broken_manifests(monkeypatch, tmp_path: Path, capsys) -> None:
+    """Finding 3 (review 05): list/status degrade instead of hiding broken loops."""
+    source = _demo_source(
+        monkeypatch,
+        tmp_path,
+        "id: demo\n"
+        "name: Demo\n"
+        "cadence: {type: cron, at: '0 9 * * *'}\n"
+        "logic: {skill: skills/demo/SKILL.md}\n",
+    )
+    (source / "loops" / "broken.yaml").write_text("id: [unclosed\n", encoding="utf-8")
+
+    for command in ("list", "status"):
+        rc = cli.main(["--json", command])
+        payload = json.loads(capsys.readouterr().out)
+        assert rc == 1, command
+        assert payload["ok"] is False
+        # The valid loop is still reported as partial data.
+        assert any(loop["id"] == "demo" for loop in payload["data"]["loops"])
+        assert any("broken.yaml" in problem for problem in payload["data"]["problems"])
+
+
+def test_run_fails_structured_when_content_config_missing(monkeypatch, tmp_path: Path, capsys) -> None:
+    """Finding 2 (review 05): a missing content.config fails before the agent starts."""
+    _demo_source(
+        monkeypatch,
+        tmp_path,
+        "id: demo\n"
+        "name: Demo\n"
+        "cadence: {type: cron, at: '0 9 * * *'}\n"
+        "content: {config: config/does-not-exist.yaml}\n"
+        "outputs: ['state/demo/out.md']\n"
+        "logic: {skill: skills/demo/SKILL.md}\n",
+    )
+    # The stub runner's preflight always passes, so this exercises the staging
+    # backstop rather than the shared capability check.
+    register_runner("stub", StubRunner)
+    rc = cli.main(["--json", "run", "demo", "--vendor", "stub"])
+    payload = json.loads(capsys.readouterr().out)
+    assert rc == 1
+    assert payload["data"]["phase"] == "staging"
+    assert any("content.config not found" in p for p in payload["data"]["problems"])
+
+    records = list((tmp_path / "mem" / "ledger" / "runs").glob("*.json"))
+    assert len(records) == 1
+    data = json.loads(records[0].read_text(encoding="utf-8"))
+    assert data["status"] == "failed"
+    assert data["outputs"] == []
+    assert data["declared_outputs"] == ["state/demo/out.md"]
 
 
 def test_list_json_envelope(monkeypatch, tmp_path: Path, capsys) -> None:

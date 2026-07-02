@@ -28,6 +28,12 @@ class RunRecord(BaseModel):
 
     This is the authoritative input the harvester (M4) reindexes from, so the
     derived SQLite DB is always reconstructable from the ledger alone.
+
+    Field semantics are the same for every status (success, failure, failed
+    preflight): ``inputs`` and ``declared_outputs`` echo the manifest's declared
+    I/O contract at run time, while ``outputs`` lists only files the run actually
+    produced or refreshed — empty when execution never started, so a failed run
+    can never look like a producer to downstream readers.
     """
 
     run_id: str
@@ -42,8 +48,12 @@ class RunRecord(BaseModel):
     tokens: int | None = None
     cost_usd: float | None = None
     iterations: int | None = None
+    #: The manifest's declared inputs (the contract, not what was consumed).
     inputs: list[str] = Field(default_factory=list)
+    #: Files actually produced/refreshed by this run (provenance).
     outputs: list[str] = Field(default_factory=list)
+    #: The manifest's declared outputs (the contract, template form).
+    declared_outputs: list[str] = Field(default_factory=list)
     artifacts: list[str] = Field(default_factory=list)
     log_path: str | None = None
     problems: list[str] = Field(default_factory=list)

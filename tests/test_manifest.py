@@ -47,6 +47,48 @@ def test_missing_required_fields_are_reported() -> None:
     assert any("logic.skill" in p for p in problems)
 
 
+@pytest.mark.parametrize(
+    "bad_id",
+    [
+        "/tmp/loopcraft-escaped/run-id",  # absolute path
+        "../outside",  # traversal
+        "demo/../../x",  # embedded traversal
+        "a/b",  # path separator
+        "a b",  # whitespace
+        "A-B",  # uppercase
+        "a--b",  # double hyphen
+        "-a",  # leading hyphen
+        "a-",  # trailing hyphen
+        "a_b",  # underscore
+    ],
+)
+def test_non_canonical_loop_ids_are_rejected(bad_id: str) -> None:
+    """Finding 1 (review 05): ids are lowercase hyphen-separated components."""
+    manifest = LoopManifest.from_dict(_minimal(id=bad_id))
+    assert any(p.startswith("id:") for p in manifest.validate()), bad_id
+
+
+@pytest.mark.parametrize("good_id", ["demo", "slack-triage", "x2-intel", "a1-b2-c3"])
+def test_canonical_loop_ids_are_accepted(good_id: str) -> None:
+    """Canonical loop ids pass validation unchanged."""
+    assert LoopManifest.from_dict(_minimal(id=good_id)).validate() == []
+
+
+def test_load_all_reports_filename_id_mismatch(tmp_path: Path) -> None:
+    """Finding 1 (review 05): manifest id must equal its filename stem."""
+    loops = tmp_path / "loops"
+    loops.mkdir()
+    (loops / "demo.yaml").write_text(
+        "id: other\n"
+        "name: Demo\n"
+        "cadence: {type: cron, at: '0 9 * * *'}\n"
+        "logic: {skill: skills/demo/SKILL.md}\n",
+        encoding="utf-8",
+    )
+    _, problems = load_all(loops)
+    assert any("does not match filename stem" in p for p in problems)
+
+
 def test_enum_validation() -> None:
     """Invalid enum values for tier/locus raise ManifestError."""
     with pytest.raises(ManifestError) as exc:

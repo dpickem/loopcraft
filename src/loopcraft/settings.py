@@ -61,6 +61,16 @@ def asset_env_var(rel_path: str) -> str:
     return f"{ENV_PREFIX}_{token}"
 
 
+def local_sibling_path(path: Path) -> Path:
+    """Return the ``*.local.*`` sibling path of ``path``, existing or not.
+
+    ``config/x_intel.yaml`` -> ``config/x_intel.local.yaml``. Callers that need
+    the effective file should prefer :func:`local_override_path`; this helper is
+    for code that must inspect or stage the private override itself.
+    """
+    return path.with_name(f"{path.stem}.local{path.suffix}")
+
+
 def local_override_path(path: Path) -> Path:
     """Return the gitignored ``*.local.*`` sibling of ``path`` if it exists.
 
@@ -74,7 +84,7 @@ def local_override_path(path: Path) -> Path:
     Returns:
         The private override path when it exists, else ``path`` unchanged.
     """
-    local = path.with_name(f"{path.stem}.local{path.suffix}")
+    local = local_sibling_path(path)
     return local if local.exists() else path
 
 

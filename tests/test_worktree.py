@@ -8,7 +8,7 @@ import pytest
 
 from loopcraft.config import LoopcraftConfig, SourcePathError
 from loopcraft.manifest import LoopManifest
-from loopcraft.worktree import stage_loop_assets
+from loopcraft.worktree import StagingError, stage_loop_assets
 
 
 def _source_tree(tmp_path: Path) -> Path:
@@ -146,6 +146,56 @@ def test_stage_loop_assets_stages_content_config_with_local_override(tmp_path: P
     assert staged_config.exists()
     # The private override shadows the public file, and the .local. copy is removed.
     assert "99" in staged_config.read_text(encoding="utf-8")
+    assert not (workdir / "config" / "x_intel.local.yaml").exists()
+
+
+def _content_config_manifest(source: Path, declared: str) -> LoopManifest:
+    """Return a manifest declaring ``declared`` as its content config."""
+    return LoopManifest.from_dict(
+        {
+            "id": "demo",
+            "name": "Demo",
+            "logic": {"skill": "skills/slack-triage/SKILL.md"},
+            "content": {"config": declared},
+            "cadence": {"type": "cron", "at": "0 9 * * *"},
+        },
+        source_path=source / "loops" / "demo.yaml",
+    )
+
+
+def test_stage_missing_content_config_raises(tmp_path: Path) -> None:
+    """Finding 2 (review 05): staging fails fast instead of silently skipping."""
+    source = _source_tree(tmp_path)
+    config = LoopcraftConfig(source_path=source, memory_path=tmp_path / "mem")
+    manifest = _content_config_manifest(source, "config/does-not-exist.yaml")
+    with pytest.raises(StagingError, match="content.config not found"):
+        stage_loop_assets(config, manifest, tmp_path / "wt", environ={})
+
+
+def test_stage_directory_content_config_raises(tmp_path: Path) -> None:
+    """Finding 2 (review 05): a content.config that is a directory is refused."""
+    source = _source_tree(tmp_path)
+    (source / "config" / "dir.yaml").mkdir(parents=True)
+    config = LoopcraftConfig(source_path=source, memory_path=tmp_path / "mem")
+    manifest = _content_config_manifest(source, "config/dir.yaml")
+    with pytest.raises(StagingError, match="not a regular file"):
+        stage_loop_assets(config, manifest, tmp_path / "wt", environ={})
+
+
+def test_stage_local_only_content_config_stages_override(tmp_path: Path) -> None:
+    """A *.local.* override with no public file is a valid effective config."""
+    source = _source_tree(tmp_path)
+    (source / "config").mkdir()
+    (source / "config" / "x_intel.local.yaml").write_text("ranking:\n  top_posts: 7\n", encoding="utf-8")
+    config = LoopcraftConfig(source_path=source, memory_path=tmp_path / "mem")
+    manifest = _content_config_manifest(source, "config/x_intel.yaml")
+    workdir = tmp_path / "wt"
+
+    stage_loop_assets(config, manifest, workdir, environ={})
+
+    staged_config = workdir / "config" / "x_intel.yaml"
+    assert staged_config.exists()
+    assert "7" in staged_config.read_text(encoding="utf-8")
     assert not (workdir / "config" / "x_intel.local.yaml").exists()
 
 

@@ -17,13 +17,14 @@ from pathlib import Path
 from typing import Any
 
 from loopcraft.cli_output import emit as _emit
-from loopcraft.config import RUN_ID_ENV, LoopcraftConfig
+from loopcraft.config import RUN_ID_ENV, LoopcraftConfig, SourcePathError
 from loopcraft.env import load_dotenv
-from loopcraft.manifest import LoopManifest, load_all
+from loopcraft.manifest import LoopManifest, ManifestError, load_all, loop_id_problem
+from loopcraft.paths import assert_under
 from loopcraft.runners import RunContext, get_runner
 from loopcraft.runners.base import STATUS_DONE
 from loopcraft.store import RunRecord, Store
-from loopcraft.worktree import stage_loop_assets
+from loopcraft.worktree import StagingError, stage_loop_assets
 
 #: Scratch area (under the memory tree) for per-run worktrees.
 _WORKTREES_SUBPATH = ("var", "worktrees")
@@ -84,11 +85,33 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _find_manifest(config: LoopcraftConfig, loop_id: str) -> LoopManifest | None:
-    """Return the manifest for ``loop_id`` from the loops directory, if present."""
+    """Return the manifest for ``loop_id`` from the loops directory, if present.
+
+    The loop selector is an id, not a file path: it must match the canonical
+    loop-id vocabulary before any path is constructed, the resolved manifest must
+    stay directly under ``loops/``, and its ``id`` field must equal the filename
+    stem it was looked up by.
+
+    Raises:
+        ManifestError: If the selector is not a canonical loop id, the manifest
+            cannot be parsed/validated, or its id differs from the filename stem.
+    """
+    problem = loop_id_problem(loop_id)
+    if problem is not None:
+        raise ManifestError(f"invalid loop id {loop_id!r}: {problem}")
     for ext in (".yaml", ".yml"):
         path = config.loops_dir / f"{loop_id}{ext}"
+        try:
+            assert_under(config.loops_dir, path, label="loop manifest path")
+        except ValueError as exc:
+            raise ManifestError(str(exc)) from exc
         if path.exists():
-            return LoopManifest.load(path)
+            manifest = LoopManifest.load(path)
+            if manifest.id != loop_id:
+                raise ManifestError(
+                    f"{path.name}: manifest id {manifest.id!r} does not match filename stem {loop_id!r}"
+                )
+            return manifest
     return None
 
 
@@ -101,7 +124,17 @@ def _cmd_run(
     as_json: bool,
 ) -> int:
     """Run one loop headless (or preflight it via ``--dry-run``)."""
-    manifest = _find_manifest(config, loop_id)
+    try:
+        manifest = _find_manifest(config, loop_id)
+    except ManifestError as exc:
+        return _emit(
+            "run",
+            as_json=as_json,
+            ok=False,
+            rc=2,
+            data={"loop": loop_id, "error": str(exc)},
+            lines=[f"error: {exc}"],
+        )
     if manifest is None:
         return _emit(
             "run",
@@ -194,13 +227,34 @@ def _run_execute(
     ]
 
     if not preflight.ok:
-        return _record_preflight_failure(
-            store, manifest, effective_vendor, preflight, run_id, started, start_perf, as_json=as_json
+        return _record_run_failure(
+            store,
+            manifest,
+            effective_vendor,
+            preflight.problems,
+            run_id,
+            started,
+            start_perf,
+            phase="preflight",
+            as_json=as_json,
         )
 
     worktree = _worktree_dir(config, manifest.id, run_id)
     worktree.mkdir(parents=True, exist_ok=True)
-    stage_loop_assets(config, manifest, worktree)
+    try:
+        stage_loop_assets(config, manifest, worktree)
+    except (StagingError, SourcePathError) as exc:
+        return _record_run_failure(
+            store,
+            manifest,
+            effective_vendor,
+            [str(exc)],
+            run_id,
+            started,
+            start_perf,
+            phase="staging",
+            as_json=as_json,
+        )
     ctx = RunContext(
         config=config,
         workdir=worktree,
@@ -229,6 +283,7 @@ def _run_execute(
         iterations=result.iterations,
         inputs=manifest.inputs,
         outputs=result.outputs,
+        declared_outputs=manifest.outputs,
         log_path=str(result.log_path) if result.log_path else None,
         problems=result.problems,
     )
@@ -258,18 +313,27 @@ def _run_execute(
     return rc
 
 
-def _record_preflight_failure(
+def _record_run_failure(
     store: Store,
     manifest: LoopManifest,
     effective_vendor: str,
-    preflight,
+    problems: list[str],
     run_id: str,
     started: datetime,
     start_perf: float,
     *,
+    phase: str,
     as_json: bool,
 ) -> int:
-    """Persist a failed-preflight run record and report the problems."""
+    """Persist a run record for a failure before execution and report it.
+
+    Execution never started, so ``outputs`` (files actually produced) is empty;
+    the manifest's declared contract is preserved separately in
+    ``declared_outputs`` so a failed run never claims false provenance.
+
+    Args:
+        phase: Which pre-execution phase failed (``preflight`` or ``staging``).
+    """
     record = RunRecord(
         run_id=run_id,
         loop=manifest.id,
@@ -280,27 +344,45 @@ def _record_preflight_failure(
         ended_at=datetime.now(UTC).isoformat(),
         duration_s=round(time.perf_counter() - start_perf, 3),
         inputs=manifest.inputs,
-        outputs=manifest.outputs,
-        problems=preflight.problems,
+        outputs=[],
+        declared_outputs=manifest.outputs,
+        problems=problems,
     )
     path = store.record_run(record)
     data = {
         "loop": manifest.id,
         "status": "failed",
-        "preflight": {"ok": False, "problems": preflight.problems},
+        "phase": phase,
+        "problems": problems,
         "run_record": str(path),
     }
     if not as_json:
-        print("preflight failed; loop not run:", file=sys.stderr)
-        for problem in preflight.problems:
+        print(f"{phase} failed; loop not run:", file=sys.stderr)
+        for problem in problems:
             print(f"  - {problem}", file=sys.stderr)
         print(f"run record: {path}", file=sys.stderr)
     return _emit("run", as_json=as_json, ok=False, rc=1, data=data, lines=[])
 
 
+def _worktrees_root(config: LoopcraftConfig) -> Path:
+    """Root of the per-run worktree scratch area in the memory tree."""
+    return config.memory_path.joinpath(*_WORKTREES_SUBPATH)
+
+
 def _worktree_dir(config: LoopcraftConfig, loop_id: str, run_id: str) -> Path:
-    """Return the per-run worktree directory for a loop."""
-    return config.memory_path.joinpath(*_WORKTREES_SUBPATH, loop_id, run_id)
+    """Return the per-run worktree directory for a loop.
+
+    The result is verified to remain under the worktree root, so manifest data
+    can never choose an arbitrary staging directory (id validation upstream makes
+    this unreachable; the guard is defense in depth).
+
+    Raises:
+        ValueError: If ``loop_id``/``run_id`` would escape the worktree root.
+    """
+    root = _worktrees_root(config)
+    path = root.joinpath(loop_id, run_id)
+    assert_under(root, path, label="run worktree")
+    return path
 
 
 def _prune_loop_worktrees(config: LoopcraftConfig, loop_id: str, *, keep_last: int) -> list[Path]:
@@ -309,8 +391,14 @@ def _prune_loop_worktrees(config: LoopcraftConfig, loop_id: str, *, keep_last: i
     The worktree area is scratch/debug state under ``<memory>/var/worktrees``;
     durable run records and outputs live in ``ledger/``. Pruning therefore never
     removes canonical loop state. ``keep_last`` is clamped by config to 0..100.
+
+    Raises:
+        ValueError: If ``loop_id`` would make the prune target escape the
+            worktree root (defense in depth; ids are validated upstream).
     """
-    loop_dir = config.memory_path.joinpath(*_WORKTREES_SUBPATH, loop_id)
+    root = _worktrees_root(config)
+    loop_dir = root / loop_id
+    assert_under(root, loop_dir, label="worktree prune target")
     if not loop_dir.exists():
         return []
 
@@ -369,8 +457,15 @@ def _cmd_apply(config: LoopcraftConfig, loops_dir: str | None, *, as_json: bool)
 
 
 def _cmd_list(config: LoopcraftConfig, *, as_json: bool) -> int:
-    """List known loops with tier and effective vendor."""
-    manifests, _ = load_all(config.loops_dir)
+    """List known loops with tier and effective vendor.
+
+    Manifest problems (unparseable or invalid manifests) degrade the result:
+    every loadable loop is still listed as partial data, but the problems are
+    reported and the exit code is nonzero so a broken manifest can never
+    silently vanish from the fleet view.
+    """
+    manifests, problems = load_all(config.loops_dir)
+    ok = not problems
     loops = [
         {
             "id": m.id,
@@ -387,14 +482,30 @@ def _cmd_list(config: LoopcraftConfig, *, as_json: bool) -> int:
             f"{m.id:24} tier={m.tier:8} vendor={m.effective_vendor(config.default_vendor):7} {m.name}"
             for m in manifests
         ]
-    return _emit(
-        "list", as_json=as_json, ok=True, rc=0, data={"loops": loops}, lines=lines
+    rc = _emit(
+        "list",
+        as_json=as_json,
+        ok=ok,
+        rc=0 if ok else 1,
+        data={"loops": loops, "problems": problems},
+        lines=lines,
     )
+    if not as_json:
+        for problem in problems:
+            print(f"  ! {problem}", file=sys.stderr)
+    return rc
 
 
 def _cmd_status(config: LoopcraftConfig, *, as_json: bool) -> int:
-    """Show the last run per loop."""
-    manifests, _ = load_all(config.loops_dir)
+    """Show the last run per loop.
+
+    Like ``list``, manifest problems degrade the result instead of hiding it:
+    loadable loops are still reported, problems are surfaced, and the exit code
+    is nonzero — the fleet view must stay trustworthy exactly when configuration
+    is broken.
+    """
+    manifests, problems = load_all(config.loops_dir)
+    ok = not problems
     store = Store(config)
     loops: list[dict[str, Any]] = []
     lines: list[str] = []
@@ -411,7 +522,18 @@ def _cmd_status(config: LoopcraftConfig, *, as_json: bool) -> int:
         )
         summary = f"{latest.status} @ {latest.started_at}" if latest else "never run"
         lines.append(f"{manifest.id:24} {summary}")
-    return _emit("status", as_json=as_json, ok=True, rc=0, data={"loops": loops}, lines=lines)
+    rc = _emit(
+        "status",
+        as_json=as_json,
+        ok=ok,
+        rc=0 if ok else 1,
+        data={"loops": loops, "problems": problems},
+        lines=lines,
+    )
+    if not as_json:
+        for problem in problems:
+            print(f"  ! {problem}", file=sys.stderr)
+    return rc
 
 
 def _cmd_logs(config: LoopcraftConfig, loop_id: str, *, as_json: bool) -> int:
@@ -499,7 +621,10 @@ def _cmd_deps_check(config: LoopcraftConfig, *, loop_id: str | None = None, as_j
 
 def _preflight_loop(config: LoopcraftConfig, loop_id: str) -> tuple[int, dict[str, Any], list[str]]:
     """Run a loop's adapter preflight; return (exit code, data, text lines)."""
-    manifest = _find_manifest(config, loop_id)
+    try:
+        manifest = _find_manifest(config, loop_id)
+    except ManifestError as exc:
+        return 2, {"loop": loop_id, "error": str(exc)}, [f"error: {exc}"]
     if manifest is None:
         message = f"error: loop '{loop_id}' not found in {config.loops_dir}"
         return 2, {"loop": loop_id, "error": message}, [message]

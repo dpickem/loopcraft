@@ -42,6 +42,49 @@ def test_capabilities_flag_missing_skill(tmp_path: Path) -> None:
     assert any("skill not found" in p for p in problems)
 
 
+def test_capabilities_flag_missing_content_config(tmp_path: Path) -> None:
+    """Finding 2 (review 05): a declared content.config must exist at preflight."""
+    manifest = _manifest(content={"config": "config/does-not-exist.yaml"})
+    problems = capabilities.check_declared_capabilities(manifest, _config(tmp_path))
+    assert any("content config not found" in p for p in problems)
+
+
+def test_capabilities_flag_directory_content_config(tmp_path: Path) -> None:
+    """Finding 2 (review 05): a content.config resolving to a directory is a problem."""
+    config = _config(tmp_path)
+    (config.source_path / "config" / "dir.yaml").mkdir(parents=True)
+    manifest = _manifest(content={"config": "config/dir.yaml"})
+    problems = capabilities.check_declared_capabilities(manifest, config)
+    assert any("not a regular file" in p for p in problems)
+
+
+def test_capabilities_accept_existing_content_config(tmp_path: Path) -> None:
+    """A declared content.config that exists as a regular file passes preflight."""
+    config = _config(tmp_path)
+    cfg_dir = config.source_path / "config"
+    cfg_dir.mkdir(parents=True)
+    (cfg_dir / "x.yaml").write_text("a: 1\n", encoding="utf-8")
+    manifest = _manifest(content={"config": "config/x.yaml"})
+    assert capabilities.check_declared_capabilities(manifest, config) == []
+
+
+def test_capabilities_accept_local_only_content_config(tmp_path: Path) -> None:
+    """A gitignored *.local.* override satisfies the dependency without a public file."""
+    config = _config(tmp_path)
+    cfg_dir = config.source_path / "config"
+    cfg_dir.mkdir(parents=True)
+    (cfg_dir / "x.local.yaml").write_text("a: 1\n", encoding="utf-8")
+    manifest = _manifest(content={"config": "config/x.yaml"})
+    assert capabilities.check_declared_capabilities(manifest, config) == []
+
+
+def test_capabilities_flag_escaping_content_config(tmp_path: Path) -> None:
+    """A traversing content.config is reported as a preflight problem."""
+    manifest = _manifest(content={"config": "../outside.yaml"})
+    problems = capabilities.check_declared_capabilities(manifest, _config(tmp_path))
+    assert any("content.config" in p for p in problems)
+
+
 def test_capabilities_flag_unknown_auth_and_api(tmp_path: Path) -> None:
     """Auth bundles/APIs without a registered probe are reported."""
     manifest = _manifest(depends_on={"auth": ["mystery"], "apis": ["ghost-api"]})

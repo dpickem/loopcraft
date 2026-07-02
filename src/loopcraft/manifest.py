@@ -28,6 +28,31 @@ from loopcraft.config import (
 _DURATION_UNITS = {"s": 1, "m": 60, "h": 3600}
 _DURATION_RE = re.compile(r"^\s*(\d+)\s*([smh])\s*$", re.IGNORECASE)
 
+#: Canonical loop-id vocabulary: lowercase alphanumeric components separated by
+#: single hyphens (e.g. ``slack-triage``). A loop id names its manifest file and
+#: its per-loop worktree directory, so it must be exactly one safe path segment —
+#: never an absolute path, ``..`` traversal, or anything with separators.
+LOOP_ID_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+
+
+def loop_id_problem(loop_id: str) -> str | None:
+    """Return why ``loop_id`` is not a canonical loop id, or None when it is.
+
+    Args:
+        loop_id: Candidate id from a manifest or the CLI loop selector.
+
+    Returns:
+        A problem message, or None when the id matches :data:`LOOP_ID_RE`.
+    """
+    if not loop_id:
+        return "missing required field"
+    if not LOOP_ID_RE.fullmatch(loop_id):
+        return (
+            "must be lowercase alphanumeric components separated by single "
+            f"hyphens (e.g. 'slack-triage'): {loop_id!r}"
+        )
+    return None
+
 
 class Vendor(StrEnum):
     """Runtime adapter vendors supported by manifests."""
@@ -234,7 +259,7 @@ class LoopManifest(_ManifestModel):
         path = Path(path)
         try:
             raw = yaml.safe_load(path.read_text(encoding="utf-8"))
-        except yaml.YAMLError as exc:  # pragma: no cover - passthrough
+        except yaml.YAMLError as exc:
             raise ManifestError(f"{path}: invalid YAML: {exc}") from exc
         return cls.from_dict(raw or {}, source_path=path)
 
@@ -246,8 +271,9 @@ class LoopManifest(_ManifestModel):
         """Validate this manifest and return structured issues."""
         issues: list[ValidationIssue] = []
 
-        if not self.id:
-            issues.append(ValidationIssue(scope="id", message="missing required field"))
+        id_problem = loop_id_problem(self.id)
+        if id_problem:
+            issues.append(ValidationIssue(scope="id", message=id_problem))
         if not self.name:
             issues.append(ValidationIssue(scope="name", message="missing required field"))
         if self.cadence.type == CadenceType.CRON and not self.cadence.at:
@@ -326,8 +352,9 @@ def load_all(loops_dir: Path | str) -> tuple[list[LoopManifest], list[str]]:
     """Load every ``*.yaml`` manifest in a directory.
 
     Returns ``(manifests, problems)`` where ``problems`` aggregates per-manifest
-    validation errors, duplicate ids, unknown upstream loops, and dependency
-    cycles across the ``inputs``/``outputs`` + ``depends_on.loops`` graph.
+    validation errors, filename/id mismatches, duplicate ids, unknown upstream
+    loops, and dependency cycles across the ``inputs``/``outputs`` +
+    ``depends_on.loops`` graph.
     """
     loops_dir = Path(loops_dir)
     manifests: list[LoopManifest] = []
@@ -342,6 +369,16 @@ def load_all(loops_dir: Path | str) -> tuple[list[LoopManifest], list[str]]:
         except ManifestError as exc:
             issues.append(ValidationIssue(scope=path.name, message=str(exc)))
             continue
+        if manifest.id != path.stem:
+            # The id doubles as the lookup key for `loopctl run <id>`, which
+            # resolves to the filename stem; a mismatch would advertise one id
+            # while running another.
+            issues.append(
+                ValidationIssue(
+                    scope=path.name,
+                    message=f"manifest id {manifest.id!r} does not match filename stem {path.stem!r}",
+                )
+            )
         for problem in manifest.validate():
             issues.append(ValidationIssue(scope=path.name, message=problem))
         manifests.append(manifest)

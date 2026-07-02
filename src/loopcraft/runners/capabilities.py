@@ -1,8 +1,8 @@
 """Runtime-neutral capability probes and declared-dependency checks.
 
 Any runner (not just Codex) can reuse these helpers to validate a loop's
-declared dependencies before execution: the skill/verify assets, tools on PATH,
-required environment variables, auth bundles, and APIs. The probe registries are
+declared dependencies before execution: the skill/verify/content-config assets,
+tools on PATH, required environment variables, auth bundles, and APIs. The probe registries are
 module-level dicts so tests and future runtimes can substitute individual probes
 without touching a specific runner.
 """
@@ -15,6 +15,7 @@ from collections.abc import Callable
 from loopcraft.config import LoopcraftConfig, SourcePathError
 from loopcraft.manifest import LoopManifest
 from loopcraft.probes import run_probe
+from loopcraft.settings import local_sibling_path
 
 #: Tool collections map to a CLI binary that must be on PATH for preflight.
 TOOL_BINARIES: dict[str, str] = {"nv-tools": "nv-tools"}
@@ -141,19 +142,51 @@ def _check_source_asset(config: LoopcraftConfig, declared: str, *, label: str, r
         path = config.resolve_source_path(declared)
     except SourcePathError as exc:
         return [f"{label}: {exc}"]
+    noun = "skill" if label == "logic.skill" else "verify file"
     if not path.exists():
-        noun = "skill" if label == "logic.skill" else "verify file"
         return [f"{noun} not found: {declared}"]
+    if not path.is_file():
+        return [f"{noun} is not a regular file: {declared}"]
     return []
+
+
+def _check_content_config(config: LoopcraftConfig, declared: str | None) -> list[str]:
+    """Require a declared ``content.config`` to exist before a run starts.
+
+    Staging accepts either the declared public file or its gitignored
+    ``*.local.*`` override as the effective config, so preflight passes when
+    either one is a regular file — and fails fast when neither is, instead of
+    letting the headless agent discover the missing dependency mid-run.
+
+    Args:
+        config: Resolved control-plane config used to resolve source paths.
+        declared: The manifest's ``content.config`` value (may be None).
+
+    Returns:
+        A list of problem strings (empty when no config is declared or one of
+        the candidate files exists).
+    """
+    if not declared:
+        return []
+    try:
+        path = config.resolve_source_path(declared)
+    except SourcePathError as exc:
+        return [f"content.config: {exc}"]
+    candidates = (path, local_sibling_path(path))
+    if any(candidate.is_file() for candidate in candidates):
+        return []
+    if any(candidate.exists() for candidate in candidates):
+        return [f"content config is not a regular file: {declared}"]
+    return [f"content config not found: {declared} (no public file or *.local.* override)"]
 
 
 def check_declared_capabilities(loop: LoopManifest, config: LoopcraftConfig) -> list[str]:
     """Validate a loop's declared dependencies in a runtime-neutral way.
 
-    Checks the skill and verify assets, declared tools on PATH, required env
-    vars, and the declared auth bundles/APIs against the shared probe registries.
-    Unknown auth bundles or APIs are flagged so a missing setup is caught before
-    a headless run rather than inside the agent.
+    Checks the skill, verify, and content-config assets, declared tools on PATH,
+    required env vars, and the declared auth bundles/APIs against the shared
+    probe registries. Unknown auth bundles or APIs are flagged so a missing
+    setup is caught before a headless run rather than inside the agent.
 
     Args:
         loop: The loop manifest to check.
@@ -165,6 +198,7 @@ def check_declared_capabilities(loop: LoopManifest, config: LoopcraftConfig) -> 
     problems: list[str] = []
     problems += _check_source_asset(config, loop.logic.skill or "", label="logic.skill", required=True)
     problems += _check_source_asset(config, loop.logic.verify or "", label="logic.verify", required=False)
+    problems += _check_content_config(config, loop.content.config)
 
     for tool in loop.depends_on.tools:
         binary = TOOL_BINARIES.get(tool, tool)

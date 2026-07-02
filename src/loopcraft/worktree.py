@@ -14,10 +14,14 @@ from pathlib import Path, PurePosixPath
 from loopcraft.config import LoopcraftConfig, safe_source_relpath
 from loopcraft.manifest import LoopManifest
 from loopcraft.paths import assert_under
-from loopcraft.settings import asset_env_var, split_env_list
+from loopcraft.settings import asset_env_var, local_sibling_path, split_env_list
 
 #: Marker that identifies a private override file: ``channels.local.txt``.
 _LOCAL_MARKER = ".local."
+
+
+class StagingError(RuntimeError):
+    """Raised when a loop's declared runtime asset cannot be staged."""
 
 
 def _assert_under(root: Path, candidate: Path) -> None:
@@ -82,12 +86,17 @@ def _stage_content_config(
 
     Raises:
         SourcePathError: If ``content.config`` escapes the source tree.
+        StagingError: If neither the declared public config nor its ``*.local.*``
+            override is a regular file, so the loop's declared dependency cannot
+            be met.
     """
     declared = manifest.content.config
     if not declared:
         return []
     rel = PurePosixPath(safe_source_relpath(declared))
     src = config.resolve_source_path(declared)
+    if src.exists() and not src.is_file():
+        raise StagingError(f"content.config is not a regular file: {declared}")
     staged: list[Path] = []
     if src.is_file():
         dest = (workdir / rel).resolve()
@@ -95,13 +104,17 @@ def _stage_content_config(
         dest.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(src, dest)
         staged.append(dest)
-    local_src = src.with_name(f"{src.stem}{_LOCAL_MARKER}{src.suffix.lstrip('.')}")
+    local_src = local_sibling_path(src)
     if local_src.is_file():
         dest_local = (workdir / rel.parent / local_src.name).resolve()
         _assert_under(workdir, dest_local)
         dest_local.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(local_src, dest_local)
         staged.append(dest_local)
+    if not staged:
+        raise StagingError(
+            f"content.config not found: {declared} (no public file or *.local.* override)"
+        )
     return staged
 
 
@@ -135,6 +148,8 @@ def stage_loop_assets(
     Raises:
         SourcePathError: If ``logic.skill`` is absolute, scheme-qualified, or
             traverses outside the source tree.
+        StagingError: If a declared ``content.config`` cannot be staged (see
+            :func:`_stage_content_config`).
     """
     environ = os.environ if environ is None else environ
     workdir = workdir.resolve()
