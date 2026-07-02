@@ -43,7 +43,8 @@ artifacts: []
 
 logic:
   skill: skills/slack-triage/SKILL.md
-  verify: "state/slack/triage-latest.md and state/slack/history/{{run_id}}.md exist and list >=1 categorized item; state/slack/seen.json updated"
+  # Goal/stop conditions live in a dedicated file colocated with the skill.
+  verify: skills/slack-triage/verify.md
 
 approval:
   required: false            # observe-tier: read-only, no approval needed

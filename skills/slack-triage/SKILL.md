@@ -7,8 +7,15 @@ description: >-
   never send a message.
 readonly: true
 tools: [nv-tools.slack]
-verify: "state/slack/triage-latest.md and the run-scoped history digest both exist with a 'Themes at a glance' overview and theme-grouped items; state/slack/seen.json updated"
 ---
+
+<!--
+Runtime authority: the loop manifest (loops/slack-triage.yaml) is the source of
+truth for tier (observe => read-only) and declared tools; the frontmatter above
+only lets this skill be discovered/used standalone. Goal/stop conditions live in
+the colocated verify.md referenced by the manifest, not in this frontmatter.
+-->
+
 
 # Slack triage & summarizer
 

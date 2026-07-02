@@ -47,7 +47,8 @@ artifacts: []
 
 logic:
   skill: skills/x-intelligence-reporting/SKILL.md
-  verify: "latest.md/latest.json and run-scoped history digest files exist; seen/source-state updated"
+  # Goal/stop conditions live in a dedicated file colocated with the skill.
+  verify: skills/x-intelligence-reporting/verify.md
 
 approval:
   required: false

@@ -55,3 +55,10 @@ Fetched N papers; ranked M. Errors: none.
 - Actionable observation for loop engineering, harnesses, evals, agents, tool use, or self-improving systems.
 ```
 
+> This shape only describes the human-readable digest. Updating the durable
+> files (`papers.jsonl`, `seen.json`, `latest.md`/`latest.json`, and the
+> run-scoped `history/` archives) is enforced by the CLI/store, declared as the
+> loop's `outputs` in `loops/arxiv-intel.yaml`, and checked against
+> `skills/arxiv-intelligence-reporting/verify.md`. See that verify file for the
+> authoritative goal conditions.
+
