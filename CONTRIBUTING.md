@@ -192,7 +192,7 @@ Routine workflows should be exposed through `make` targets or Python modules:
 
 ```bash
 make daily-arxiv-intel
-PYTHONPATH=src python -m loopcraft.research_intel.arxiv.cli run --config config/arxiv_intel.json
+PYTHONPATH=src python -m loopcraft.research_intel.arxiv.cli run --config config/arxiv_intel.yaml
 ```
 
 Do not add a checked-in shell script when a `make` target or `python -m` entry
