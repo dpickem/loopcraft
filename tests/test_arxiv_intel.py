@@ -192,9 +192,14 @@ def test_arxiv_run_produces_manifest_outputs_for_control_plane_run_id(tmp_path, 
     from loopcraft.research_intel.arxiv import cli as arxiv_cli
 
     run_id = "20260101T000000Z-deadbeef"
+    # Finding 3 (review 07): the control plane hands down its resolved run date;
+    # it deliberately differs from the real clock date here, simulating a run
+    # that crosses UTC midnight after outputs were resolved.
+    run_date = "2026-01-01"
     monkeypatch.setenv("LOOPCRAFT_SOURCE", str(REPO_ROOT))
     monkeypatch.setenv("LOOPCRAFT_MEMORY", str(tmp_path / "mem"))
     monkeypatch.setenv("LOOPCRAFT_RUN_ID", run_id)
+    monkeypatch.setenv("LOOPCRAFT_RUN_DATE", run_date)
     monkeypatch.setattr(arxiv_cli.ArxivClient, "search_recent", lambda self, config: [])
 
     rc = arxiv_cli.run(str(REPO_ROOT / "config" / "arxiv_intel.yaml"))
@@ -202,11 +207,28 @@ def test_arxiv_run_produces_manifest_outputs_for_control_plane_run_id(tmp_path, 
 
     loopcraft = LoopcraftConfig.load(REPO_ROOT)
     manifest = LoopManifest.load(REPO_ROOT / "loops" / "arxiv-intel.yaml")
-    # The workflow stamps dated digests with the real current date.
-    date = datetime.now(UTC).strftime("%Y-%m-%d")
     for declared in manifest.outputs:
-        resolved = loopcraft.resolve_state_template(declared, run_id=run_id, date=date)
+        resolved = loopcraft.resolve_state_template(declared, run_id=run_id, date=run_date)
         assert resolved.exists(), f"missing declared output: {declared} -> {resolved}"
+
+
+def test_arxiv_cli_reports_invalid_config_as_json_envelope(tmp_path, monkeypatch, capsys) -> None:
+    """Finding 4 (review 07): a malformed config yields the JSON envelope, not a traceback."""
+    import json
+
+    from loopcraft.research_intel.arxiv import cli as arxiv_cli
+
+    monkeypatch.setenv("LOOPCRAFT_SOURCE", str(tmp_path / "src"))
+    monkeypatch.setenv("LOOPCRAFT_MEMORY", str(tmp_path / "mem"))
+    bad = tmp_path / "bad.yaml"
+    bad.write_text("sources: [unclosed\n", encoding="utf-8")
+
+    rc = arxiv_cli.main(["--json", "run", "--config", str(bad)])
+    payload = json.loads(capsys.readouterr().out)
+    assert rc == 2
+    assert payload["command"] == "run"
+    assert payload["ok"] is False
+    assert "invalid or unreadable content config" in payload["data"]["error"]
 
 
 def test_arxiv_config_load_prefers_local_override(tmp_path) -> None:

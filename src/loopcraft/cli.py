@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from loopcraft.cli_output import emit as _emit
-from loopcraft.config import RUN_ID_ENV, LoopcraftConfig
+from loopcraft.config import RUN_DATE_ENV, RUN_ID_ENV, LoopcraftConfig
 from loopcraft.env import load_dotenv
 from loopcraft.manifest import LoopManifest, ManifestError, load_all, loop_id_problem
 from loopcraft.paths import assert_under
@@ -173,19 +173,31 @@ def _cmd_run(
             lines=[f"error: {exc}"],
         )
 
-    try:
-        preflight = runner.preflight(manifest, config)
-    except Exception as exc:  # noqa: BLE001 — a faulty adapter must not escape as a traceback
-        preflight = PreflightReport(
-            vendor=effective_vendor,
-            ok=False,
-            problems=[f"preflight raised {type(exc).__name__}: {exc}"],
-        )
+    preflight = _safe_preflight(runner, manifest, config, effective_vendor)
 
     if dry_run:
         return _run_dry_run(config, manifest, effective_vendor, preflight, as_json=as_json)
 
     return _run_execute(config, manifest, runner, effective_vendor, preflight, as_json=as_json)
+
+
+def _safe_preflight(
+    runner, manifest: LoopManifest, config: LoopcraftConfig, effective_vendor: str
+) -> PreflightReport:
+    """Run an adapter preflight, normalizing exceptions to a failing report.
+
+    Shared by ``run`` and ``deps check --loop`` so a faulty adapter produces the
+    same structured ``preflight raised <Type>: <message>`` problem in both
+    commands instead of a traceback in one of them.
+    """
+    try:
+        return runner.preflight(manifest, config)
+    except Exception as exc:  # noqa: BLE001 — a faulty adapter must not escape as a traceback
+        return PreflightReport(
+            vendor=effective_vendor,
+            ok=False,
+            problems=[f"preflight raised {type(exc).__name__}: {exc}"],
+        )
 
 
 def _run_dry_run(
@@ -278,9 +290,11 @@ def _run_execute(
             workdir=worktree,
             log_path=worktree / "run.log",
             resolved_outputs=resolved_outputs,
-            # Hand the control-plane run id to any direct CLI the loop invokes so its
-            # run-scoped history archives match the manifest's {{run_id}} outputs.
-            env={RUN_ID_ENV: run_id},
+            # Hand the control-plane run id and resolved run date to any direct
+            # CLI the loop invokes so its run-scoped history archives and dated
+            # digests match the manifest's {{run_id}}/{{date}} outputs — even
+            # when the run crosses 00:00 UTC.
+            env={RUN_ID_ENV: run_id, RUN_DATE_ENV: started.date().isoformat()},
         )
 
         try:
@@ -677,7 +691,7 @@ def _preflight_loop(config: LoopcraftConfig, loop_id: str) -> tuple[int, dict[st
         runner = get_runner(vendor)
     except ValueError as exc:
         return 2, {"loop": loop_id, "error": str(exc)}, [f"error: {exc}"]
-    report = runner.preflight(manifest, config)
+    report = _safe_preflight(runner, manifest, config, vendor)
     lines = [
         f"\npreflight {loop_id} ({vendor}): {'OK' if report.ok else 'PROBLEMS'}",
         *[f"  - {problem}" for problem in report.problems],

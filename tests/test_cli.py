@@ -419,6 +419,72 @@ def test_deps_check_loop_reports_semantically_invalid_manifest(
     )
 
 
+def test_deps_check_loop_normalizes_preflight_exception(monkeypatch, tmp_path: Path, capsys) -> None:
+    """Finding 2 (review 07): a raising adapter cannot crash deps check --loop.
+
+    The same exception boundary used by `run` must apply on the dependency-check
+    path, so the public CLI emits the JSON envelope instead of a traceback.
+    """
+    _env(monkeypatch, tmp_path)
+
+    class ExplodingPreflightRunner(StubRunner):
+        """Stub whose preflight raises instead of returning a report."""
+
+        vendor = "codex"
+
+        def preflight(self, loop, config):  # noqa: ANN001
+            """Raise to simulate a broken adapter."""
+            raise RuntimeError("boom")
+
+    monkeypatch.setattr(cli, "get_runner", lambda vendor: ExplodingPreflightRunner())
+    rc = cli.main(["--json", "deps", "check", "--loop", "slack-triage"])
+    payload = json.loads(capsys.readouterr().out)
+    assert rc == 1
+    assert payload["command"] == "deps.check"
+    assert payload["ok"] is False
+    assert any(
+        "preflight raised RuntimeError: boom" in problem
+        for problem in payload["data"]["preflight"]["problems"]
+    )
+
+
+def test_dry_run_surfaces_invalid_content_config(monkeypatch, tmp_path: Path, capsys) -> None:
+    """Finding 4 (review 07): a malformed content config fails preflight, not the agent."""
+    source = _demo_source(
+        monkeypatch,
+        tmp_path,
+        "id: demo\n"
+        "name: Demo\n"
+        "cadence: {type: cron, at: '0 9 * * *'}\n"
+        "content: {config: config/demo.yaml}\n"
+        "logic: {skill: skills/demo/SKILL.md}\n",
+    )
+    (source / "config").mkdir()
+    (source / "config" / "demo.yaml").write_text("sources: [unclosed\n", encoding="utf-8")
+
+    from loopcraft.runners import capabilities
+    from loopcraft.runners.base import PreflightReport
+
+    class CapabilityRunner(StubRunner):
+        """Stub whose preflight runs the shared runtime-neutral checks."""
+
+        vendor = "capstub"
+
+        def preflight(self, loop, config):  # noqa: ANN001
+            """Delegate to the shared capability check."""
+            problems = capabilities.check_declared_capabilities(loop, config)
+            return PreflightReport(vendor=self.vendor, ok=not problems, problems=problems)
+
+    register_runner("capstub", CapabilityRunner)
+    rc = cli.main(["--json", "run", "demo", "--vendor", "capstub", "--dry-run"])
+    payload = json.loads(capsys.readouterr().out)
+    assert rc == 1
+    assert any(
+        "content config invalid" in problem
+        for problem in payload["data"]["preflight"]["problems"]
+    )
+
+
 def test_status_survives_corrupt_run_record(monkeypatch, tmp_path: Path, capsys) -> None:
     """Finding 5 (review 06): one schema-invalid history file cannot crash status."""
     _env(monkeypatch, tmp_path)

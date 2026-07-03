@@ -53,6 +53,11 @@ DEFAULT_MEMORY_PATH = "~/workspace/loopcraft_memory"
 #: history archives with the same run id the manifest ``{{run_id}}`` outputs use.
 RUN_ID_ENV = "LOOPCRAFT_RUN_ID"
 
+#: Env var the control plane sets so a loop's direct CLI stamps its dated
+#: outputs with the same UTC date the manifest ``{{date}}`` outputs resolved
+#: to — a run crossing 00:00 UTC must not write the next day's filename.
+RUN_DATE_ENV = "LOOPCRAFT_RUN_DATE"
+
 #: Prefixes that mark a declared path as a ledger/state file the store owns.
 #: Anything else (``linear:...``, ``s3://...``) is a non-file target the store
 #: does not resolve, so it is exempt from state-path validation.

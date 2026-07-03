@@ -89,6 +89,88 @@ def test_load_all_reports_filename_id_mismatch(tmp_path: Path) -> None:
     assert any("does not match filename stem" in p for p in problems)
 
 
+def _write_loop(loops: Path, loop_id: str, outputs: list[str]) -> None:
+    """Write a minimal valid manifest with the given id and outputs."""
+    rendered = "".join(f"  - '{o}'\n" for o in outputs)
+    (loops / f"{loop_id}.yaml").write_text(
+        f"id: {loop_id}\n"
+        f"name: {loop_id}\n"
+        "cadence: {type: cron, at: '0 9 * * *'}\n"
+        f"outputs:\n{rendered}"
+        "logic: {skill: skills/demo/SKILL.md}\n",
+        encoding="utf-8",
+    )
+
+
+def test_load_all_rejects_symlinked_manifest_escaping_loops_dir(tmp_path: Path) -> None:
+    """Finding 1 (review 07): a symlinked manifest entry cannot leave loops/."""
+    loops = tmp_path / "loops"
+    loops.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "evil.yaml").write_text(
+        "id: evil\n"
+        "name: Evil\n"
+        "cadence: {type: cron, at: '0 9 * * *'}\n"
+        "logic: {skill: skills/demo/SKILL.md}\n",
+        encoding="utf-8",
+    )
+    (loops / "evil.yaml").symlink_to(outside / "evil.yaml")
+
+    manifests, problems = load_all(loops)
+    assert not any(m.id == "evil" for m in manifests)
+    assert any("escapes" in p for p in problems)
+
+
+def test_load_all_reports_output_claimed_by_multiple_loops(tmp_path: Path) -> None:
+    """Finding 5 (review 07): one producing loop per declared output path."""
+    loops = tmp_path / "loops"
+    loops.mkdir()
+    _write_loop(loops, "loop-a", ["state/shared/out.md"])
+    _write_loop(loops, "loop-b", ["state/shared/out.md"])
+
+    _, problems = load_all(loops)
+    assert any(
+        "declared by multiple loops" in p and "loop-a" in p and "loop-b" in p
+        for p in problems
+    )
+
+
+def test_load_all_reports_normalized_duplicate_outputs(tmp_path: Path) -> None:
+    """Finding 5 (review 07): output collisions are detected on normalized paths."""
+    loops = tmp_path / "loops"
+    loops.mkdir()
+    _write_loop(loops, "loop-a", ["state/shared/out.md"])
+    # Same ledger file spelled differently; normalizes to the same path.
+    _write_loop(loops, "loop-b", ["state/shared/./out.md"])
+
+    _, problems = load_all(loops)
+    assert any("declared by multiple loops" in p for p in problems)
+
+
+def test_load_all_reports_duplicate_output_within_one_manifest(tmp_path: Path) -> None:
+    """Finding 5 (review 07): duplicate entries inside one manifest are flagged."""
+    loops = tmp_path / "loops"
+    loops.mkdir()
+    _write_loop(loops, "loop-a", ["state/shared/out.md", "state/shared/out.md"])
+
+    _, problems = load_all(loops)
+    assert any("declared more than once" in p for p in problems)
+    # A within-manifest duplicate alone is not also a cross-loop collision.
+    assert not any("declared by multiple loops" in p for p in problems)
+
+
+def test_distinct_outputs_produce_no_duplicate_problems(tmp_path: Path) -> None:
+    """Distinct outputs across loops stay problem-free."""
+    loops = tmp_path / "loops"
+    loops.mkdir()
+    _write_loop(loops, "loop-a", ["state/a/out.md"])
+    _write_loop(loops, "loop-b", ["state/b/out.md"])
+
+    _, problems = load_all(loops)
+    assert problems == []
+
+
 def test_enum_validation() -> None:
     """Invalid enum values for tier/locus raise ManifestError."""
     with pytest.raises(ManifestError) as exc:

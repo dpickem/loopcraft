@@ -14,8 +14,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from loopcraft.cli_output import emit
-from loopcraft.config import RUN_ID_ENV, LoopcraftConfig
+from loopcraft.cli_output import emit, fail as _fail
+from loopcraft.config import RUN_DATE_ENV, RUN_ID_ENV, LoopcraftConfig
 from loopcraft.env import load_dotenv
 from loopcraft.research_intel.x.client import XApiClient, XApiError
 from loopcraft.research_intel.x.config import IntelConfig, OutputPaths, XApiTokens
@@ -40,14 +40,6 @@ _DEFAULT_SNAPSHOT_OUTPUT = "config/x_following_snapshot.local.json"
 
 class MissingTokenError(RuntimeError):
     """Raised when no X API token is available for a requested operation."""
-
-
-def _fail(command: str, rc: int, message: str, *, as_json: bool) -> int:
-    """Emit a failure result: a JSON error envelope, or a stderr message."""
-    if as_json:
-        return emit(command, as_json=True, ok=False, rc=rc, data={"error": message}, lines=[])
-    print(f"ERROR: {message}", file=sys.stderr)
-    return rc
 
 
 class XIntelRunner:
@@ -113,12 +105,16 @@ class XIntelRunner:
             indent=2,
             ensure_ascii=False,
         )
+        # Control-plane runs hand down the run id and resolved run date so the
+        # written filenames match the manifest's {{run_id}}/{{date}} outputs even
+        # across UTC midnight; the clock is only a standalone-run fallback.
         run_stamp = self.loopcraft.env_value(RUN_ID_ENV) or now.strftime("%Y%m%dT%H%M%SZ")
+        date_stamp = self.loopcraft.env_value(RUN_DATE_ENV) or now.strftime("%Y-%m-%d")
         markdown_path, json_path = self.store.write_digest(
             markdown=markdown,
             payload=payload,
             run_stamp=run_stamp,
-            date_stamp=now.strftime("%Y-%m-%d"),
+            date_stamp=date_stamp,
         )
 
         ok = not errors
@@ -387,19 +383,38 @@ def main(argv: list[str] | None = None) -> int:
     """Parse arguments and dispatch to the requested X intelligence command."""
     args = _build_parser().parse_args(argv)
     if args.command == "run":
-        return XIntelRunner(args.config).run(dry_run=args.dry_run, as_json=args.json)
+        runner = _build_runner(args.config, command="run", as_json=args.json)
+        if isinstance(runner, int):
+            return runner
+        return runner.run(dry_run=args.dry_run, as_json=args.json)
     if args.command == "snapshot-following":
         return snapshot_following(
             args.output, user_id=args.user_id, username=args.username, as_json=args.json
         )
     if args.command == "discover-follows":
-        return XIntelRunner(args.config).discover_follows(
+        runner = _build_runner(args.config, command="discover-follows", as_json=args.json)
+        if isinstance(runner, int):
+            return runner
+        return runner.discover_follows(
             digest_json=args.digest_json,
             output_dir=args.output_dir,
             top=args.top,
             as_json=args.json,
         )
     return 2
+
+
+def _build_runner(config_path: str, *, command: str, as_json: bool) -> XIntelRunner | int:
+    """Construct the runner, turning config load errors into structured failures.
+
+    A malformed, schema-invalid, or unreadable content config (public or local
+    override) must produce the standard error envelope with a nonzero exit code,
+    not a traceback.
+    """
+    try:
+        return XIntelRunner(config_path)
+    except Exception as exc:  # noqa: BLE001 — CLI boundary: emit envelope, not traceback
+        return _fail(command, 2, f"invalid or unreadable content config {config_path}: {exc}", as_json=as_json)
 
 
 if __name__ == "__main__":

@@ -11,10 +11,14 @@ from __future__ import annotations
 
 import shutil
 from collections.abc import Callable
+from pathlib import Path
+
+import yaml
 
 from loopcraft.config import LoopcraftConfig, SourcePathError
 from loopcraft.manifest import LoopManifest
 from loopcraft.probes import run_probe
+from loopcraft.settings import local_override_path
 
 #: Tool collections map to a CLI binary that must be on PATH for preflight.
 TOOL_BINARIES: dict[str, str] = {"nv-tools": "nv-tools"}
@@ -131,6 +135,64 @@ _ASSET_NOUNS = {
 }
 
 
+def _validate_arxiv_content(path: Path) -> None:
+    """Validate the effective arXiv content config against its typed model."""
+    # Imported lazily so the runtime-neutral probe module stays decoupled from
+    # loop-specific content packages at import time.
+    from loopcraft.research_intel.arxiv.config import ArxivIntelConfig
+
+    ArxivIntelConfig.load(path)
+
+
+def _validate_x_content(path: Path) -> None:
+    """Validate the effective X content config against its typed model."""
+    from loopcraft.research_intel.x.config import IntelConfig
+
+    IntelConfig.load(path)
+
+
+#: Content-config validators: loop id -> callable(public config path) that loads
+#: the effective public/local file through the loop's typed model and raises on
+#: any parse/schema problem. Loops without a registered validator get a plain
+#: YAML parse of the effective file. Injectable like the probe registries.
+CONTENT_VALIDATORS: dict[str, Callable[[Path], None]] = {
+    "arxiv-intel": _validate_arxiv_content,
+    "x-intel": _validate_x_content,
+}
+
+
+def _check_content_config_validity(config: LoopcraftConfig, loop: LoopManifest) -> list[str]:
+    """Parse/validate the effective content config before agent startup.
+
+    Existence alone does not establish that the loop can consume its declared
+    config; a syntax or schema error found after launching a headless agent
+    wastes the run budget. Runs only when the public file exists (missing or
+    escaping configs are already reported by the existence check).
+
+    Returns:
+        A list of problem strings (empty when no config is declared or the
+        effective public/local file parses and validates).
+    """
+    declared = loop.content.config
+    if not declared:
+        return []
+    try:
+        path = config.resolve_source_path(declared)
+    except SourcePathError:
+        return []
+    if not path.is_file():
+        return []
+    validator = CONTENT_VALIDATORS.get(loop.id)
+    try:
+        if validator is not None:
+            validator(path)
+        else:
+            yaml.safe_load(local_override_path(path).read_text(encoding="utf-8"))
+    except Exception as exc:  # noqa: BLE001 — any config load fault is a preflight problem
+        return [f"content config invalid: {declared}: {exc}"]
+    return []
+
+
 def _check_source_asset(config: LoopcraftConfig, declared: str, *, label: str, required: bool) -> list[str]:
     """Validate one declared source asset exists as a committed regular file.
 
@@ -181,6 +243,7 @@ def check_declared_capabilities(loop: LoopManifest, config: LoopcraftConfig) -> 
     problems += _check_source_asset(config, loop.logic.skill or "", label="logic.skill", required=True)
     problems += _check_source_asset(config, loop.logic.verify or "", label="logic.verify", required=False)
     problems += _check_source_asset(config, loop.content.config or "", label="content.config", required=False)
+    problems += _check_content_config_validity(config, loop)
 
     for tool in loop.depends_on.tools:
         binary = TOOL_BINARIES.get(tool, tool)

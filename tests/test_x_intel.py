@@ -291,7 +291,11 @@ def test_x_run_writes_declared_outputs_with_run_id(tmp_path, monkeypatch) -> Non
     written even with the shipped empty-source config.
     """
     run_id = "20260101T000000Z-cafef00d"
+    # Finding 3 (review 07): the handed-down run date deliberately differs from
+    # the real clock date, simulating a run that crosses UTC midnight.
+    run_date = "2026-01-01"
     monkeypatch.setenv("LOOPCRAFT_RUN_ID", run_id)
+    monkeypatch.setenv("LOOPCRAFT_RUN_DATE", run_date)
 
     runner = XIntelRunner.__new__(XIntelRunner)
     runner.loopcraft = LoopcraftConfig(source_path=tmp_path / "src", memory_path=tmp_path / "mem")
@@ -314,9 +318,8 @@ def test_x_run_writes_declared_outputs_with_run_id(tmp_path, monkeypatch) -> Non
     from loopcraft.manifest import LoopManifest
 
     manifest = LoopManifest.load(REPO_ROOT / "loops" / "x-intel.yaml")
-    date = datetime.now(UTC).strftime("%Y-%m-%d")
     for declared in manifest.outputs:
-        resolved = runner.loopcraft.resolve_state_template(declared, run_id=run_id, date=date)
+        resolved = runner.loopcraft.resolve_state_template(declared, run_id=run_id, date=run_date)
         assert resolved.exists(), f"missing declared output: {declared} -> {resolved}"
 
 
@@ -327,6 +330,25 @@ def test_x_persist_source_state_initializes_empty_file(tmp_path) -> None:
     path = store.persist_source_state()
     assert path.exists()
     assert path.read_text(encoding="utf-8").strip() == "{}"
+
+
+def test_x_cli_reports_invalid_config_as_json_envelope(tmp_path, monkeypatch, capsys) -> None:
+    """Finding 4 (review 07): a malformed config yields the JSON envelope, not a traceback."""
+    import json
+
+    from loopcraft.research_intel.x import cli as x_cli
+
+    monkeypatch.setenv("LOOPCRAFT_SOURCE", str(tmp_path / "src"))
+    monkeypatch.setenv("LOOPCRAFT_MEMORY", str(tmp_path / "mem"))
+    bad = tmp_path / "bad.yaml"
+    bad.write_text("sources: [unclosed\n", encoding="utf-8")
+
+    rc = x_cli.main(["--json", "run", "--config", str(bad)])
+    payload = json.loads(capsys.readouterr().out)
+    assert rc == 2
+    assert payload["command"] == "run"
+    assert payload["ok"] is False
+    assert "invalid or unreadable content config" in payload["data"]["error"]
 
 
 def test_x_config_load_prefers_local_override(tmp_path) -> None:

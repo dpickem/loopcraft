@@ -9,6 +9,7 @@ default; JSON is opt-in and agent-friendly.
 from __future__ import annotations
 
 import json
+import sys
 from typing import Any
 
 
@@ -44,4 +45,25 @@ def emit(
     else:
         for line in lines:
             print(line)
+    return rc
+
+
+def fail(command: str, rc: int, message: str, *, as_json: bool) -> int:
+    """Emit a failure result: a JSON error envelope, or a stderr message.
+
+    Shared by the direct research CLIs so error paths keep the same
+    ``{command, ok, exit_code, data}`` envelope contract as successes.
+
+    Args:
+        command: Dotted command name (e.g. ``run``).
+        rc: The process exit code to return.
+        message: Human-readable failure description.
+        as_json: Whether to emit the JSON envelope instead of stderr text.
+
+    Returns:
+        The provided ``rc``.
+    """
+    if as_json:
+        return emit(command, as_json=True, ok=False, rc=rc, data={"error": message}, lines=[])
+    print(f"ERROR: {message}", file=sys.stderr)
     return rc

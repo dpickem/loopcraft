@@ -220,6 +220,92 @@ def test_stage_rejects_symlinked_skill_dir_escaping_source(tmp_path: Path) -> No
         stage_loop_assets(config, manifest, tmp_path / "wt", environ={})
 
 
+def test_stage_rejects_sibling_symlink_escaping_source(tmp_path: Path) -> None:
+    """Finding 1 (review 07): a sibling asset symlink cannot leak outside files.
+
+    The declared SKILL.md is safe, but whole-directory staging must not
+    dereference an unchecked sibling symlink pointing outside the source tree.
+    """
+    source = _source_tree(tmp_path)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "secret.txt").write_text("SECRET", encoding="utf-8")
+    (source / "skills" / "slack-triage" / "leak.txt").symlink_to(outside / "secret.txt")
+
+    config = LoopcraftConfig(source_path=source, memory_path=tmp_path / "mem")
+    manifest = LoopManifest.from_dict(
+        {
+            "id": "slack-triage",
+            "name": "Slack triage",
+            "logic": {"skill": "skills/slack-triage/SKILL.md"},
+            "cadence": {"type": "cron", "at": "0 9 * * *"},
+        }
+    )
+    workdir = tmp_path / "wt"
+    with pytest.raises(SourcePathError, match="escapes"):
+        stage_loop_assets(config, manifest, workdir, environ={})
+    assert not (workdir / "skills" / "slack-triage" / "leak.txt").exists()
+
+
+def test_stage_rejects_nested_symlinked_dir_escaping_source(tmp_path: Path) -> None:
+    """Finding 1 (review 07): a nested symlinked directory cannot leak outside files."""
+    source = _source_tree(tmp_path)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "secret.txt").write_text("SECRET", encoding="utf-8")
+    (source / "skills" / "slack-triage" / "sub").symlink_to(outside, target_is_directory=True)
+
+    config = LoopcraftConfig(source_path=source, memory_path=tmp_path / "mem")
+    manifest = LoopManifest.from_dict(
+        {
+            "id": "slack-triage",
+            "name": "Slack triage",
+            "logic": {"skill": "skills/slack-triage/SKILL.md"},
+            "cadence": {"type": "cron", "at": "0 9 * * *"},
+        }
+    )
+    with pytest.raises(SourcePathError, match="escapes"):
+        stage_loop_assets(config, manifest, tmp_path / "wt", environ={})
+
+
+def test_stage_copies_in_source_sibling_symlink_content(tmp_path: Path) -> None:
+    """A sibling symlink resolving inside the source tree is dereference-copied."""
+    source = _source_tree(tmp_path)
+    skill_dir = source / "skills" / "slack-triage"
+    (skill_dir / "alias.txt").symlink_to(skill_dir / "channels.txt")
+
+    config = LoopcraftConfig(source_path=source, memory_path=tmp_path / "mem")
+    manifest = LoopManifest.from_dict(
+        {
+            "id": "slack-triage",
+            "name": "Slack triage",
+            "logic": {"skill": "skills/slack-triage/SKILL.md"},
+            "cadence": {"type": "cron", "at": "0 9 * * *"},
+        }
+    )
+    workdir = tmp_path / "wt"
+    stage_loop_assets(config, manifest, workdir, environ={})
+    staged = workdir / "skills" / "slack-triage" / "alias.txt"
+    assert staged.is_file() and not staged.is_symlink()
+    assert staged.read_text(encoding="utf-8").startswith("team-a")
+
+
+def test_stage_rejects_symlinked_local_config_escaping_source(tmp_path: Path) -> None:
+    """Finding 1 (review 07): a symlinked local override must resolve in-source."""
+    source = _source_tree(tmp_path)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "private.yaml").write_text("ranking: {top_posts: 1}\n", encoding="utf-8")
+    (source / "config").mkdir()
+    (source / "config" / "x_intel.yaml").write_text("ranking: {top_posts: 5}\n", encoding="utf-8")
+    (source / "config" / "x_intel.local.yaml").symlink_to(outside / "private.yaml")
+
+    config = LoopcraftConfig(source_path=source, memory_path=tmp_path / "mem")
+    manifest = _content_config_manifest(source, "config/x_intel.yaml")
+    with pytest.raises(SourcePathError, match="escapes"):
+        stage_loop_assets(config, manifest, tmp_path / "wt", environ={})
+
+
 def test_stage_allows_symlink_resolving_inside_source(tmp_path: Path) -> None:
     """An in-tree symlink whose target stays under the source root is allowed."""
     source = _source_tree(tmp_path)

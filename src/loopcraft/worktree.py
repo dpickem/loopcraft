@@ -11,7 +11,7 @@ import os
 import shutil
 from pathlib import Path, PurePosixPath
 
-from loopcraft.config import LoopcraftConfig, safe_source_relpath
+from loopcraft.config import LoopcraftConfig, SourcePathError, safe_source_relpath
 from loopcraft.manifest import LoopManifest
 from loopcraft.paths import assert_under
 from loopcraft.settings import asset_env_var, local_sibling_path, split_env_list
@@ -27,6 +27,52 @@ class StagingError(RuntimeError):
 def _assert_under(root: Path, candidate: Path) -> None:
     """Guard that ``candidate`` stays inside ``root`` (no traversal escape)."""
     assert_under(root, candidate, label="run worktree")
+
+
+def _assert_source_contained(config: LoopcraftConfig, candidate: Path) -> None:
+    """Guard that a source entry (symlinks resolved) stays under the source root.
+
+    Raises:
+        SourcePathError: If the resolved entry escapes the source tree.
+    """
+    try:
+        assert_under(config.source_path, candidate, label="source asset")
+    except ValueError as exc:
+        raise SourcePathError(str(exc)) from exc
+
+
+def _copytree_contained(config: LoopcraftConfig, src_dir: Path, dest: Path, workdir: Path) -> None:
+    """Copy a source directory into the worktree, validating every entry.
+
+    ``shutil.copytree``'s default symlink dereferencing would follow a sibling
+    or nested symlink anywhere on disk. Instead, every directory and file below
+    ``src_dir`` is individually required to resolve under the source root —
+    the same policy as ``logic.skill`` itself — before its contents are copied.
+    An in-source-resolving symlink is dereference-copied like any other file;
+    one that escapes aborts staging.
+
+    Raises:
+        SourcePathError: If any staged entry resolves outside the source tree.
+        OSError: If an entry cannot be copied (e.g. a dangling symlink).
+    """
+    seen_dirs: set[Path] = set()
+    for dirpath, dirnames, filenames in os.walk(src_dir, followlinks=True):
+        current = Path(dirpath)
+        real = current.resolve()
+        if real in seen_dirs:  # symlink-cycle guard
+            dirnames[:] = []
+            continue
+        seen_dirs.add(real)
+        _assert_source_contained(config, current)
+        dest_dir = (dest / current.relative_to(src_dir)).resolve()
+        _assert_under(workdir, dest_dir)
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        for name in sorted(filenames):
+            src_file = current / name
+            _assert_source_contained(config, src_file)
+            dest_file = (dest_dir / name).resolve()
+            _assert_under(workdir, dest_file)
+            shutil.copy2(src_file, dest_file)
 
 
 def _apply_local_shadowing(workdir: Path) -> None:
@@ -110,6 +156,8 @@ def _stage_content_config(
     staged: list[Path] = [dest]
     local_src = local_sibling_path(src)
     if local_src.is_file():
+        # A symlinked local override must resolve under the source root too.
+        _assert_source_contained(config, local_src)
         dest_local = (workdir / rel.parent / local_src.name).resolve()
         _assert_under(workdir, dest_local)
         dest_local.parent.mkdir(parents=True, exist_ok=True)
@@ -138,10 +186,12 @@ def stage_loop_assets(
     variable (see :func:`loopcraft.settings.asset_env_var`) overrides a skill list
     asset outright. Precedence is env var > ``*.local.*`` file > public file.
 
-    The ``logic.skill`` reference is validated as a safe source-relative path, and
-    every staged destination is confirmed to remain under ``workdir`` so a
-    malformed manifest cannot read outside the source tree or write outside the
-    run directory.
+    The ``logic.skill`` reference is validated as a safe source-relative path,
+    every enumerated source entry (including sibling and nested symlinks) must
+    resolve under the source root before it is copied, and every staged
+    destination is confirmed to remain under ``workdir`` — so a malformed
+    manifest or a planted symlink cannot read outside the source tree or write
+    outside the run directory.
 
     Returns the list of staged destination paths.
 
@@ -165,7 +215,7 @@ def stage_loop_assets(
         if str(skill_dir_rel) not in ("", ".") and skill_dir_src.is_dir():
             dest = (workdir / skill_dir_rel).resolve()
             _assert_under(workdir, dest)
-            shutil.copytree(skill_dir_src, dest, dirs_exist_ok=True)
+            _copytree_contained(config, skill_dir_src, dest, workdir)
             staged.append(dest)
         elif skill_src.is_file():
             dest = (workdir / skill_rel).resolve()
@@ -175,6 +225,7 @@ def stage_loop_assets(
             staged.append(dest)
 
     if manifest.source_path and manifest.source_path.is_file():
+        _assert_source_contained(config, manifest.source_path)
         dest = (workdir / "loops" / manifest.source_path.name).resolve()
         _assert_under(workdir, dest)
         dest.parent.mkdir(parents=True, exist_ok=True)

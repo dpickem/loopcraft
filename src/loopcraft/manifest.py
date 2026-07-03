@@ -24,6 +24,7 @@ from loopcraft.config import (
     safe_source_relpath,
     safe_state_relpath,
 )
+from loopcraft.paths import assert_under
 
 _DURATION_UNITS = {"s": 1, "m": 60, "h": 3600}
 _DURATION_RE = re.compile(r"^\s*(\d+)\s*([smh])\s*$", re.IGNORECASE)
@@ -352,9 +353,9 @@ def load_all(loops_dir: Path | str) -> tuple[list[LoopManifest], list[str]]:
     """Load every ``*.yaml`` manifest in a directory.
 
     Returns ``(manifests, problems)`` where ``problems`` aggregates per-manifest
-    validation errors, filename/id mismatches, duplicate ids, unknown upstream
-    loops, and dependency cycles across the ``inputs``/``outputs`` +
-    ``depends_on.loops`` graph.
+    validation errors, filename/id mismatches, duplicate ids, duplicate/multi-
+    producer outputs, unknown upstream loops, and dependency cycles across the
+    ``inputs``/``outputs`` + ``depends_on.loops`` graph.
     """
     loops_dir = Path(loops_dir)
     manifests: list[LoopManifest] = []
@@ -364,6 +365,13 @@ def load_all(loops_dir: Path | str) -> tuple[list[LoopManifest], list[str]]:
         return manifests, [f"loops directory not found: {loops_dir}"]
 
     for path in sorted([*loops_dir.glob("*.yaml"), *loops_dir.glob("*.yml")]):
+        try:
+            # Same containment rule as the single-manifest lookup: a symlinked
+            # manifest entry must not resolve outside the loops directory.
+            assert_under(loops_dir, path, label="loop manifest path")
+        except ValueError as exc:
+            issues.append(ValidationIssue(scope=path.name, message=str(exc)))
+            continue
         try:
             manifest = LoopManifest.load(path)
         except ManifestError as exc:
@@ -389,6 +397,36 @@ def load_all(loops_dir: Path | str) -> tuple[list[LoopManifest], list[str]]:
             issues.append(ValidationIssue(scope=manifest.id, message="duplicate loop id"))
         seen_ids.add(manifest.id)
 
+    # One producing loop per normalized output path: with several producers,
+    # dependency inference becomes order-dependent and the loops race on the
+    # same durable ledger file. Duplicates within one manifest are flagged too.
+    producers: dict[str, list[str]] = {}
+    for manifest in manifests:
+        declared_norms: set[str] = set()
+        for output in manifest.outputs:
+            norm = _norm(output)
+            if norm in declared_norms:
+                issues.append(
+                    ValidationIssue(
+                        scope=manifest.id,
+                        message=f"output declared more than once in this manifest: '{output}'",
+                    )
+                )
+                continue
+            declared_norms.add(norm)
+            producers.setdefault(norm, []).append(manifest.id)
+    for norm, producing_loops in sorted(producers.items()):
+        if len(producing_loops) > 1:
+            issues.append(
+                ValidationIssue(
+                    scope="outputs",
+                    message=(
+                        f"output '{norm}' is declared by multiple loops: "
+                        + ", ".join(producing_loops)
+                    ),
+                )
+            )
+
     for manifest in manifests:
         for upstream in manifest.depends_on.loops:
             if upstream not in seen_ids:
@@ -407,12 +445,15 @@ def _detect_cycles(manifests: list[LoopManifest]) -> ValidationReport:
     """Detect cycles in the loop dependency graph.
 
     An edge ``A -> B`` means B depends on A: B lists A in ``depends_on.loops``,
-    or B reads (``inputs``) something A writes (``outputs``).
+    or B reads (``inputs``) something A writes (``outputs``). Every producer of
+    a path contributes edges — fleet validation separately rejects
+    multi-producer outputs, so cycle detection must not silently pick the first
+    producer and miss a cycle through another.
     """
-    producers: dict[str, str] = {}
+    producers: dict[str, list[str]] = {}
     for manifest in manifests:
         for output in manifest.outputs:
-            producers.setdefault(_norm(output), manifest.id)
+            producers.setdefault(_norm(output), []).append(manifest.id)
 
     graph = nx.DiGraph()
     graph.add_nodes_from(manifest.id for manifest in manifests)
@@ -421,9 +462,9 @@ def _detect_cycles(manifests: list[LoopManifest]) -> ValidationReport:
             if upstream in graph:
                 graph.add_edge(upstream, manifest.id)
         for input_path in manifest.inputs:
-            producer = producers.get(_norm(input_path))
-            if producer and producer != manifest.id:
-                graph.add_edge(producer, manifest.id)
+            for producer in producers.get(_norm(input_path), []):
+                if producer != manifest.id:
+                    graph.add_edge(producer, manifest.id)
 
     issues = [
         ValidationIssue(scope="dependency_graph", message="dependency cycle: " + " -> ".join(cycle + [cycle[0]]))

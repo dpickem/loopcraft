@@ -84,6 +84,61 @@ def test_capabilities_reject_local_only_content_config(tmp_path: Path) -> None:
     assert any("content config not found" in p for p in problems)
 
 
+def test_capabilities_flag_malformed_yaml_content_config(tmp_path: Path) -> None:
+    """Finding 4 (review 07): a content config that cannot parse fails preflight."""
+    config = _config(tmp_path)
+    cfg_dir = config.source_path / "config"
+    cfg_dir.mkdir(parents=True)
+    (cfg_dir / "x.yaml").write_text("sources: [unclosed\n", encoding="utf-8")
+    manifest = _manifest(content={"config": "config/x.yaml"})
+    problems = capabilities.check_declared_capabilities(manifest, config)
+    assert any("content config invalid" in p for p in problems)
+
+
+def test_capabilities_run_registered_content_validator(tmp_path: Path) -> None:
+    """Finding 4 (review 07): shipped loops validate against their typed model.
+
+    Well-formed YAML with a schema violation (an unknown field) must fail the
+    x-intel preflight through the registered ``IntelConfig`` validator.
+    """
+    config = _config(tmp_path)
+    cfg_dir = config.source_path / "config"
+    cfg_dir.mkdir(parents=True)
+    (cfg_dir / "x_intel.yaml").write_text("not_a_real_field: 1\n", encoding="utf-8")
+    manifest = _manifest(id="x-intel", content={"config": "config/x_intel.yaml"})
+    problems = capabilities.check_declared_capabilities(manifest, config)
+    assert any("content config invalid" in p for p in problems)
+
+    # The forbidden output override is caught by the same validator.
+    (cfg_dir / "x_intel.yaml").write_text(
+        "output: {latest_json: state/research/x/custom.json}\n", encoding="utf-8"
+    )
+    problems = capabilities.check_declared_capabilities(manifest, config)
+    assert any("must not override 'output'" in p for p in problems)
+
+
+def test_capabilities_flag_malformed_local_override(tmp_path: Path) -> None:
+    """Finding 4 (review 07): the *effective* (local) config is what preflight parses."""
+    config = _config(tmp_path)
+    cfg_dir = config.source_path / "config"
+    cfg_dir.mkdir(parents=True)
+    (cfg_dir / "x.yaml").write_text("a: 1\n", encoding="utf-8")
+    (cfg_dir / "x.local.yaml").write_text("a: [unclosed\n", encoding="utf-8")
+    manifest = _manifest(content={"config": "config/x.yaml"})
+    problems = capabilities.check_declared_capabilities(manifest, config)
+    assert any("content config invalid" in p for p in problems)
+
+
+def test_capabilities_valid_content_config_passes(tmp_path: Path) -> None:
+    """A well-formed effective content config produces no validity problems."""
+    config = _config(tmp_path)
+    cfg_dir = config.source_path / "config"
+    cfg_dir.mkdir(parents=True)
+    (cfg_dir / "x_intel.yaml").write_text("ranking: {top_posts: 5}\n", encoding="utf-8")
+    manifest = _manifest(id="x-intel", content={"config": "config/x_intel.yaml"})
+    assert capabilities.check_declared_capabilities(manifest, config) == []
+
+
 def test_capabilities_flag_escaping_content_config(tmp_path: Path) -> None:
     """A traversing content.config is reported as a preflight problem."""
     manifest = _manifest(content={"config": "../outside.yaml"})
