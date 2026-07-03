@@ -67,6 +67,35 @@ def test_store_write_rejects_escaping_path(tmp_path: Path) -> None:
         store.append_jsonl("/tmp/abs.jsonl", {"a": 1})
 
 
+def test_store_write_rejects_symlinked_ledger_parent(tmp_path: Path) -> None:
+    """Finding 1 (review 06): a ledger symlink cannot redirect writes outside.
+
+    ``<ledger>/demo`` pointing at a directory outside the memory tree must be
+    refused, not followed.
+    """
+    config = _config(tmp_path)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    config.ledger_dir.mkdir(parents=True)
+    (config.ledger_dir / "demo").symlink_to(outside, target_is_directory=True)
+
+    store = Store(config)
+    with pytest.raises(StatePathError, match="escapes"):
+        store.write_state("state/demo/out.txt", "x")
+    assert not (outside / "out.txt").exists()
+
+
+def test_ledger_symlink_resolving_inside_memory_tree_is_allowed(tmp_path: Path) -> None:
+    """An in-ledger symlink whose target stays under the ledger is allowed."""
+    config = _config(tmp_path)
+    (config.ledger_dir / "real").mkdir(parents=True)
+    (config.ledger_dir / "alias").symlink_to(config.ledger_dir / "real", target_is_directory=True)
+
+    store = Store(config)
+    store.write_state("state/alias/out.txt", "x")
+    assert (config.ledger_dir / "real" / "out.txt").exists()
+
+
 def test_safe_state_relpath_strips_prefixes() -> None:
     """safe_state_relpath strips an optional state/ or ledger/ prefix."""
     assert safe_state_relpath("state/slack/x.md") == "slack/x.md"
@@ -137,6 +166,56 @@ def test_reads_legacy_run_record_filenames(tmp_path: Path) -> None:
     latest = store.latest_run("arxiv-intel")
     assert latest is not None
     assert latest.run_id == rid
+
+
+def test_runs_for_skips_schema_invalid_records(tmp_path: Path) -> None:
+    """Finding 5 (review 06): one bad history file must not crash history reads.
+
+    Valid JSON with the matching loop id but missing required fields or wrong
+    field types is skipped like malformed JSON, so the remaining valid history
+    stays readable.
+    """
+    store = Store(_config(tmp_path))
+    store.config.runs_dir.mkdir(parents=True)
+    # Wrong field type for a required field.
+    (store.config.runs_dir / "demo__bad-type.json").write_text(
+        '{"loop": "demo", "status": 42}\n', encoding="utf-8"
+    )
+    # Missing required fields entirely.
+    (store.config.runs_dir / "demo__missing.json").write_text(
+        '{"loop": "demo"}\n', encoding="utf-8"
+    )
+    # Valid JSON that is not even an object.
+    (store.config.runs_dir / "demo__list.json").write_text("[1, 2]\n", encoding="utf-8")
+    # One valid record among the corrupt ones.
+    good = RunRecord(
+        run_id="20260702T000000Z-aaaa1111",
+        loop="demo",
+        vendor="codex",
+        status="done",
+        started_at="2026-07-02T00:00:00+00:00",
+    )
+    store.record_run(good)
+
+    records = store.runs_for("demo")
+    assert [r.run_id for r in records] == ["20260702T000000Z-aaaa1111"]
+    latest = store.latest_run("demo")
+    assert latest is not None and latest.status == "done"
+
+
+def test_record_run_write_is_atomic(tmp_path: Path) -> None:
+    """Run records land via temp-file + rename and leave no .tmp behind."""
+    store = Store(_config(tmp_path))
+    record = RunRecord(
+        run_id="20260702T000000Z-bbbb2222",
+        loop="demo",
+        vendor="codex",
+        status="done",
+        started_at="2026-07-02T00:00:00+00:00",
+    )
+    path = store.record_run(record)
+    assert path.exists()
+    assert not list(store.config.runs_dir.glob("*.tmp"))
 
 
 def test_config_worktree_keep_last_defaults_and_clamps(tmp_path: Path, monkeypatch) -> None:

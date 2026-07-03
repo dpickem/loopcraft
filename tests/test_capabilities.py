@@ -68,14 +68,20 @@ def test_capabilities_accept_existing_content_config(tmp_path: Path) -> None:
     assert capabilities.check_declared_capabilities(manifest, config) == []
 
 
-def test_capabilities_accept_local_only_content_config(tmp_path: Path) -> None:
-    """A gitignored *.local.* override satisfies the dependency without a public file."""
+def test_capabilities_reject_local_only_content_config(tmp_path: Path) -> None:
+    """Finding 6 (review 06): a local sibling never replaces the public file.
+
+    The committed public config is the existence contract; a gitignored
+    ``*.local.*`` override alone must fail preflight so the loop cannot pass on
+    one host and break after a clean checkout.
+    """
     config = _config(tmp_path)
     cfg_dir = config.source_path / "config"
     cfg_dir.mkdir(parents=True)
     (cfg_dir / "x.local.yaml").write_text("a: 1\n", encoding="utf-8")
     manifest = _manifest(content={"config": "config/x.yaml"})
-    assert capabilities.check_declared_capabilities(manifest, config) == []
+    problems = capabilities.check_declared_capabilities(manifest, config)
+    assert any("content config not found" in p for p in problems)
 
 
 def test_capabilities_flag_escaping_content_config(tmp_path: Path) -> None:

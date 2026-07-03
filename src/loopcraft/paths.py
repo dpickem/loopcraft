@@ -55,7 +55,13 @@ def safe_relpath(
 
 
 def assert_under(root: Path, candidate: Path, *, label: str) -> None:
-    """Assert that ``candidate`` is inside ``root``.
+    """Assert that ``candidate`` is inside ``root``, resolving symlinks.
+
+    Both paths are fully resolved (``Path.resolve``), which follows symlinks in
+    every existing component and normalizes the nonexistent tail lexically. A
+    symlink inside the tree is therefore allowed only if its target also stays
+    under the (resolved) root — an in-tree symlink cannot redirect reads,
+    writes, or pruning outside the boundary.
 
     Args:
         root: Allowed root directory.
@@ -63,9 +69,9 @@ def assert_under(root: Path, candidate: Path, *, label: str) -> None:
         label: Human-readable label for errors.
 
     Raises:
-        ValueError: If the candidate escapes the root directory.
+        ValueError: If the resolved candidate escapes the resolved root.
     """
-    root_norm = os.path.normpath(str(root))
-    cand_norm = os.path.normpath(str(candidate))
-    if cand_norm != root_norm and not cand_norm.startswith(root_norm + os.sep):
+    root_real = root.resolve()
+    cand_real = candidate.resolve()
+    if cand_real != root_real and root_real not in cand_real.parents:
         raise ValueError(f"{label} escapes allowed root: {candidate}")

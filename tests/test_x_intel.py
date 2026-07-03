@@ -296,7 +296,7 @@ def test_x_run_writes_declared_outputs_with_run_id(tmp_path, monkeypatch) -> Non
     runner = XIntelRunner.__new__(XIntelRunner)
     runner.loopcraft = LoopcraftConfig(source_path=tmp_path / "src", memory_path=tmp_path / "mem")
     runner.config = IntelConfig.from_dict({})
-    runner.store = IntelStore(runner.loopcraft, runner.config.output)
+    runner.store = IntelStore(runner.loopcraft, OutputPaths())
     runner._client = lambda **kwargs: object()  # empty sources => never used
 
     rc = runner.run(dry_run=False)
@@ -309,6 +309,15 @@ def test_x_run_writes_declared_outputs_with_run_id(tmp_path, monkeypatch) -> Non
     assert (base / "seen.json").exists()
     assert (base / "posts.jsonl").exists()
     assert (base / "latest.md").exists()
+
+    # Finding 3 (review 06): the run writes exactly the manifest-declared set.
+    from loopcraft.manifest import LoopManifest
+
+    manifest = LoopManifest.load(REPO_ROOT / "loops" / "x-intel.yaml")
+    date = datetime.now(UTC).strftime("%Y-%m-%d")
+    for declared in manifest.outputs:
+        resolved = runner.loopcraft.resolve_state_template(declared, run_id=run_id, date=date)
+        assert resolved.exists(), f"missing declared output: {declared} -> {resolved}"
 
 
 def test_x_persist_source_state_initializes_empty_file(tmp_path) -> None:
@@ -329,13 +338,56 @@ def test_x_config_load_prefers_local_override(tmp_path) -> None:
 
 
 def test_x_output_defaults_are_memory_state_paths() -> None:
-    """Default X output paths point at the memory ledger state tree."""
-    config = IntelConfig.from_dict({})
-    assert config.output.seen_path.as_posix() == "state/research/x/seen.json"
-    assert config.output.posts_path.as_posix() == "state/research/x/posts.jsonl"
-    assert config.output.source_state_path.as_posix() == "state/research/x/source-state.json"
-    assert config.output.history_dir.as_posix() == "state/research/x/history"
-    assert config.output.latest_markdown.as_posix() == "state/research/x/latest.md"
+    """Fixed X output paths point at the memory ledger state tree."""
+    output = OutputPaths()
+    assert output.seen_path.as_posix() == "state/research/x/seen.json"
+    assert output.posts_path.as_posix() == "state/research/x/posts.jsonl"
+    assert output.source_state_path.as_posix() == "state/research/x/source-state.json"
+    assert output.history_dir.as_posix() == "state/research/x/history"
+    assert output.latest_markdown.as_posix() == "state/research/x/latest.md"
+
+
+def test_x_config_rejects_output_override(tmp_path) -> None:
+    """Finding 3 (review 06): content config cannot redirect durable outputs.
+
+    Neither the public content config nor a gitignored local override may set
+    ``output`` paths — the manifest's declared outputs are the source of truth.
+    """
+    import pytest
+
+    with pytest.raises(ValueError, match="must not override 'output'"):
+        IntelConfig.from_dict({"output": {"latest_json": "state/research/x/custom.json"}})
+
+    (tmp_path / "x_intel.yaml").write_text("ranking: {top_posts: 5}\n", encoding="utf-8")
+    (tmp_path / "x_intel.local.yaml").write_text(
+        "output: {latest_json: state/research/x/custom.json}\n", encoding="utf-8"
+    )
+    with pytest.raises(ValueError, match="must not override 'output'"):
+        IntelConfig.load(tmp_path / "x_intel.yaml")
+
+
+def test_x_fixed_outputs_match_manifest_contract() -> None:
+    """Finding 3 (review 06): the fixed write set equals the declared outputs.
+
+    ``follow_candidates_dir`` is excluded: it belongs to the separate operator
+    ``discover-follows`` command, not the ``run`` workflow this loop schedules.
+    """
+    from loopcraft.manifest import LoopManifest
+
+    manifest = LoopManifest.load(REPO_ROOT / "loops" / "x-intel.yaml")
+    out = OutputPaths()
+    expected = {
+        out.seen_path.as_posix(),
+        out.posts_path.as_posix(),
+        out.source_state_path.as_posix(),
+        f"{out.digest_dir.as_posix()}/{{{{date}}}}.md",
+        f"{out.digest_dir.as_posix()}/{{{{date}}}}.json",
+        f"{out.history_dir.as_posix()}/{{{{run_id}}}}.md",
+        f"{out.history_dir.as_posix()}/{{{{run_id}}}}.json",
+        out.latest_markdown.as_posix(),
+        out.latest_json.as_posix(),
+    }
+    assert set(manifest.outputs) == expected
 
 
 def test_x_loads_yaml_content_config() -> None:

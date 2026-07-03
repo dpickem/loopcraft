@@ -18,7 +18,7 @@ from loopcraft.cli_output import emit
 from loopcraft.config import RUN_ID_ENV, LoopcraftConfig
 from loopcraft.env import load_dotenv
 from loopcraft.research_intel.x.client import XApiClient, XApiError
-from loopcraft.research_intel.x.config import IntelConfig, XApiTokens
+from loopcraft.research_intel.x.config import IntelConfig, OutputPaths, XApiTokens
 from loopcraft.research_intel.x.digest import render_digest
 from loopcraft.research_intel.x.follow_discovery import (
     discover_candidates,
@@ -63,7 +63,9 @@ class XIntelRunner:
         self.loopcraft = LoopcraftConfig.load()
         self.config = IntelConfig.load(Path(config_path))
         self.tokens = XApiTokens.from_env()
-        self.store = IntelStore(self.loopcraft, self.config.output)
+        # Output locations are fixed in code (mirroring the manifest contract),
+        # never read from the content config.
+        self.store = IntelStore(self.loopcraft, OutputPaths())
 
     def _client(self, *, require_user_context: bool = False) -> XApiClient:
         """Return an X API client, raising if no suitable token is set.
@@ -376,7 +378,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     discover_parser.add_argument("--config", default=_DEFAULT_CONFIG, help="Path to YAML content config.")
     discover_parser.add_argument("--digest-json", help="Digest JSON path. Defaults to latest digest in config.")
-    discover_parser.add_argument("--output-dir", help="Output directory. Defaults to config.output.follow_candidates_dir.")
+    discover_parser.add_argument("--output-dir", help="Output directory. Defaults to the fixed follow-candidates ledger dir.")
     discover_parser.add_argument("--top", type=int, default=25, help="Maximum candidates to emit.")
     return parser
 

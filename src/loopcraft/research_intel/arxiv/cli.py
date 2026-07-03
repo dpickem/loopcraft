@@ -11,7 +11,7 @@ from pathlib import Path
 from loopcraft.cli_output import emit
 from loopcraft.config import RUN_ID_ENV, LoopcraftConfig
 from loopcraft.research_intel.arxiv.client import ArxivApiError, ArxivClient
-from loopcraft.research_intel.arxiv.config import ArxivIntelConfig
+from loopcraft.research_intel.arxiv.config import ArxivIntelConfig, OutputPaths
 from loopcraft.research_intel.arxiv.digest import render_digest
 from loopcraft.research_intel.arxiv.ranking import rank_papers
 from loopcraft.research_intel.arxiv.store import ArxivStore
@@ -54,7 +54,9 @@ def run(
     """
     loopcraft = LoopcraftConfig.load()
     config = ArxivIntelConfig.load(Path(config_path))
-    store = ArxivStore(loopcraft, config.output)
+    # Output locations are fixed in code (mirroring the manifest contract), never
+    # read from the content config.
+    store = ArxivStore(loopcraft, OutputPaths())
     client = ArxivClient()
     errors: list[str] = []
     raw_papers: list[dict] = []

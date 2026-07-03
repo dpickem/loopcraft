@@ -221,6 +221,21 @@ def test_worktree_dir_and_prune_reject_escaping_ids(tmp_path: Path) -> None:
         cli._worktree_dir(config, "demo", "/tmp/loopcraft-escaped")
 
 
+def test_worktree_dir_and_prune_reject_symlinked_loop_dir(tmp_path: Path) -> None:
+    """Finding 1 (review 06): a symlinked worktree parent cannot redirect create/prune."""
+    config = LoopcraftConfig(source_path=tmp_path / "s", memory_path=tmp_path / "m")
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    root = cli._worktrees_root(config)
+    root.mkdir(parents=True)
+    (root / "demo").symlink_to(outside, target_is_directory=True)
+
+    with pytest.raises(ValueError, match="escapes"):
+        cli._worktree_dir(config, "demo", "run-id")
+    with pytest.raises(ValueError, match="escapes"):
+        cli._prune_loop_worktrees(config, "demo", keep_last=0)
+
+
 def test_run_reports_malformed_yaml_as_structured_error(monkeypatch, tmp_path: Path, capsys) -> None:
     """Finding 3 (review 05): broken YAML yields a JSON failure, not a traceback."""
     _demo_source(monkeypatch, tmp_path, "id: [unclosed\n")
@@ -298,6 +313,123 @@ def test_run_fails_structured_when_content_config_missing(monkeypatch, tmp_path:
     assert data["status"] == "failed"
     assert data["outputs"] == []
     assert data["declared_outputs"] == ["state/demo/out.md"]
+
+
+def test_staging_failure_honors_worktree_retention(monkeypatch, tmp_path: Path) -> None:
+    """Finding 2 (review 06): keep_last=0 also prunes a failed staging worktree."""
+    _demo_source(
+        monkeypatch,
+        tmp_path,
+        "id: demo\n"
+        "name: Demo\n"
+        "cadence: {type: cron, at: '0 9 * * *'}\n"
+        "content: {config: config/does-not-exist.yaml}\n"
+        "logic: {skill: skills/demo/SKILL.md}\n",
+    )
+    monkeypatch.setenv("LOOPCRAFT_WORKTREE_KEEP_LAST", "0")
+    register_runner("stub", StubRunner)
+    rc = cli.main(["run", "demo", "--vendor", "stub"])
+    assert rc == 1
+
+    loop_worktrees = tmp_path / "mem" / "var" / "worktrees" / "demo"
+    assert not loop_worktrees.exists() or list(loop_worktrees.iterdir()) == []
+    # The failed attempt is still durable history even though its worktree is gone.
+    records = list((tmp_path / "mem" / "ledger" / "runs").glob("*.json"))
+    assert len(records) == 1
+
+
+def test_run_normalizes_preflight_exception(monkeypatch, tmp_path: Path, capsys) -> None:
+    """Finding 2 (review 06): a raising preflight becomes a failed run record."""
+    _env(monkeypatch, tmp_path)
+
+    class ExplodingPreflightRunner(StubRunner):
+        """Stub whose preflight raises instead of returning a report."""
+
+        vendor = "boom-preflight"
+
+        def preflight(self, loop, config):  # noqa: ANN001
+            """Raise to simulate a broken adapter."""
+            raise RuntimeError("adapter exploded")
+
+    register_runner("boom-preflight", ExplodingPreflightRunner)
+    rc = cli.main(["--json", "run", "slack-triage", "--vendor", "boom-preflight"])
+    payload = json.loads(capsys.readouterr().out)
+    assert rc == 1
+    assert payload["data"]["phase"] == "preflight"
+    assert any("preflight raised RuntimeError" in p for p in payload["data"]["problems"])
+
+    records = list((tmp_path / "mem" / "ledger" / "runs").glob("*.json"))
+    assert len(records) == 1
+    data = json.loads(records[0].read_text(encoding="utf-8"))
+    assert data["status"] == "failed"
+    assert data["outputs"] == []
+
+
+def test_run_normalizes_runner_exception(monkeypatch, tmp_path: Path, capsys) -> None:
+    """Finding 2 (review 06): a raising adapter yields a failed record + traceback log."""
+    _env(monkeypatch, tmp_path)
+
+    class ExplodingRunner(StubRunner):
+        """Stub whose run() raises mid-execution."""
+
+        vendor = "boom-run"
+
+        def run(self, loop, ctx):  # noqa: ANN001
+            """Raise to simulate an unexpected adapter fault."""
+            raise RuntimeError("subprocess fell over")
+
+    register_runner("boom-run", ExplodingRunner)
+    rc = cli.main(["--json", "run", "slack-triage", "--vendor", "boom-run"])
+    payload = json.loads(capsys.readouterr().out)
+    assert rc == 1
+    assert payload["data"]["phase"] == "execution"
+    assert any("runner raised RuntimeError" in p for p in payload["data"]["problems"])
+
+    records = list((tmp_path / "mem" / "ledger" / "runs").glob("*.json"))
+    assert len(records) == 1
+    data = json.loads(records[0].read_text(encoding="utf-8"))
+    assert data["status"] == "failed"
+    assert data["outputs"] == []
+    # The traceback is preserved for diagnosis in the run log.
+    assert data["log_path"] and "RuntimeError: subprocess fell over" in Path(
+        data["log_path"]
+    ).read_text(encoding="utf-8")
+
+
+def test_deps_check_loop_reports_semantically_invalid_manifest(
+    monkeypatch, tmp_path: Path, capsys
+) -> None:
+    """Finding 4 (review 06): deps check --loop cannot say OK for an invalid loop."""
+    _demo_source(
+        monkeypatch,
+        tmp_path,
+        "id: demo\n"
+        "name: Demo\n"
+        "cadence: {type: cron, at: '0 9 * * *'}\n"
+        "outputs: ['linear:project/Daily']\n"
+        "logic: {skill: skills/demo/SKILL.md}\n",
+    )
+    rc = cli.main(["--json", "deps", "check", "--loop", "demo"])
+    payload = json.loads(capsys.readouterr().out)
+    assert rc == 2
+    assert payload["ok"] is False
+    assert any(
+        "external sink" in problem
+        for problem in payload["data"]["preflight"]["invalid_manifest"]
+    )
+
+
+def test_status_survives_corrupt_run_record(monkeypatch, tmp_path: Path, capsys) -> None:
+    """Finding 5 (review 06): one schema-invalid history file cannot crash status."""
+    _env(monkeypatch, tmp_path)
+    runs_dir = tmp_path / "mem" / "ledger" / "runs"
+    runs_dir.mkdir(parents=True)
+    (runs_dir / "slack-triage__corrupt.json").write_text(
+        '{"loop": "slack-triage", "status": 42}\n', encoding="utf-8"
+    )
+    rc = cli.main(["status"])
+    assert rc == 0
+    assert "slack-triage" in capsys.readouterr().out
 
 
 def test_list_json_envelope(monkeypatch, tmp_path: Path, capsys) -> None:

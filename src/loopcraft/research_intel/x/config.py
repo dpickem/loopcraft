@@ -88,7 +88,13 @@ class RankingConfig(_ContentModel):
 
 
 class OutputPaths(_ContentModel):
-    """Fixed ledger output paths for direct X CLI runs."""
+    """Fixed ledger output paths for the X workflow.
+
+    These mirror the ``loops/x-intel.yaml`` I/O contract and are fixed in code —
+    they are deliberately *not* part of the YAML content-definition surface, so
+    no public or gitignored local config can redirect durable writes away from
+    the manifest's declared outputs.
+    """
 
     seen_path: Path = Path("state/research/x/seen.json")
     posts_path: Path = Path("state/research/x/posts.jsonl")
@@ -130,12 +136,15 @@ class XApiTokens(_ContentModel):
 
 
 class IntelConfig(_ContentModel):
-    """Complete X content definition plus fixed ledger output defaults."""
+    """Complete X content definition (sources, frontier labs, ranking only).
+
+    Durable output locations are not content: they belong to the manifest's
+    I/O contract and are fixed in :class:`OutputPaths`.
+    """
 
     sources: SourcesConfig = Field(default_factory=SourcesConfig)
     frontier_labs: FrontierLabsConfig = Field(default_factory=FrontierLabsConfig)
     ranking: RankingConfig = Field(default_factory=RankingConfig)
-    output: OutputPaths = Field(default_factory=OutputPaths)
 
     @classmethod
     def load(cls, path: Path) -> IntelConfig:
@@ -151,7 +160,17 @@ class IntelConfig(_ContentModel):
 
     @classmethod
     def from_dict(cls, raw: dict[str, Any]) -> IntelConfig:
-        """Build content config from a raw mapping."""
+        """Build content config from a raw mapping.
+
+        Raises:
+            ValueError: If the mapping tries to set ``output`` paths — durable
+                outputs are fixed by the loop manifest contract, not content.
+        """
+        if isinstance(raw, dict) and "output" in raw:
+            raise ValueError(
+                "content config must not override 'output' paths; durable outputs "
+                "are fixed by the loop manifest (loops/x-intel.yaml)"
+            )
         return cls.model_validate(raw)
 
 

@@ -36,6 +36,8 @@ inputs:
 outputs:
   - state/research/arxiv/latest.md
   - state/research/arxiv/latest.json
+  - state/research/arxiv/digests/{{date}}.md
+  - state/research/arxiv/digests/{{date}}.json
   - state/research/arxiv/history/{{run_id}}.md
   - state/research/arxiv/history/{{run_id}}.json
   - state/research/arxiv/seen.json

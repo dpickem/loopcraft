@@ -15,7 +15,6 @@ from collections.abc import Callable
 from loopcraft.config import LoopcraftConfig, SourcePathError
 from loopcraft.manifest import LoopManifest
 from loopcraft.probes import run_probe
-from loopcraft.settings import local_sibling_path
 
 #: Tool collections map to a CLI binary that must be on PATH for preflight.
 TOOL_BINARIES: dict[str, str] = {"nv-tools": "nv-tools"}
@@ -124,13 +123,26 @@ API_PROBES: dict[str, Callable[[LoopcraftConfig], str | None]] = {
 }
 
 
+#: Human-readable nouns for declared source assets in problem messages.
+_ASSET_NOUNS = {
+    "logic.skill": "skill",
+    "logic.verify": "verify file",
+    "content.config": "content config",
+}
+
+
 def _check_source_asset(config: LoopcraftConfig, declared: str, *, label: str, required: bool) -> list[str]:
-    """Validate one source-relative asset path (skill/verify) exists safely.
+    """Validate one declared source asset exists as a committed regular file.
+
+    Per the public/private config split, the *public* file must exist in the
+    source tree; a gitignored ``*.local.*`` sibling may shadow its values at
+    staging time but never replaces the existence contract — otherwise a loop
+    would pass on one host and fail after a clean checkout.
 
     Args:
         config: Resolved control-plane config used to resolve source paths.
         declared: The declared source-relative path (may be empty).
-        label: Human-readable field name for error messages (e.g. ``logic.skill``).
+        label: Manifest field name for error messages (e.g. ``logic.skill``).
         required: Whether an empty ``declared`` is itself a problem.
 
     Returns:
@@ -142,42 +154,12 @@ def _check_source_asset(config: LoopcraftConfig, declared: str, *, label: str, r
         path = config.resolve_source_path(declared)
     except SourcePathError as exc:
         return [f"{label}: {exc}"]
-    noun = "skill" if label == "logic.skill" else "verify file"
+    noun = _ASSET_NOUNS.get(label, label)
     if not path.exists():
         return [f"{noun} not found: {declared}"]
     if not path.is_file():
         return [f"{noun} is not a regular file: {declared}"]
     return []
-
-
-def _check_content_config(config: LoopcraftConfig, declared: str | None) -> list[str]:
-    """Require a declared ``content.config`` to exist before a run starts.
-
-    Staging accepts either the declared public file or its gitignored
-    ``*.local.*`` override as the effective config, so preflight passes when
-    either one is a regular file — and fails fast when neither is, instead of
-    letting the headless agent discover the missing dependency mid-run.
-
-    Args:
-        config: Resolved control-plane config used to resolve source paths.
-        declared: The manifest's ``content.config`` value (may be None).
-
-    Returns:
-        A list of problem strings (empty when no config is declared or one of
-        the candidate files exists).
-    """
-    if not declared:
-        return []
-    try:
-        path = config.resolve_source_path(declared)
-    except SourcePathError as exc:
-        return [f"content.config: {exc}"]
-    candidates = (path, local_sibling_path(path))
-    if any(candidate.is_file() for candidate in candidates):
-        return []
-    if any(candidate.exists() for candidate in candidates):
-        return [f"content config is not a regular file: {declared}"]
-    return [f"content config not found: {declared} (no public file or *.local.* override)"]
 
 
 def check_declared_capabilities(loop: LoopManifest, config: LoopcraftConfig) -> list[str]:
@@ -198,7 +180,7 @@ def check_declared_capabilities(loop: LoopManifest, config: LoopcraftConfig) -> 
     problems: list[str] = []
     problems += _check_source_asset(config, loop.logic.skill or "", label="logic.skill", required=True)
     problems += _check_source_asset(config, loop.logic.verify or "", label="logic.verify", required=False)
-    problems += _check_content_config(config, loop.content.config)
+    problems += _check_source_asset(config, loop.content.config or "", label="content.config", required=False)
 
     for tool in loop.depends_on.tools:
         binary = TOOL_BINARIES.get(tool, tool)

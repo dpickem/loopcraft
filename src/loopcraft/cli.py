@@ -12,17 +12,18 @@ import argparse
 import shutil
 import sys
 import time
+import traceback
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from loopcraft.cli_output import emit as _emit
-from loopcraft.config import RUN_ID_ENV, LoopcraftConfig, SourcePathError
+from loopcraft.config import RUN_ID_ENV, LoopcraftConfig
 from loopcraft.env import load_dotenv
 from loopcraft.manifest import LoopManifest, ManifestError, load_all, loop_id_problem
 from loopcraft.paths import assert_under
 from loopcraft.runners import RunContext, get_runner
-from loopcraft.runners.base import STATUS_DONE
+from loopcraft.runners.base import STATUS_DONE, PreflightReport
 from loopcraft.store import RunRecord, Store
 from loopcraft.worktree import StagingError, stage_loop_assets
 
@@ -115,6 +116,36 @@ def _find_manifest(config: LoopcraftConfig, loop_id: str) -> LoopManifest | None
     return None
 
 
+def _lookup_loop(
+    config: LoopcraftConfig, loop_id: str
+) -> tuple[LoopManifest | None, tuple[int, dict[str, Any], list[str]] | None]:
+    """Resolve and fully validate one loop by id for run/preflight commands.
+
+    Shared by ``run`` and ``deps check --loop`` so both apply the identical
+    ``find + parse/schema + manifest.validate()`` sequence — a loop that ``run``
+    would reject can never be reported as ready by the dependency check.
+
+    Returns:
+        ``(manifest, None)`` on success, or ``(None, (rc, data, lines))``
+        describing the structured failure to emit.
+    """
+    try:
+        manifest = _find_manifest(config, loop_id)
+    except ManifestError as exc:
+        return None, (2, {"loop": loop_id, "error": str(exc)}, [f"error: {exc}"])
+    if manifest is None:
+        message = f"loop '{loop_id}' not found in {config.loops_dir}"
+        return None, (2, {"loop": loop_id, "error": message}, [f"error: {message}"])
+    problems = manifest.validate()
+    if problems:
+        return None, (
+            2,
+            {"loop": loop_id, "invalid_manifest": problems},
+            [f"invalid manifest: {problem}" for problem in problems],
+        )
+    return manifest, None
+
+
 def _cmd_run(
     config: LoopcraftConfig,
     loop_id: str,
@@ -124,37 +155,10 @@ def _cmd_run(
     as_json: bool,
 ) -> int:
     """Run one loop headless (or preflight it via ``--dry-run``)."""
-    try:
-        manifest = _find_manifest(config, loop_id)
-    except ManifestError as exc:
-        return _emit(
-            "run",
-            as_json=as_json,
-            ok=False,
-            rc=2,
-            data={"loop": loop_id, "error": str(exc)},
-            lines=[f"error: {exc}"],
-        )
+    manifest, failure = _lookup_loop(config, loop_id)
     if manifest is None:
-        return _emit(
-            "run",
-            as_json=as_json,
-            ok=False,
-            rc=2,
-            data={"loop": loop_id, "error": f"loop '{loop_id}' not found in {config.loops_dir}"},
-            lines=[f"error: loop '{loop_id}' not found in {config.loops_dir}"],
-        )
-
-    problems = manifest.validate()
-    if problems:
-        return _emit(
-            "run",
-            as_json=as_json,
-            ok=False,
-            rc=2,
-            data={"loop": loop_id, "invalid_manifest": problems},
-            lines=[f"invalid manifest: {problem}" for problem in problems],
-        )
+        rc, data, lines = failure
+        return _emit("run", as_json=as_json, ok=False, rc=rc, data=data, lines=lines)
 
     effective_vendor = vendor or manifest.effective_vendor(config.default_vendor)
     try:
@@ -169,7 +173,14 @@ def _cmd_run(
             lines=[f"error: {exc}"],
         )
 
-    preflight = runner.preflight(manifest, config)
+    try:
+        preflight = runner.preflight(manifest, config)
+    except Exception as exc:  # noqa: BLE001 — a faulty adapter must not escape as a traceback
+        preflight = PreflightReport(
+            vendor=effective_vendor,
+            ok=False,
+            problems=[f"preflight raised {type(exc).__name__}: {exc}"],
+        )
 
     if dry_run:
         return _run_dry_run(config, manifest, effective_vendor, preflight, as_json=as_json)
@@ -239,56 +250,84 @@ def _run_execute(
             as_json=as_json,
         )
 
-    worktree = _worktree_dir(config, manifest.id, run_id)
-    worktree.mkdir(parents=True, exist_ok=True)
+    # One finalization boundary around the worktree lifecycle: staging errors and
+    # unexpected adapter faults become normalized failed run records instead of
+    # tracebacks, and retention pruning runs whenever a worktree was created —
+    # including the failure paths. Process-control exceptions (KeyboardInterrupt,
+    # SystemExit) are BaseException and deliberately not caught.
+    worktree: Path | None = None
     try:
-        stage_loop_assets(config, manifest, worktree)
-    except (StagingError, SourcePathError) as exc:
-        return _record_run_failure(
-            store,
-            manifest,
-            effective_vendor,
-            [str(exc)],
-            run_id,
-            started,
-            start_perf,
-            phase="staging",
-            as_json=as_json,
+        try:
+            worktree = _worktree_dir(config, manifest.id, run_id)
+            worktree.mkdir(parents=True, exist_ok=True)
+            stage_loop_assets(config, manifest, worktree)
+        except (StagingError, ValueError, OSError) as exc:
+            return _record_run_failure(
+                store,
+                manifest,
+                effective_vendor,
+                [str(exc)],
+                run_id,
+                started,
+                start_perf,
+                phase="staging",
+                as_json=as_json,
+            )
+        ctx = RunContext(
+            config=config,
+            workdir=worktree,
+            log_path=worktree / "run.log",
+            resolved_outputs=resolved_outputs,
+            # Hand the control-plane run id to any direct CLI the loop invokes so its
+            # run-scoped history archives match the manifest's {{run_id}} outputs.
+            env={RUN_ID_ENV: run_id},
         )
-    ctx = RunContext(
-        config=config,
-        workdir=worktree,
-        log_path=worktree / "run.log",
-        resolved_outputs=resolved_outputs,
-        # Hand the control-plane run id to any direct CLI the loop invokes so its
-        # run-scoped history archives match the manifest's {{run_id}} outputs.
-        env={RUN_ID_ENV: run_id},
-    )
 
-    result = runner.run(manifest, ctx)
-    ended = datetime.now(UTC)
+        try:
+            result = runner.run(manifest, ctx)
+        except Exception as exc:  # noqa: BLE001 — the attempt must not vanish from history
+            ctx.log_path.parent.mkdir(parents=True, exist_ok=True)
+            ctx.log_path.write_text(traceback.format_exc(), encoding="utf-8")
+            return _record_run_failure(
+                store,
+                manifest,
+                effective_vendor,
+                [f"runner raised {type(exc).__name__}: {exc}"],
+                run_id,
+                started,
+                start_perf,
+                phase="execution",
+                log_path=str(ctx.log_path),
+                as_json=as_json,
+            )
+        ended = datetime.now(UTC)
 
-    record = RunRecord(
-        run_id=run_id,
-        loop=manifest.id,
-        vendor=effective_vendor,
-        model=manifest.runtime.model,
-        status=result.status,
-        started_at=started.isoformat(),
-        ended_at=ended.isoformat(),
-        duration_s=round(time.perf_counter() - start_perf, 3),
-        exit_code=result.exit_code,
-        tokens=result.tokens,
-        cost_usd=result.cost_usd,
-        iterations=result.iterations,
-        inputs=manifest.inputs,
-        outputs=result.outputs,
-        declared_outputs=manifest.outputs,
-        log_path=str(result.log_path) if result.log_path else None,
-        problems=result.problems,
-    )
-    record_path = store.record_run(record)
-    _prune_loop_worktrees(config, manifest.id, keep_last=config.worktree_keep_last)
+        record = RunRecord(
+            run_id=run_id,
+            loop=manifest.id,
+            vendor=effective_vendor,
+            model=manifest.runtime.model,
+            status=result.status,
+            started_at=started.isoformat(),
+            ended_at=ended.isoformat(),
+            duration_s=round(time.perf_counter() - start_perf, 3),
+            exit_code=result.exit_code,
+            tokens=result.tokens,
+            cost_usd=result.cost_usd,
+            iterations=result.iterations,
+            inputs=manifest.inputs,
+            outputs=result.outputs,
+            declared_outputs=manifest.outputs,
+            log_path=str(result.log_path) if result.log_path else None,
+            problems=result.problems,
+        )
+        record_path = store.record_run(record)
+    finally:
+        if worktree is not None:
+            try:
+                _prune_loop_worktrees(config, manifest.id, keep_last=config.worktree_keep_last)
+            except OSError as exc:
+                print(f"warning: worktree pruning failed: {exc}", file=sys.stderr)
 
     ok = result.status == STATUS_DONE
     data = {
@@ -324,15 +363,17 @@ def _record_run_failure(
     *,
     phase: str,
     as_json: bool,
+    log_path: str | None = None,
 ) -> int:
-    """Persist a run record for a failure before execution and report it.
+    """Persist a run record for a failed attempt and report it.
 
-    Execution never started, so ``outputs`` (files actually produced) is empty;
+    No execution completed, so ``outputs`` (files actually produced) is empty;
     the manifest's declared contract is preserved separately in
     ``declared_outputs`` so a failed run never claims false provenance.
 
     Args:
-        phase: Which pre-execution phase failed (``preflight`` or ``staging``).
+        phase: Which phase failed (``preflight``, ``staging``, or ``execution``).
+        log_path: Optional log written for the failure (e.g. a traceback).
     """
     record = RunRecord(
         run_id=run_id,
@@ -346,6 +387,7 @@ def _record_run_failure(
         inputs=manifest.inputs,
         outputs=[],
         declared_outputs=manifest.outputs,
+        log_path=log_path,
         problems=problems,
     )
     path = store.record_run(record)
@@ -354,6 +396,7 @@ def _record_run_failure(
         "status": "failed",
         "phase": phase,
         "problems": problems,
+        "log": log_path,
         "run_record": str(path),
     }
     if not as_json:
@@ -620,14 +663,15 @@ def _cmd_deps_check(config: LoopcraftConfig, *, loop_id: str | None = None, as_j
 
 
 def _preflight_loop(config: LoopcraftConfig, loop_id: str) -> tuple[int, dict[str, Any], list[str]]:
-    """Run a loop's adapter preflight; return (exit code, data, text lines)."""
-    try:
-        manifest = _find_manifest(config, loop_id)
-    except ManifestError as exc:
-        return 2, {"loop": loop_id, "error": str(exc)}, [f"error: {exc}"]
+    """Run a loop's adapter preflight; return (exit code, data, text lines).
+
+    Uses the same lookup-and-validate sequence as ``run``, so a manifest that
+    ``run`` would reject (schema or semantic validation) reports the identical
+    structured failure here instead of an adapter ``OK``.
+    """
+    manifest, failure = _lookup_loop(config, loop_id)
     if manifest is None:
-        message = f"error: loop '{loop_id}' not found in {config.loops_dir}"
-        return 2, {"loop": loop_id, "error": message}, [message]
+        return failure
     vendor = manifest.effective_vendor(config.default_vendor)
     try:
         runner = get_runner(vendor)

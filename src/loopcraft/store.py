@@ -18,7 +18,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 from loopcraft.config import LoopcraftConfig
 
@@ -85,13 +85,19 @@ class Store:
         return f"{stamp}-{uuid.uuid4().hex[:8]}"
 
     def record_run(self, record: RunRecord) -> Path:
-        """Write one run record to ``ledger/runs/`` and return its path."""
+        """Write one run record to ``ledger/runs/`` and return its path.
+
+        The write is atomic (temporary file + rename) so history readers never
+        observe a partially written record.
+        """
         self.config.runs_dir.mkdir(parents=True, exist_ok=True)
         path = self.config.runs_dir / _run_record_filename(record.loop, record.run_id)
-        path.write_text(
+        tmp = path.with_name(path.name + ".tmp")
+        tmp.write_text(
             json.dumps(record.to_dict(), indent=2, ensure_ascii=False) + "\n",
             encoding="utf-8",
         )
+        tmp.replace(path)
         return path
 
     def latest_run(self, loop_id: str) -> RunRecord | None:
@@ -103,7 +109,10 @@ class Store:
         """Return all run records for a loop, oldest first.
 
         Handles both current (``<loop>__<run>.json``) and legacy run-record
-        filenames, skipping any unreadable files.
+        filenames. The ledger is durable, hand-editable state that outlives
+        schema revisions, so any unreadable or schema-invalid file (bad JSON,
+        missing required fields, wrong field types) is skipped rather than
+        allowed to take down every history reader for the loop.
         """
         if not self.config.runs_dir.exists():
             return []
@@ -113,12 +122,15 @@ class Store:
                 data = json.loads(path.read_text(encoding="utf-8"))
             except (json.JSONDecodeError, OSError):
                 continue
-            if data.get("loop") != loop_id:
+            if not isinstance(data, dict) or data.get("loop") != loop_id:
                 continue
             fields = {
                 k: data[k] for k in _RUN_FIELDS if k in data and data[k] is not None
             }
-            records.append(RunRecord(**fields))
+            try:
+                records.append(RunRecord(**fields))
+            except ValidationError:
+                continue
         records.sort(key=lambda r: r.started_at)
         return records
 

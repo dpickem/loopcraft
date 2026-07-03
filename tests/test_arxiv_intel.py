@@ -128,12 +128,50 @@ def test_render_digest_links_abstract_and_pdf() -> None:
 
 
 def test_arxiv_output_defaults_are_memory_state_paths() -> None:
-    """Default arXiv output paths point at the memory ledger state tree."""
-    config = ArxivIntelConfig.from_dict({})
-    assert config.output.seen_path.as_posix() == "state/research/arxiv/seen.json"
-    assert config.output.papers_path.as_posix() == "state/research/arxiv/papers.jsonl"
-    assert config.output.history_dir.as_posix() == "state/research/arxiv/history"
-    assert config.output.latest_markdown.as_posix() == "state/research/arxiv/latest.md"
+    """Fixed arXiv output paths point at the memory ledger state tree."""
+    output = OutputPaths()
+    assert output.seen_path.as_posix() == "state/research/arxiv/seen.json"
+    assert output.papers_path.as_posix() == "state/research/arxiv/papers.jsonl"
+    assert output.history_dir.as_posix() == "state/research/arxiv/history"
+    assert output.latest_markdown.as_posix() == "state/research/arxiv/latest.md"
+
+
+def test_arxiv_config_rejects_output_override(tmp_path) -> None:
+    """Finding 3 (review 06): content config cannot redirect durable outputs.
+
+    Neither the public content config nor a gitignored local override may set
+    ``output`` paths — the manifest's declared outputs are the source of truth.
+    """
+    import pytest
+
+    with pytest.raises(ValueError, match="must not override 'output'"):
+        ArxivIntelConfig.from_dict({"output": {"latest_markdown": "state/research/arxiv/custom.md"}})
+
+    (tmp_path / "arxiv_intel.yaml").write_text("ranking: {top_papers: 5}\n", encoding="utf-8")
+    (tmp_path / "arxiv_intel.local.yaml").write_text(
+        "output: {latest_markdown: state/research/arxiv/custom.md}\n", encoding="utf-8"
+    )
+    with pytest.raises(ValueError, match="must not override 'output'"):
+        ArxivIntelConfig.load(tmp_path / "arxiv_intel.yaml")
+
+
+def test_arxiv_fixed_outputs_match_manifest_contract() -> None:
+    """Finding 3 (review 06): the fixed write set equals the declared outputs."""
+    from loopcraft.manifest import LoopManifest
+
+    manifest = LoopManifest.load(REPO_ROOT / "loops" / "arxiv-intel.yaml")
+    out = OutputPaths()
+    expected = {
+        out.seen_path.as_posix(),
+        out.papers_path.as_posix(),
+        f"{out.digest_dir.as_posix()}/{{{{date}}}}.md",
+        f"{out.digest_dir.as_posix()}/{{{{date}}}}.json",
+        f"{out.history_dir.as_posix()}/{{{{run_id}}}}.md",
+        f"{out.history_dir.as_posix()}/{{{{run_id}}}}.json",
+        out.latest_markdown.as_posix(),
+        out.latest_json.as_posix(),
+    }
+    assert set(manifest.outputs) == expected
 
 
 def test_arxiv_loads_yaml_content_config() -> None:
@@ -164,8 +202,10 @@ def test_arxiv_run_produces_manifest_outputs_for_control_plane_run_id(tmp_path, 
 
     loopcraft = LoopcraftConfig.load(REPO_ROOT)
     manifest = LoopManifest.load(REPO_ROOT / "loops" / "arxiv-intel.yaml")
+    # The workflow stamps dated digests with the real current date.
+    date = datetime.now(UTC).strftime("%Y-%m-%d")
     for declared in manifest.outputs:
-        resolved = loopcraft.resolve_state_template(declared, run_id=run_id, date="2026-01-01")
+        resolved = loopcraft.resolve_state_template(declared, run_id=run_id, date=date)
         assert resolved.exists(), f"missing declared output: {declared} -> {resolved}"
 
 

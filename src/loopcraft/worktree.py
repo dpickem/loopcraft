@@ -71,10 +71,12 @@ def _stage_content_config(
 ) -> list[Path]:
     """Stage the loop's ``content.config`` file (and its ``.local.`` sibling).
 
-    Materializes the effective content config into the run worktree preserving its
-    source-relative path (e.g. ``config/x_intel.yaml``). A gitignored
-    ``*.local.*`` sibling is staged alongside it so :func:`_apply_local_shadowing`
-    overlays the private override, keeping the public/private split intact.
+    Materializes the content config into the run worktree preserving its
+    source-relative path (e.g. ``config/x_intel.yaml``). Per the public/private
+    split, the declared *public* file must exist as a committed source asset; a
+    gitignored ``*.local.*`` sibling is staged alongside it so
+    :func:`_apply_local_shadowing` overlays the private override — it shadows
+    the public file's values but never replaces its existence contract.
 
     Args:
         config: Resolved control-plane config used to resolve source paths.
@@ -86,24 +88,26 @@ def _stage_content_config(
 
     Raises:
         SourcePathError: If ``content.config`` escapes the source tree.
-        StagingError: If neither the declared public config nor its ``*.local.*``
-            override is a regular file, so the loop's declared dependency cannot
-            be met.
+        StagingError: If the declared public config is missing or not a regular
+            file, so the loop's declared dependency cannot be met.
     """
     declared = manifest.content.config
     if not declared:
         return []
     rel = PurePosixPath(safe_source_relpath(declared))
     src = config.resolve_source_path(declared)
-    if src.exists() and not src.is_file():
+    if not src.exists():
+        raise StagingError(
+            f"content.config not found: {declared} (the public file must exist and be "
+            "committed; a *.local.* sibling may shadow its values)"
+        )
+    if not src.is_file():
         raise StagingError(f"content.config is not a regular file: {declared}")
-    staged: list[Path] = []
-    if src.is_file():
-        dest = (workdir / rel).resolve()
-        _assert_under(workdir, dest)
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(src, dest)
-        staged.append(dest)
+    dest = (workdir / rel).resolve()
+    _assert_under(workdir, dest)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(src, dest)
+    staged: list[Path] = [dest]
     local_src = local_sibling_path(src)
     if local_src.is_file():
         dest_local = (workdir / rel.parent / local_src.name).resolve()
@@ -111,10 +115,6 @@ def _stage_content_config(
         dest_local.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(local_src, dest_local)
         staged.append(dest_local)
-    if not staged:
-        raise StagingError(
-            f"content.config not found: {declared} (no public file or *.local.* override)"
-        )
     return staged
 
 
