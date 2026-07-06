@@ -58,11 +58,16 @@ def probe_slack_api(config: LoopcraftConfig) -> str | None:
     Returns:
         A problem string if the Slack read probe fails, else None.
     """
-    if config.which("nv-tools") is None:
+    nv_tools = config.which("nv-tools")
+    if nv_tools is None:
         return "api 'slack': requires the nv-tools connector on PATH"
+    # Execute the exact binary which() validated, in the same environment the
+    # scheduled service will use, so the probe cannot check one PATH and run
+    # another.
     rc = run_probe(
-        ["nv-tools", "slack", "list-channels", "--limit", "1", "--format", "json"],
+        [nv_tools, "slack", "list-channels", "--limit", "1", "--format", "json"],
         timeout_s=_PROBE_TIMEOUT_S,
+        env=config.probe_env(),
     )
     if rc is None:
         return "api 'slack': could not run the Slack read probe (nv-tools slack list-channels)"

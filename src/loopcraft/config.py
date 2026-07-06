@@ -506,6 +506,23 @@ class LoopcraftConfig(BaseModel):
             return shutil.which(binary, path=self.scheduled_path)
         return shutil.which(binary)
 
+    def probe_env(self) -> dict[str, str] | None:
+        """Environment for a *live* capability probe subprocess (or None).
+
+        Direct mode returns None (the probe inherits the operator process env).
+        Scheduled mode returns the operator env with ``PATH`` overridden to the
+        scheduled service PATH and the scheduled ``EnvironmentFile`` values
+        overlaid, so a live probe (e.g. ``nv-tools slack list-channels``) runs in
+        the same environment the deployed service will — matching the binary that
+        :meth:`which` validated.
+        """
+        if not self.scheduled_env:
+            return None
+        env = {**os.environ, "PATH": self.scheduled_path}
+        if self.scheduler.environment_file:
+            env.update(parse_env_file(Path(self.scheduler.environment_file).expanduser()))
+        return env
+
     @classmethod
     def load(cls, source_path: Path | str | None = None) -> LoopcraftConfig:
         """Load configuration from ``loopcraft.toml`` in the source tree.

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from loopcraft.config import LoopcraftConfig
+from loopcraft.config import LoopcraftConfig, SchedulerConfig
 from loopcraft.manifest import LoopManifest
 from loopcraft.runners import capabilities
 
@@ -33,6 +33,33 @@ def _manifest(**overrides) -> LoopManifest:
 def test_capabilities_pass_for_valid_loop(tmp_path: Path) -> None:
     """A loop with existing assets and no external deps reports no problems."""
     assert capabilities.check_declared_capabilities(_manifest(), _config(tmp_path)) == []
+
+
+def test_slack_probe_executes_resolved_binary_on_scheduled_path(monkeypatch, tmp_path: Path) -> None:
+    """Review 04: the live Slack probe runs the which()-resolved binary in the
+    scheduled environment, not a bare command on the operator PATH."""
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    nv = bindir / "nv-tools"
+    nv.write_text("#!/bin/sh\n", encoding="utf-8")
+    nv.chmod(0o755)
+    config = (
+        _config(tmp_path)
+        .model_copy(update={"scheduler": SchedulerConfig(path=str(bindir))})
+        .for_scheduled_preflight()
+    )
+    captured: dict[str, object] = {}
+
+    def fake_run_probe(cmd, *, timeout_s, env=None):  # noqa: ANN001, ANN003
+        captured["cmd"] = cmd
+        captured["env"] = env
+        return 0
+
+    monkeypatch.setattr(capabilities, "run_probe", fake_run_probe)
+    assert capabilities.probe_slack_api(config) is None
+    # The probe executes the absolute resolved nv-tools, not the bare name.
+    assert captured["cmd"][0] == str(nv)
+    assert captured["env"]["PATH"] == str(bindir)
 
 
 def test_capabilities_flag_missing_skill(tmp_path: Path) -> None:

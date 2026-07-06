@@ -414,6 +414,33 @@ def test_scheduled_preflight_tool_found_on_configured_path(monkeypatch, tmp_path
     assert not any("mytool" in p for p in plan.preflight_problems)
 
 
+# --- live probes execute on the scheduled PATH (review 04, finding 1) ---------
+
+
+def test_scheduled_slack_probe_runs_on_scheduled_path(monkeypatch, tmp_path: Path) -> None:
+    """A Slack loop passes scheduled preflight when the fake nv-tools lives on
+    scheduler.path and the operator PATH is empty — the live probe executes the
+    scheduled binary, not a bare command on the operator PATH."""
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    for name in ("loopctl", "codex", "nv-tools"):
+        binary = bindir / name
+        binary.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        binary.chmod(0o755)
+    monkeypatch.setenv("PATH", "")  # nothing on the operator PATH
+
+    config = _source(
+        tmp_path,
+        "id: demo\nname: Demo\ncadence: {type: cron, at: '0 9 * * *'}\n"
+        "depends_on: {tools: [nv-tools], auth: [nv-tools], apis: [slack]}\n"
+        "logic: {skill: skills/demo/SKILL.md}\n",
+        scheduler=SchedulerConfig(loopctl_bin=str(bindir / "loopctl"), path=str(bindir)),
+    )
+    plan = deploy.plan_deployment(config, run_preflight=True)
+    assert plan.preflight_problems == []
+    assert plan.ok
+
+
 # --- scheduled credential model in preflight (review 02, finding 1) -----------
 
 _X_API_MANIFEST = (
