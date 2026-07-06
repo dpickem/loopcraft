@@ -106,11 +106,17 @@ loopctl apply ./loops # validate the fleet, then render systemd units
   units into the systemd unit directory and `enable --now` their triggers, with
   rollback on failure — only when every check passed; requires `systemctl`).
 
-When `scheduler.environment_file` is set, `apply`/`auth` treat it as the
-authority for a scheduled service's credentials (a service does not see your
-`.env` or shell): the file must exist, live outside **both** git trees, and
-contain every env var the loops declare. `auth` counts an env var as satisfied
-when it is present in the process env **or** that file.
+`scheduler.environment_file` is the authority for a scheduled service's
+credentials — a systemd unit does not see your `.env` or shell. So `apply` and
+`auth` validate credentials against that file, not the operator's process
+environment: **`apply` preflight and `auth` resolve declared env vars and auth
+bundles (e.g. `x-api`'s token) from the environment file only**, and the file
+must exist, live outside **both** git trees, and contain every env var the loops
+declare. A token that lives only in your shell/`.env` therefore does *not* make
+`apply` pass (the deployed service wouldn't have it), and a token that lives only
+in the environment file *does*. Direct `loopctl run` is unchanged: it executes
+in your current process, so its preflight uses the live environment (including
+`.env`).
 
 Per-host deployment settings (unit scope, service `User=`, the out-of-tree
 secrets `EnvironmentFile=`, the `loopctl` path) live in the `[scheduler]` table

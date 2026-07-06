@@ -617,18 +617,19 @@ def _cmd_auth(config: LoopcraftConfig, *, as_json: bool) -> int:
         env_vars.update(manifest.depends_on.env)
 
     # A scheduled service reads its credentials from scheduler.environment_file,
-    # not the operator's .env/shell, so an env var counts as satisfied when it is
-    # in the process env OR that file. Also surface the file's own health.
-    env_file_keys, env_file_problems = environment_file_health(config)
+    # not the operator's .env/shell, so `auth` reports the *scheduled* credential
+    # model — the same one apply's preflight enforces. Probes and env checks run
+    # against a scheduled config; the file's own health is surfaced too.
+    scheduled = config.for_scheduled_preflight()
+    _, env_file_problems = environment_file_health(config)
 
     items: list[dict[str, Any]] = []
     for bundle in sorted(auth_bundles):
-        items.append(_auth_item("auth", bundle, _probe_auth_bundle(config, bundle), AUTH_GUIDANCE))
+        items.append(_auth_item("auth", bundle, _probe_auth_bundle(scheduled, bundle), AUTH_GUIDANCE))
     for api in sorted(apis):
-        items.append(_auth_item("api", api, _probe_declared_api(config, api), API_GUIDANCE))
+        items.append(_auth_item("api", api, _probe_declared_api(scheduled, api), API_GUIDANCE))
     for var in sorted(env_vars):
-        satisfied = config.env_value(var) or var in env_file_keys
-        problem = None if satisfied else f"env var not set (process env or environment_file): {var}"
+        problem = None if scheduled.env_value(var) else f"env var not in scheduled environment: {var}"
         items.append(_auth_item("env", var, problem, {}))
     if config.scheduler.environment_file:
         problem = env_file_problems[0] if env_file_problems else None

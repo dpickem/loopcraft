@@ -17,6 +17,7 @@ from pathlib import Path, PurePosixPath
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from loopcraft.env import parse_env_file
 from loopcraft.paths import assert_under, safe_relpath
 
 # --- globals -------------------------------------------------------------------
@@ -324,6 +325,11 @@ class LoopcraftConfig(BaseModel):
     optional_dependencies: dict[str, str] = Field(default_factory=dict)
     artifact_store: str | None = None
     scheduler: SchedulerConfig = Field(default_factory=SchedulerConfig)
+    #: When True, ``env_value`` resolves against the scheduled service's
+    #: ``EnvironmentFile`` instead of the operator's process env. Set only on the
+    #: copy handed to ``apply``/``auth`` preflight (see ``for_scheduled_preflight``),
+    #: so a direct ``loopctl run`` keeps reading the live process environment.
+    scheduled_env: bool = False
     extra: dict[str, object] = Field(default_factory=dict)
 
     # --- source-tree locations ---------------------------------------------
@@ -431,8 +437,38 @@ class LoopcraftConfig(BaseModel):
             raise SourcePathError(str(exc)) from exc
 
     def env_value(self, name: str) -> str | None:
-        """Return one environment value through the central config object."""
+        """Return one environment value through the central config object.
+
+        In the default (direct) mode this reads the live process environment
+        (which includes any ``.env`` loaded at the CLI boundary). On a config
+        marked for scheduled preflight (:meth:`for_scheduled_preflight`) it
+        resolves against the scheduled service's ``EnvironmentFile`` instead, so
+        ``apply``/``auth`` validate exactly what the systemd unit will see rather
+        than the operator's shell.
+        """
+        if self.scheduled_env:
+            return self.scheduled_env_value(name)
         return os.environ.get(name)
+
+    def scheduled_env_value(self, name: str) -> str | None:
+        """Return the value a scheduled systemd service would see for ``name``.
+
+        The authority is ``scheduler.environment_file`` — a service does not
+        inherit the operator's process env or ``.env``. Returns None when no
+        environment file is configured or the key is absent.
+        """
+        env_file = self.scheduler.environment_file
+        if not env_file:
+            return None
+        return parse_env_file(Path(env_file).expanduser()).get(name)
+
+    def for_scheduled_preflight(self) -> LoopcraftConfig:
+        """Return a copy whose ``env_value`` resolves against the scheduled env.
+
+        Used by ``apply``/``auth`` so credential probes reflect the deployed
+        service's ``EnvironmentFile`` rather than the interactive shell.
+        """
+        return self.model_copy(update={"scheduled_env": True})
 
     @classmethod
     def load(cls, source_path: Path | str | None = None) -> LoopcraftConfig:

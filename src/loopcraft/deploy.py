@@ -265,7 +265,12 @@ def plan_deployment(
 
     preflights: list[LoopPreflight] = []
     if run_preflight:
-        preflights = [preflight_loop(config, m) for m in catalog.manifests]
+        # Preflight for deployment must see what the scheduled service will see
+        # (its EnvironmentFile), not the operator's shell — so a token only in
+        # .env cannot make apply pass, and a token only in the EnvironmentFile
+        # is accepted. Direct `loopctl run` keeps using the process env.
+        scheduled = config.for_scheduled_preflight()
+        preflights = [preflight_loop(scheduled, m) for m in catalog.manifests]
 
     return DeploymentPlan(
         loops_dir=str(target),

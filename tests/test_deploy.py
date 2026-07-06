@@ -32,6 +32,23 @@ class _FailRunner:
         return PreflightReport(vendor=self.vendor, ok=False, problems=["missing token"])
 
 
+class _CapabilityRunner:
+    """Stub adapter whose preflight runs the shared runtime-neutral checks.
+
+    Lets scheduled-credential tests exercise the real env/auth resolution
+    (against whatever config preflight receives) without a vendor binary.
+    """
+
+    vendor = "capvendor"
+
+    def preflight(self, loop, config):  # noqa: ANN001
+        """Delegate to the shared capability check on the given config."""
+        from loopcraft.runners.capabilities import check_declared_capabilities
+
+        problems = check_declared_capabilities(loop, config)
+        return PreflightReport(vendor=self.vendor, ok=not problems, problems=problems)
+
+
 def _abs_loopctl(tmp_path: Path) -> str:
     """Create a dummy executable and return its absolute path.
 
@@ -351,3 +368,56 @@ def test_validate_environment_rejects_in_tree_env_file(tmp_path: Path) -> None:
     )
     problems = deploy.validate_environment(config, load_all(config.loops_dir).manifests)
     assert any("outside the memory tree" in p for p in problems)
+
+
+# --- scheduled credential model in preflight (review 02, finding 1) -----------
+
+_X_API_MANIFEST = (
+    "id: demo\nname: Demo\ncadence: {type: cron, at: '0 9 * * *'}\n"
+    "depends_on: {auth: [x-api]}\nlogic: {skill: skills/demo/SKILL.md}\n"
+)
+
+
+def test_scheduled_preflight_accepts_token_from_env_file(monkeypatch, tmp_path: Path) -> None:
+    """A token only in the environment_file satisfies apply preflight (no x-api problem)."""
+    monkeypatch.delenv("X_API_BEARER_TOKEN", raising=False)
+    monkeypatch.delenv("X_API_OAUTH2_ACCESS_TOKEN", raising=False)
+    env_file = tmp_path / "secrets.env"
+    env_file.write_text("X_API_BEARER_TOKEN=from-file\n", encoding="utf-8")
+    config = _source(
+        tmp_path,
+        _X_API_MANIFEST,
+        scheduler=SchedulerConfig(loopctl_bin=_abs_loopctl(tmp_path), environment_file=str(env_file)),
+    )
+    monkeypatch.setattr(deploy, "get_runner", lambda vendor: _CapabilityRunner())
+    plan = deploy.plan_deployment(config, run_preflight=True)
+    assert not any("x-api" in p for p in plan.preflight_problems)
+
+
+def test_scheduled_preflight_ignores_token_only_in_process_env(monkeypatch, tmp_path: Path) -> None:
+    """A token only in the operator's shell does NOT satisfy scheduled preflight."""
+    monkeypatch.setenv("X_API_BEARER_TOKEN", "from-shell")
+    config = _source(
+        tmp_path,
+        _X_API_MANIFEST,
+        scheduler=SchedulerConfig(loopctl_bin=_abs_loopctl(tmp_path)),  # no environment_file
+    )
+    monkeypatch.setattr(deploy, "get_runner", lambda vendor: _CapabilityRunner())
+    plan = deploy.plan_deployment(config, run_preflight=True)
+    assert any("x-api" in p for p in plan.preflight_problems)
+
+
+def test_scheduled_preflight_satisfies_declared_env_from_env_file(monkeypatch, tmp_path: Path) -> None:
+    """A depends_on.env var is satisfied by the environment_file during scheduled preflight."""
+    monkeypatch.delenv("DEMO_TOKEN", raising=False)
+    env_file = tmp_path / "secrets.env"
+    env_file.write_text("DEMO_TOKEN=from-file\n", encoding="utf-8")
+    config = _source(
+        tmp_path,
+        "id: demo\nname: Demo\ncadence: {type: cron, at: '0 9 * * *'}\n"
+        "depends_on: {env: [DEMO_TOKEN]}\nlogic: {skill: skills/demo/SKILL.md}\n",
+        scheduler=SchedulerConfig(loopctl_bin=_abs_loopctl(tmp_path), environment_file=str(env_file)),
+    )
+    monkeypatch.setattr(deploy, "get_runner", lambda vendor: _CapabilityRunner())
+    plan = deploy.plan_deployment(config, run_preflight=True)
+    assert not any("DEMO_TOKEN" in p for p in plan.preflight_problems)
