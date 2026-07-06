@@ -370,6 +370,50 @@ def test_validate_environment_rejects_in_tree_env_file(tmp_path: Path) -> None:
     assert any("outside the memory tree" in p for p in problems)
 
 
+# --- scheduled binary resolution in preflight (review 03, finding 1) ----------
+
+_TOOL_MANIFEST = (
+    "id: demo\nname: Demo\ncadence: {type: cron, at: '0 9 * * *'}\n"
+    "depends_on: {tools: [mytool]}\nlogic: {skill: skills/demo/SKILL.md}\n"
+)
+
+
+def _make_tool(tmp_path: Path, name: str = "mytool") -> Path:
+    """Create an executable stub tool and return its directory."""
+    tool_dir = tmp_path / "tools"
+    tool_dir.mkdir(parents=True, exist_ok=True)
+    binary = tool_dir / name
+    binary.write_text("#!/bin/sh\n", encoding="utf-8")
+    binary.chmod(0o755)
+    return tool_dir
+
+
+def test_scheduled_preflight_tool_missing_from_scheduled_path(monkeypatch, tmp_path: Path) -> None:
+    """A tool only on the operator PATH does not satisfy scheduled preflight."""
+    tool_dir = _make_tool(tmp_path)
+    monkeypatch.setenv("PATH", str(tool_dir))  # visible to the operator, not the service
+    config = _source(
+        tmp_path, _TOOL_MANIFEST, scheduler=SchedulerConfig(loopctl_bin=_abs_loopctl(tmp_path))
+    )
+    monkeypatch.setattr(deploy, "get_runner", lambda vendor: _CapabilityRunner())
+    plan = deploy.plan_deployment(config, run_preflight=True)
+    assert any("mytool" in p for p in plan.preflight_problems)
+
+
+def test_scheduled_preflight_tool_found_on_configured_path(monkeypatch, tmp_path: Path) -> None:
+    """The same tool satisfies preflight when scheduler.path includes its dir."""
+    tool_dir = _make_tool(tmp_path)
+    monkeypatch.delenv("PATH", raising=False)  # not on operator PATH at all
+    config = _source(
+        tmp_path,
+        _TOOL_MANIFEST,
+        scheduler=SchedulerConfig(loopctl_bin=_abs_loopctl(tmp_path), path=str(tool_dir)),
+    )
+    monkeypatch.setattr(deploy, "get_runner", lambda vendor: _CapabilityRunner())
+    plan = deploy.plan_deployment(config, run_preflight=True)
+    assert not any("mytool" in p for p in plan.preflight_problems)
+
+
 # --- scheduled credential model in preflight (review 02, finding 1) -----------
 
 _X_API_MANIFEST = (

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import os
 import re
+import shutil
 import tomllib
 from datetime import date, datetime
 from enum import IntEnum, StrEnum
@@ -54,6 +55,11 @@ DEFAULT_UNIT_PREFIX = "loop-"
 #: Subpath (under the memory tree) where ``loopctl apply`` renders units before
 #: install, so generated files never land in either git tree.
 SYSTEMD_STAGE_SUBPATH = ("var", "systemd")
+#: systemd's compiled-in default PATH for a service with no explicit ``PATH=``.
+#: Scheduled preflight resolves runtime/tool binaries against this (unless
+#: ``[scheduler].path`` overrides it), and the rendered unit sets exactly the
+#: same value, so ``apply`` validates the PATH the service actually runs with.
+SYSTEMD_DEFAULT_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
 #: User agent sent by loopcraft HTTP clients (arXiv, X).
 HTTP_USER_AGENT = "loopcraft/0.1"
@@ -296,6 +302,10 @@ class SchedulerConfig(BaseModel):
             scope, where the units already run as the invoking user).
         environment_file: Optional ``EnvironmentFile=`` path holding the host's
             secrets. Per the security model this lives outside *both* git trees.
+        path: Optional ``PATH`` the scheduled service runs with. When set it is
+            rendered as ``Environment=PATH=`` and ``apply`` resolves runtime/tool
+            binaries against it; when unset, systemd's default service PATH is
+            used for both.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -305,6 +315,7 @@ class SchedulerConfig(BaseModel):
     scope: SystemdScope = SystemdScope.SYSTEM
     user: str | None = None
     environment_file: str | None = None
+    path: str | None = None
 
 
 class LoopcraftConfig(BaseModel):
@@ -463,12 +474,37 @@ class LoopcraftConfig(BaseModel):
         return parse_env_file(Path(env_file).expanduser()).get(name)
 
     def for_scheduled_preflight(self) -> LoopcraftConfig:
-        """Return a copy whose ``env_value`` resolves against the scheduled env.
+        """Return a copy whose ``env_value``/``which`` resolve against the
+        scheduled service environment.
 
-        Used by ``apply``/``auth`` so credential probes reflect the deployed
-        service's ``EnvironmentFile`` rather than the interactive shell.
+        Used by ``apply``/``auth`` so credential *and* binary probes reflect the
+        deployed service's ``EnvironmentFile`` and ``PATH`` rather than the
+        interactive shell.
         """
         return self.model_copy(update={"scheduled_env": True})
+
+    @property
+    def scheduled_path(self) -> str:
+        """PATH a scheduled systemd service will use for binary lookup.
+
+        ``scheduler.path`` when set, else systemd's default service PATH. The
+        rendered unit sets exactly this as ``Environment=PATH=`` and scheduled
+        preflight resolves runtime/tool binaries against it, so ``apply``
+        validates the same PATH the service runs with.
+        """
+        return self.scheduler.path or SYSTEMD_DEFAULT_PATH
+
+    def which(self, binary: str) -> str | None:
+        """Resolve a binary on PATH, honoring scheduled vs direct mode.
+
+        Direct mode uses the operator's PATH; a config marked for scheduled
+        preflight (:meth:`for_scheduled_preflight`) resolves against the
+        scheduled service PATH (see :attr:`scheduled_path`), so ``apply`` cannot
+        pass on a runtime/tool binary the systemd service would not find.
+        """
+        if self.scheduled_env:
+            return shutil.which(binary, path=self.scheduled_path)
+        return shutil.which(binary)
 
     @classmethod
     def load(cls, source_path: Path | str | None = None) -> LoopcraftConfig:

@@ -9,7 +9,6 @@ from types import SimpleNamespace
 from loopcraft.config import LoopcraftConfig
 from loopcraft.manifest import LoopManifest
 from loopcraft.runners import capabilities as capabilities_module
-from loopcraft.runners import codex as codex_module
 from loopcraft.runners import base as runner_base_module
 from loopcraft.runners.base import (
     RunContext,
@@ -250,7 +249,7 @@ def test_preflight_passes_when_probes_ok(tmp_path: Path, monkeypatch) -> None:
     """Preflight passes when the binary, probes, skill, and verify are OK."""
     config = _config(tmp_path)
     manifest = _manifest(depends_on={"auth": ["nv-tools"], "apis": ["slack"]})
-    monkeypatch.setattr(codex_module.shutil, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(LoopcraftConfig, "which", lambda self, name: f"/usr/bin/{name}")
     monkeypatch.setitem(capabilities_module.AUTH_PROBES, "nv-tools", lambda config: None)
     monkeypatch.setitem(capabilities_module.API_PROBES, "slack", lambda config: None)
     report = CodexRunner().preflight(manifest, config)

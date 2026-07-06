@@ -31,6 +31,19 @@ class _FailRunner(_OkRunner):
         return PreflightReport(vendor=self.vendor, ok=False, problems=["missing token"])
 
 
+class _CapabilityRunner(_OkRunner):
+    """Stub adapter that runs the shared runtime-neutral capability checks."""
+
+    vendor = "m2cap"
+
+    def preflight(self, loop, config):  # noqa: ANN001
+        """Delegate to the shared capability check on the given config."""
+        from loopcraft.runners.capabilities import check_declared_capabilities
+
+        problems = check_declared_capabilities(loop, config)
+        return PreflightReport(vendor=self.vendor, ok=not problems, problems=problems)
+
+
 def _demo_source(monkeypatch, tmp_path: Path, manifest_text: str, filename: str = "demo.yaml") -> Path:
     """Build a temp source tree with one skill + manifest; point loopctl at it."""
     source = tmp_path / "src"
@@ -283,6 +296,27 @@ def test_fleet_degrades_on_broken_manifest(monkeypatch, tmp_path: Path, capsys) 
     assert payload["ok"] is False
     assert any(l["id"] == "demo" for l in payload["data"]["loops"])
     assert any("broken.yaml" in p for p in payload["data"]["problems"])
+
+
+def test_apply_blocks_when_tool_missing_on_scheduled_path(monkeypatch, tmp_path: Path, capsys) -> None:
+    """Finding (review 03): a declared tool absent from the scheduled PATH blocks
+    apply before any unit is written."""
+    monkeypatch.setattr(deploy, "get_runner", lambda vendor: _CapabilityRunner())
+    _demo_source(
+        monkeypatch,
+        tmp_path,
+        "id: demo\n"
+        "name: Demo\n"
+        "cadence: {type: cron, at: '0 9 * * *'}\n"
+        "depends_on: {tools: [definitely-not-a-real-tool]}\n"
+        "logic: {skill: skills/demo/SKILL.md}\n",
+    )
+    rc = cli.main(["--json", "apply"])
+    payload = json.loads(capsys.readouterr().out)
+    assert rc == 1
+    assert any("definitely-not-a-real-tool" in p for p in payload["data"]["preflight_problems"])
+    assert payload["data"]["written"] == []
+    assert not (tmp_path / "mem" / "var" / "systemd").exists()
 
 
 def test_apply_structural_problem_writes_nothing(monkeypatch, tmp_path: Path, capsys) -> None:

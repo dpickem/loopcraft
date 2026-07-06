@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from loopcraft.config import LoopcraftConfig, SchedulerConfig, SystemdScope
+from loopcraft.config import SYSTEMD_DEFAULT_PATH, LoopcraftConfig, SchedulerConfig, SystemdScope
 from loopcraft.manifest import LoopManifest
 from loopcraft.scheduler import (
     SchedulerError,
@@ -122,6 +122,24 @@ def test_user_scope_omits_user_directive(tmp_path) -> None:
         u for u in render_loop_units(config, _cron_manifest()).units if u.kind == UnitKind.SERVICE
     )
     assert "User=" not in service.content
+
+
+def test_service_renders_default_path(tmp_path) -> None:
+    """With no scheduler.path, the unit sets systemd's default service PATH."""
+    service = next(
+        u for u in render_loop_units(_config(tmp_path), _cron_manifest()).units
+        if u.kind == UnitKind.SERVICE
+    )
+    assert f"Environment=PATH={SYSTEMD_DEFAULT_PATH}" in service.content
+
+
+def test_service_renders_configured_path(tmp_path) -> None:
+    """A configured scheduler.path is rendered as the service PATH (finding 1)."""
+    config = _config(tmp_path, SchedulerConfig(path="/opt/loopcraft/bin:/usr/bin"))
+    service = next(
+        u for u in render_loop_units(config, _cron_manifest()).units if u.kind == UnitKind.SERVICE
+    )
+    assert "Environment=PATH=/opt/loopcraft/bin:/usr/bin" in service.content
 
 
 def test_render_service_uses_explicit_loopctl_command(tmp_path) -> None:

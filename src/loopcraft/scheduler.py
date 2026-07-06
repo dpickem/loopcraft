@@ -254,6 +254,10 @@ def _render_service(
         "[Service]",
         "Type=oneshot",
         f"WorkingDirectory={config.source_path}",
+        # PATH is set explicitly to exactly the PATH apply resolved runtime/tool
+        # binaries against, so the service finds `codex`/`nv-tools`/etc. instead
+        # of relying on systemd's ambient (often smaller) default.
+        f"Environment=PATH={config.scheduled_path}",
         f"Environment=LOOPCRAFT_SOURCE={config.source_path}",
         f"Environment=LOOPCRAFT_MEMORY={config.memory_path}",
     ]

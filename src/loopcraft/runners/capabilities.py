@@ -9,7 +9,6 @@ without touching a specific runner.
 
 from __future__ import annotations
 
-import shutil
 from collections.abc import Callable
 from pathlib import Path
 
@@ -41,7 +40,7 @@ def probe_nv_tools_auth(config: LoopcraftConfig) -> str | None:
     Returns:
         A problem string if nv-tools is missing, else None.
     """
-    if shutil.which("nv-tools") is None:
+    if config.which("nv-tools") is None:
         return "auth bundle 'nv-tools': nv-tools CLI not found on PATH"
     return None
 
@@ -59,7 +58,7 @@ def probe_slack_api(config: LoopcraftConfig) -> str | None:
     Returns:
         A problem string if the Slack read probe fails, else None.
     """
-    if shutil.which("nv-tools") is None:
+    if config.which("nv-tools") is None:
         return "api 'slack': requires the nv-tools connector on PATH"
     rc = run_probe(
         ["nv-tools", "slack", "list-channels", "--limit", "1", "--format", "json"],
@@ -314,7 +313,7 @@ def check_declared_capabilities(loop: LoopManifest, config: LoopcraftConfig) -> 
 
     for tool in loop.depends_on.tools:
         binary = TOOL_BINARIES.get(tool, tool)
-        if shutil.which(binary) is None:
+        if config.which(binary) is None:
             problems.append(f"declared tool '{tool}' not found on PATH ({binary})")
 
     for var in loop.depends_on.env:

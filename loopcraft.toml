@@ -45,3 +45,10 @@ worktree_keep_last = 100
 # OUTSIDE both git trees, with locked-down permissions; manifests reference
 # credential names, never values.
 # environment_file = "/etc/loopcraft/loopcraft.env"
+
+# PATH the scheduled service runs with. A systemd unit does not inherit your
+# interactive shell PATH, so set this to include the dirs holding `codex`,
+# `nv-tools`, and any declared tool binaries for the service user. When set it is
+# rendered as `Environment=PATH=` and `apply` resolves runtime/tool binaries
+# against it; when unset, systemd's default service PATH is used for both.
+# path = "/opt/loopcraft/bin:/usr/local/bin:/usr/bin:/bin"

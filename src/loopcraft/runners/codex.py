@@ -7,8 +7,6 @@ probes (tools/auth/APIs) live in :mod:`loopcraft.runners.capabilities`.
 
 from __future__ import annotations
 
-import shutil
-
 from loopcraft.config import LoopcraftConfig
 from loopcraft.manifest import LoopManifest
 from loopcraft.runners.base import (
@@ -51,7 +49,7 @@ class CodexRunner(BaseRunner):
         """
         problems: list[str] = []
 
-        if shutil.which("codex") is None:
+        if config.which("codex") is None:
             problems.append("codex CLI not found on PATH (install the Codex runtime)")
 
         # Runtime-neutral checks (skill/verify assets, tools, env, auth, apis).

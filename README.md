@@ -95,10 +95,15 @@ loopctl apply ./loops # validate the fleet, then render systemd units
 
   The rendered `ExecStart` uses the **absolute** path of `scheduler.loopctl_bin`
   (resolved on PATH when a bare name), since a systemd unit does not inherit
-  your shell PATH; `apply` fails if it cannot be resolved. Default `apply` is
-  **side-effect-free unless the plan is fully clean** — a plan blocked by an
-  unmet dependency writes nothing (pass `--render-invalid` to render diagnostic
-  units anyway), so `fleet` never shows `staged` for a rejected loop.
+  your shell PATH; `apply` fails if it cannot be resolved. For the same reason
+  the rendered unit sets `Environment=PATH=` to the **scheduled PATH**
+  (`scheduler.path`, or systemd's default when unset), and `apply` preflight
+  resolves runtime/tool binaries (`codex`, `nv-tools`, declared tools) against
+  that exact PATH — so a binary that only lives on your shell PATH does not make
+  `apply` pass. Default `apply` is **side-effect-free unless the plan is fully
+  clean** — a plan blocked by an unmet dependency writes nothing (pass
+  `--render-invalid` to render diagnostic units anyway), so `fleet` never shows
+  `staged` for a rejected loop.
 
   Flags: `--dry-run` (validate + plan, write nothing), `--skip-preflight`
   (structural + DAG checks only), `--render-invalid` (render even when checks
