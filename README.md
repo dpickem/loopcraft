@@ -28,6 +28,7 @@ environment.
 
 ```bash
 make list                       # show known loops
+make fleet                      # all loops in a table (schedule, last run, install state)
 make validate                   # validate every manifest in loops/
 make check                      # probe runtimes/tools + dry-run validate
 make run LOOP=slack-triage      # run one loop now, headless
@@ -35,6 +36,9 @@ make run LOOP=arxiv-intel       # run daily arXiv intelligence through loopctl
 make run LOOP=x-intel           # run daily X intelligence through loopctl
 make status                     # last run per loop
 make logs LOOP=slack-triage     # tail the last run's log
+make init                       # bootstrap the memory tree (M2)
+make auth                       # credential status + guidance (M2)
+make apply                      # validate the fleet + render systemd units (M2)
 make test                       # unit tests
 ```
 
@@ -55,16 +59,48 @@ Override the memory location at runtime with `LOOPCRAFT_MEMORY`.
 > (`claude`, `cursor-agent`) are reported but never fail the check, so a
 > Codex-only M1 setup stays green. Use `loopctl deps check --loop <id>` to check
 > just one loop's declared runtime and dependencies. Claude/Cursor adapters, the
-> scheduler, harvester, and UI arrive in later milestones (M2+).
+> harvester, and UI arrive in later milestones (M3+).
 
-### M2 Tasks
+## Scheduling & deployment (M2)
 
-- Add scheduler/auth/apply: bootstrap the host, validate auth/env/tool
-  dependencies, and render the loop manifests into deployable timers/services.
-- Reorganize core control-plane plumbing into `loopcraft/control/` once the M2
-  scheduler/auth/apply boundary lands. Keep this separate from research-loop
-  cleanup so the control-plane refactor follows the new scheduler shape instead
-  of pre-optimizing M1 modules.
+M2 turns one-shot `loopctl run` into a scheduled, unattended fleet on the
+always-on host. Three commands stand it up:
+
+```bash
+loopctl init          # bootstrap the memory tree (ledger/runs/artifacts + git)
+loopctl auth          # report credential status + guidance for every declared dep
+loopctl apply ./loops # validate the fleet, then render systemd units
+```
+
+- **`loopctl init`** creates the memory-tree directories (`ledger/`,
+  `ledger/runs/`, `artifacts/`, `var/systemd/`), `git init`s the memory tree
+  (skip with `--no-git`), and confirms the source tree is usable. It is
+  idempotent and never writes to the source repo.
+- **`loopctl auth`** aggregates the `depends_on.auth`, `apis`, and `env`
+  declared across all loops, probes each once (read-only), and reports which are
+  satisfied on this host and how to fix the rest. This is the guided credential
+  check the design runs before `apply`.
+- **`loopctl apply`** runs the full pre-deploy check first — manifest schema,
+  the cross-loop dependency DAG (duplicate ids, multi-producer outputs, unknown
+  upstream loops, cycles), and each loop's adapter preflight (tools/auth/env) —
+  so **an unmet dependency is reported at `apply`, not at 3am**. It then renders
+  each loop's `cadence` into systemd units under `<memory>/var/systemd/`:
+  - a `cron` cadence renders a `.timer` + `.service` pair (`OnCalendar=` from the
+    cron expression, `Persistent=true` so a trigger missed while the VM was down
+    is caught up);
+  - an `on-artifact` cadence renders a `.path` + `.service` pair that wakes the
+    loop when an upstream ledger output changes;
+  - `event` cadence has no unattended representation yet (it lands in M8).
+
+  Flags: `--dry-run` (validate + plan, write nothing), `--skip-preflight`
+  (structural + DAG checks only), `--out DIR` (render elsewhere), and
+  `--install` (copy units into the systemd unit directory and `enable --now`
+  their triggers — only when every check passed; requires `systemctl`).
+
+Per-host deployment settings (unit scope, service `User=`, the out-of-tree
+secrets `EnvironmentFile=`, the `loopctl` path) live in the `[scheduler]` table
+of `loopcraft.toml`. Secrets stay outside **both** git trees; manifests
+reference credential names, never values.
 
 ### Runtime Models
 
@@ -101,6 +137,8 @@ src/loopcraft/
   cli.py          # loopctl
   config.py       # loopcraft.toml + path resolution
   manifest.py     # LoopManifest schema, validator, dependency DAG check
+  scheduler.py    # cron -> systemd OnCalendar + timer/service/path unit rendering
+  deploy.py       # fleet pre-deploy validation, unit planning, install (apply)
   store.py        # the single sanctioned persistence path (ledger + run records)
   runners/        # the portability seam: base protocol + codex adapter
   research_intel/arxiv/    # arXiv intelligence loop implementation

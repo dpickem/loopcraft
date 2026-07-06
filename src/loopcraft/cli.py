@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import shutil
+import subprocess
 import sys
 import time
 import traceback
@@ -18,7 +19,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
-from loopcraft.cli_output import CommandOutcome, emit as _emit
+from loopcraft.cli_output import CommandOutcome, emit as _emit, render_table
 from loopcraft.config import (
     ACTIVE_LOOP_ENV,
     RUN_DATE_ENV,
@@ -26,11 +27,24 @@ from loopcraft.config import (
     ExitCode,
     LoopcraftConfig,
 )
+from loopcraft.deploy import (
+    DeploymentPlan,
+    install_units,
+    plan_deployment,
+    systemd_unit_dir,
+    write_units,
+)
 from loopcraft.env import load_dotenv
-from loopcraft.manifest import LoopManifest, ManifestError, find_manifest, load_all
+from loopcraft.manifest import CadenceType, LoopManifest, ManifestError, find_manifest, load_all
 from loopcraft.runners import RunContext, get_runner
 from loopcraft.runners.base import PreflightReport, RunStatus
-from loopcraft.runners.capabilities import content_assets
+from loopcraft.runners.capabilities import (
+    API_GUIDANCE,
+    API_PROBES,
+    AUTH_GUIDANCE,
+    AUTH_PROBES,
+    content_assets,
+)
 from loopcraft.store import RunRecord, Store
 from loopcraft.worktree import (
     StagingError,
@@ -63,11 +77,29 @@ def main(argv: list[str] | None = None) -> int:
     p_validate = sub.add_parser("validate", help="Validate all manifests in loops/.")
     p_validate.add_argument("loops_dir", nargs="?", help="Override the loops directory.")
 
-    p_apply = sub.add_parser("apply", help="Validate manifests (deployment lands in M2).")
+    p_init = sub.add_parser("init", help="Bootstrap the memory tree and check the source tree.")
+    p_init.add_argument("--host", help="Host label for this deployment (informational).")
+    p_init.add_argument(
+        "--no-git", action="store_true", help="Do not `git init` the memory tree."
+    )
+
+    sub.add_parser("auth", help="Report credential status + guidance for the fleet's deps.")
+
+    p_apply = sub.add_parser("apply", help="Validate the fleet + render/install systemd units.")
     p_apply.add_argument("loops_dir", nargs="?", help="Override the loops directory.")
-    p_apply.add_argument("--dry-run", action="store_true", help="Validate only.")
+    p_apply.add_argument("--dry-run", action="store_true", help="Validate + plan only; write nothing.")
+    p_apply.add_argument("--out", help="Directory to render units into (default: <memory>/var/systemd).")
+    p_apply.add_argument(
+        "--install", action="store_true", help="Install + enable the rendered units via systemctl."
+    )
+    p_apply.add_argument(
+        "--skip-preflight",
+        action="store_true",
+        help="Validate manifests + DAG only; skip per-loop auth/tool preflight.",
+    )
 
     sub.add_parser("list", help="List known loops.")
+    sub.add_parser("fleet", help="Show all loops in a formatted table (schedule, last run, install state).")
     sub.add_parser("status", help="Show fleet status (last run per loop).")
 
     p_logs = sub.add_parser("logs", help="Print the last run log for a loop.")
@@ -89,10 +121,24 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_run(config, args.loop, vendor=args.vendor, dry_run=args.dry_run, as_json=as_json)
     if args.command == "validate":
         return _cmd_validate(config, args.loops_dir, as_json=as_json)
+    if args.command == "init":
+        return _cmd_init(config, host=args.host, git=not args.no_git, as_json=as_json)
+    if args.command == "auth":
+        return _cmd_auth(config, as_json=as_json)
     if args.command == "apply":
-        return _cmd_apply(config, args.loops_dir, as_json=as_json)
+        return _cmd_apply(
+            config,
+            args.loops_dir,
+            dry_run=args.dry_run,
+            out=args.out,
+            install=args.install,
+            skip_preflight=args.skip_preflight,
+            as_json=as_json,
+        )
     if args.command == "list":
         return _cmd_list(config, as_json=as_json)
+    if args.command == "fleet":
+        return _cmd_fleet(config, as_json=as_json)
     if args.command == "status":
         return _cmd_status(config, as_json=as_json)
     if args.command == "logs":
@@ -465,29 +511,267 @@ def _cmd_validate(config: LoopcraftConfig, loops_dir: str | None, *, as_json: bo
     return rc
 
 
-def _cmd_apply(config: LoopcraftConfig, loops_dir: str | None, *, as_json: bool) -> int:
-    """Validate manifests; scheduler deployment lands in M2."""
-    target = Path(loops_dir) if loops_dir else config.loops_dir
-    catalog = load_all(target)
-    manifests, problems = catalog.manifests, catalog.problems
-    ok = catalog.ok
-    note = "scheduler deployment (systemd units) lands in M2; M1 validates only."
+def _cmd_init(config: LoopcraftConfig, *, host: str | None, git: bool, as_json: bool) -> int:
+    """Bootstrap the memory tree and confirm the source tree is usable.
+
+    Creates the ledger, run-record, and artifact directories in the memory tree
+    (idempotent), optionally initializes it as a git repo, and reports whether
+    the source tree has the expected ``loops/`` directory. Never writes to the
+    source tree.
+    """
+    created: list[str] = []
+    for directory in (
+        config.ledger_dir,
+        config.runs_dir,
+        config.artifacts_dir,
+        config.systemd_stage_dir,
+    ):
+        if not directory.exists():
+            created.append(str(directory))
+        directory.mkdir(parents=True, exist_ok=True)
+
+    git_status = "skipped"
+    if git:
+        git_status = _git_init_memory(config.memory_path)
+
+    source_ok = config.loops_dir.is_dir()
+    ok = source_ok and not git_status.startswith("error")
     data = {
-        "loops_dir": str(target),
-        "validated": len(manifests),
+        "host": host or config.host,
+        "source_path": str(config.source_path),
+        "memory_path": str(config.memory_path),
+        "created": created,
+        "git": git_status,
+        "source_ok": source_ok,
         "ok": ok,
-        "problems": problems,
-        "note": note,
     }
-    lines = [f"validated {len(manifests)} manifest(s) in {target}"]
-    if ok:
-        lines.append("all manifests valid")
-        lines.append(f"note: {note}")
-    rc = _emit("apply", as_json=as_json, ok=ok, rc=ExitCode.OK if ok else ExitCode.FAILURE, data=data, lines=lines)
-    if not as_json and problems:
-        for problem in problems:
-            print(f"  FAIL {problem}", file=sys.stderr)
+    lines = [
+        f"host:   {host or config.host}",
+        f"source: {config.source_path} ({'ok' if source_ok else 'MISSING loops/'})",
+        f"memory: {config.memory_path}",
+        f"git:    {git_status}",
+    ]
+    lines += [f"created {path}" for path in created] or ["memory tree already initialized"]
+    if not source_ok:
+        lines.append(f"error: no loops/ directory under {config.source_path}")
+    return _emit(
+        "init",
+        as_json=as_json,
+        ok=ok,
+        rc=ExitCode.OK if ok else ExitCode.FAILURE,
+        data=data,
+        lines=lines,
+    )
+
+
+def _git_init_memory(memory_path: Path) -> str:
+    """Best-effort ``git init`` of the memory tree; return a status string.
+
+    The memory tree is the git-versioned ledger, so a fresh host should have it
+    under version control. Returns ``"already a repo"``, ``"initialized"``,
+    ``"unavailable (git not on PATH)"``, or an ``"error: ..."`` string — a git
+    failure is reported, never raised, so init stays best-effort.
+    """
+    if (memory_path / ".git").exists():
+        return "already a repo"
+    if shutil.which("git") is None:
+        return "unavailable (git not on PATH)"
+    try:
+        completed = subprocess.run(
+            ["git", "init"],
+            cwd=str(memory_path),
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=30,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return f"error: {exc}"
+    return "initialized" if completed.returncode == 0 else f"error: {completed.stderr.strip()}"
+
+
+def _cmd_auth(config: LoopcraftConfig, *, as_json: bool) -> int:
+    """Report credential status and guidance for every declared fleet dependency.
+
+    Aggregates the ``auth`` bundles, ``apis``, and ``env`` vars declared across
+    all loadable loops, probes each once (read-only), and reports which are
+    satisfied on this host and how to fix the ones that are not. This is the
+    guided, non-interactive credential check the design's ``loopctl auth`` step
+    performs before ``apply``.
+    """
+    catalog = load_all(config.loops_dir)
+    auth_bundles: set[str] = set()
+    apis: set[str] = set()
+    env_vars: set[str] = set()
+    for manifest in catalog.manifests:
+        auth_bundles.update(manifest.depends_on.auth)
+        apis.update(manifest.depends_on.apis)
+        env_vars.update(manifest.depends_on.env)
+
+    items: list[dict[str, Any]] = []
+    for bundle in sorted(auth_bundles):
+        items.append(_auth_item("auth", bundle, _probe_auth_bundle(config, bundle), AUTH_GUIDANCE))
+    for api in sorted(apis):
+        items.append(_auth_item("api", api, _probe_declared_api(config, api), API_GUIDANCE))
+    for var in sorted(env_vars):
+        problem = None if config.env_value(var) else f"env var not set: {var}"
+        items.append(_auth_item("env", var, problem, {}))
+
+    missing = [item for item in items if not item["ok"]]
+    ok = not missing
+    lines = [f"{'[ok ]' if item['ok'] else '[MISS]'} {item['kind']}:{item['name']}" for item in items]
+    lines += [f"       ^ {item['problem']} — {item['guidance']}" for item in missing]
+    if not items:
+        lines = ["no declared auth/api/env dependencies across the fleet"]
+    return _emit(
+        "auth",
+        as_json=as_json,
+        ok=ok,
+        rc=ExitCode.OK if ok else ExitCode.FAILURE,
+        data={"items": items, "missing": [item["name"] for item in missing]},
+        lines=lines,
+    )
+
+
+def _auth_item(kind: str, name: str, problem: str | None, guidance: dict[str, str]) -> dict[str, Any]:
+    """Build one auth-report item for a probed dependency."""
+    return {
+        "kind": kind,
+        "name": name,
+        "ok": problem is None,
+        "problem": problem,
+        "guidance": guidance.get(name, "configure this dependency on the host"),
+    }
+
+
+def _probe_auth_bundle(config: LoopcraftConfig, bundle: str) -> str | None:
+    """Probe one declared auth bundle; return a problem string or None."""
+    probe = AUTH_PROBES.get(bundle)
+    if probe is None:
+        return f"no probe for auth bundle '{bundle}'"
+    return probe(config)
+
+
+def _probe_declared_api(config: LoopcraftConfig, api: str) -> str | None:
+    """Probe one declared API; return a problem string or None."""
+    probe = API_PROBES.get(api)
+    if probe is None:
+        return f"no probe for api '{api}'"
+    return probe(config)
+
+
+def _cmd_apply(
+    config: LoopcraftConfig,
+    loops_dir: str | None,
+    *,
+    dry_run: bool,
+    out: str | None,
+    install: bool,
+    skip_preflight: bool,
+    as_json: bool,
+) -> int:
+    """Validate the fleet, render systemd units, and optionally install them.
+
+    The full pre-deploy check runs first (manifest schema, cross-loop DAG, and —
+    unless ``--skip-preflight`` — each loop's auth/tool/env preflight), so an
+    unmet dependency is reported here at ``apply``, not at runtime. With
+    ``--dry-run`` nothing is written; otherwise cleanly rendered units are
+    written to the staging dir, and ``--install`` additionally enables them via
+    systemctl (only when every check passed).
+    """
+    target = Path(loops_dir) if loops_dir else None
+    plan = plan_deployment(config, loops_dir=target, run_preflight=not skip_preflight)
+    out_dir = Path(out) if out else config.systemd_stage_dir
+
+    planned_units = [unit.filename for lu in plan.units for unit in lu.units]
+    data: dict[str, Any] = {
+        "loops_dir": plan.loops_dir,
+        "validated": len(plan.units),
+        "ok": plan.ok,
+        "preflight_ran": plan.preflight_ran,
+        "manifest_problems": plan.manifest_problems,
+        "render_problems": plan.render_problems,
+        "preflight_problems": plan.preflight_problems,
+        "triggers": [{"loop": lu.loop, "trigger": lu.trigger} for lu in plan.units],
+    }
+    lines = [
+        f"planned {len(plan.units)} loop(s) from {plan.loops_dir}",
+        *[f"  {lu.loop}: {lu.trigger}" for lu in plan.units],
+    ]
+
+    if dry_run:
+        data["planned_units"] = planned_units
+        lines.append(f"dry run: {len(planned_units)} unit(s) would be written (nothing written)")
+        return _apply_emit(plan, data, lines, as_json=as_json)
+
+    if not plan.renderable:
+        # Structural manifest or render problems: refuse to write partial units.
+        lines.append("not rendered: fix the manifest/render problems above")
+        rc = _apply_emit(plan, data, lines, as_json=as_json)
+        _print_apply_problems(plan, as_json=as_json)
+        return rc
+
+    written = write_units(plan, out_dir)
+    data["out_dir"] = str(out_dir)
+    data["written"] = [str(p) for p in written]
+    lines.append(f"rendered {len(written)} unit(s) into {out_dir}")
+
+    if install:
+        rc = _apply_install(config, plan, data, lines, as_json=as_json)
+        _print_apply_problems(plan, as_json=as_json)
+        return rc
+
+    if not plan.ok:
+        lines.append("units rendered, but unmet dependencies block deployment (see problems)")
+    rc = _apply_emit(plan, data, lines, as_json=as_json)
+    _print_apply_problems(plan, as_json=as_json)
     return rc
+
+
+def _apply_install(
+    config: LoopcraftConfig,
+    plan: DeploymentPlan,
+    data: dict[str, Any],
+    lines: list[str],
+    *,
+    as_json: bool,
+) -> int:
+    """Install rendered units when the plan is fully clean; report the result."""
+    if not plan.ok:
+        lines.append("refusing --install: the plan has unmet dependencies (see problems)")
+        data["installed"] = False
+        return _emit("apply", as_json=as_json, ok=False, rc=ExitCode.FAILURE, data=data, lines=lines)
+
+    result = install_units(config, plan)
+    data["install"] = result.model_dump()
+    data["unit_dir"] = str(systemd_unit_dir(config))
+    if result.ok:
+        lines.append(f"installed {len(result.installed)} unit(s); enabled {result.enabled}")
+    else:
+        lines.append("install had problems:")
+        lines += [f"  - {problem}" for problem in result.problems]
+    ok = plan.ok and result.ok
+    return _emit("apply", as_json=as_json, ok=ok, rc=ExitCode.OK if ok else ExitCode.FAILURE, data=data, lines=lines)
+
+
+def _apply_emit(plan: DeploymentPlan, data: dict[str, Any], lines: list[str], *, as_json: bool) -> int:
+    """Emit an apply outcome whose exit code reflects the plan's overall status."""
+    return _emit(
+        "apply",
+        as_json=as_json,
+        ok=plan.ok,
+        rc=ExitCode.OK if plan.ok else ExitCode.FAILURE,
+        data=data,
+        lines=lines,
+    )
+
+
+def _print_apply_problems(plan: DeploymentPlan, *, as_json: bool) -> None:
+    """Print each blocking problem to stderr in human mode."""
+    if as_json:
+        return
+    for problem in plan.problems:
+        print(f"  FAIL {problem}", file=sys.stderr)
 
 
 def _cmd_list(config: LoopcraftConfig, *, as_json: bool) -> int:
@@ -519,6 +803,97 @@ def _cmd_list(config: LoopcraftConfig, *, as_json: bool) -> int:
         ]
     rc = _emit(
         "list",
+        as_json=as_json,
+        ok=ok,
+        rc=ExitCode.OK if ok else ExitCode.FAILURE,
+        data={"loops": loops, "problems": problems},
+        lines=lines,
+    )
+    if not as_json:
+        for problem in problems:
+            print(f"  ! {problem}", file=sys.stderr)
+    return rc
+
+
+#: Column headers for the ``fleet`` table, in display order.
+_FLEET_COLUMNS = ["LOOP", "NAME", "TIER", "VENDOR", "TRIGGER", "LAST RUN", "INSTALLED"]
+
+
+def _loop_trigger(manifest: LoopManifest) -> str:
+    """Return a compact trigger summary for the fleet table.
+
+    Cron loops show their cron expression (what the manifest declares and the
+    rendered ``OnCalendar`` derives from); other cadences show their type.
+    """
+    if manifest.cadence.type == CadenceType.CRON and manifest.cadence.at:
+        return manifest.cadence.at
+    return str(manifest.cadence.type)
+
+
+def _install_state(config: LoopcraftConfig, loop_id: str) -> str:
+    """Report whether a loop's systemd units are installed, staged, or absent.
+
+    ``installed`` means units exist in the configured systemd unit directory;
+    ``staged`` means they were only rendered into the memory-tree staging dir by
+    ``apply`` (not yet installed); ``no`` means neither is present.
+    """
+    prefix = config.scheduler.unit_prefix
+    candidates = (
+        ("installed", systemd_unit_dir(config)),
+        ("staged", config.systemd_stage_dir),
+    )
+    for label, directory in candidates:
+        try:
+            if directory.is_dir() and any(directory.glob(f"{prefix}{loop_id}.*")):
+                return label
+        except OSError:
+            continue
+    return "no"
+
+
+def _cmd_fleet(config: LoopcraftConfig, *, as_json: bool) -> int:
+    """Show every known loop in a formatted table.
+
+    Combines each manifest's identity/cadence with its last run (from the store)
+    and its systemd install state (from the unit/staging directories). Like
+    ``list``/``status``, manifest problems degrade the result instead of hiding
+    it: loadable loops are still tabulated, problems are surfaced, and the exit
+    code is nonzero when any manifest is broken.
+    """
+    catalog = load_all(config.loops_dir)
+    manifests, problems = catalog.manifests, catalog.problems
+    ok = catalog.ok
+    store = Store(config)
+
+    loops: list[dict[str, Any]] = []
+    rows: list[list[str]] = []
+    for manifest in manifests:
+        latest = store.latest_run(manifest.id)
+        vendor = manifest.effective_vendor(config.default_vendor)
+        trigger = _loop_trigger(manifest)
+        installed = _install_state(config, manifest.id)
+        last_run = f"{latest.status} {latest.started_at[:10]}" if latest else "never"
+        loops.append(
+            {
+                "id": manifest.id,
+                "name": manifest.name,
+                "tier": str(manifest.tier),
+                "vendor": vendor,
+                "cadence": str(manifest.cadence.type),
+                "trigger": trigger,
+                "last_status": latest.status if latest else None,
+                "last_started_at": latest.started_at if latest else None,
+                "installed": installed,
+            }
+        )
+        rows.append([manifest.id, manifest.name, str(manifest.tier), vendor, trigger, last_run, installed])
+
+    if manifests:
+        lines = render_table(_FLEET_COLUMNS, rows)
+    else:
+        lines = [f"no loops found in {config.loops_dir}"]
+    rc = _emit(
+        "fleet",
         as_json=as_json,
         ok=ok,
         rc=ExitCode.OK if ok else ExitCode.FAILURE,

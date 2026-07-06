@@ -127,6 +127,20 @@ API_PROBES: dict[str, Callable[[LoopcraftConfig], str | None]] = {
     "arxiv": probe_arxiv_api,
 }
 
+#: Human guidance for satisfying each known auth bundle, shown by ``loopctl
+#: auth`` when a bundle is missing so the operator knows the exact next step.
+AUTH_GUIDANCE: dict[str, str] = {
+    "nv-tools": "install the nv-tools CLI and run its login flow (e.g. `nv-tools auth login`)",
+    "x-api": "set X_API_BEARER_TOKEN or X_API_OAUTH2_ACCESS_TOKEN in the host EnvironmentFile / .env",
+}
+
+#: Human guidance for satisfying each known declared API.
+API_GUIDANCE: dict[str, str] = {
+    "slack": "authorize the nv-tools Slack connector (`nv-tools slack list-channels`)",
+    "x": "provide an X API token (see the x-api auth bundle)",
+    "arxiv": "no credentials required (public API)",
+}
+
 
 #: Human-readable nouns for declared source assets in problem messages.
 _ASSET_NOUNS = {

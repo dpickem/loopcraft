@@ -43,6 +43,17 @@ DEFAULT_HOST = "vm"
 #: Default memory-tree root (expanded at load time).
 DEFAULT_MEMORY_PATH = "~/workspace/loopcraft_memory"
 
+#: Command the rendered systemd service invokes to run one loop. Kept as a bare
+#: name by default (resolved on the unit's PATH); set an absolute path in
+#: ``[scheduler].loopctl_bin`` for a hardened host.
+DEFAULT_LOOPCTL_BIN = "loopctl"
+#: Filename prefix for every rendered systemd unit (``loop-<id>.timer`` etc.),
+#: so the whole fleet is greppable and ``systemctl`` completion groups it.
+DEFAULT_UNIT_PREFIX = "loop-"
+#: Subpath (under the memory tree) where ``loopctl apply`` renders units before
+#: install, so generated files never land in either git tree.
+SYSTEMD_STAGE_SUBPATH = ("var", "systemd")
+
 #: User agent sent by loopcraft HTTP clients (arXiv, X).
 HTTP_USER_AGENT = "loopcraft/0.1"
 
@@ -93,6 +104,19 @@ class MemoryDir(StrEnum):
     LEDGER = "ledger"
     ARTIFACTS = "artifacts"
     RUNS = "runs"
+
+
+class SystemdScope(StrEnum):
+    """Which systemd manager owns the rendered units.
+
+    - ``system``: system-wide units under ``/etc/systemd/system`` managed by
+      ``systemctl`` (root). The design default for the always-on VM.
+    - ``user``: per-user units under ``~/.config/systemd/user`` managed by
+      ``systemctl --user`` (no root needed; requires a login/lingering session).
+    """
+
+    SYSTEM = "system"
+    USER = "user"
 
 
 class ExitCode(IntEnum):
@@ -255,6 +279,33 @@ def safe_state_relpath(declared: str) -> str:
         raise StatePathError(str(exc)) from exc
 
 
+class SchedulerConfig(BaseModel):
+    """Host-specific settings for rendering + installing systemd units (M2).
+
+    Loaded from the ``[scheduler]`` table of ``loopcraft.toml``. Everything here
+    is a per-host operational choice (which manager owns the units, which user
+    runs them, where secrets live) — it never affects loop semantics, so it is
+    kept out of the manifests.
+
+    Attributes:
+        loopctl_bin: The command the rendered service runs (``ExecStart``).
+        unit_prefix: Filename prefix for every rendered unit.
+        scope: Which systemd manager (``system`` or ``user``) owns the units.
+        user: Optional ``User=`` for system-scope services (ignored for user
+            scope, where the units already run as the invoking user).
+        environment_file: Optional ``EnvironmentFile=`` path holding the host's
+            secrets. Per the security model this lives outside *both* git trees.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    loopctl_bin: str = DEFAULT_LOOPCTL_BIN
+    unit_prefix: str = DEFAULT_UNIT_PREFIX
+    scope: SystemdScope = SystemdScope.SYSTEM
+    user: str | None = None
+    environment_file: str | None = None
+
+
 class LoopcraftConfig(BaseModel):
     """Resolved control-plane configuration.
 
@@ -272,6 +323,7 @@ class LoopcraftConfig(BaseModel):
     dependencies: dict[str, str] = Field(default_factory=dict)
     optional_dependencies: dict[str, str] = Field(default_factory=dict)
     artifact_store: str | None = None
+    scheduler: SchedulerConfig = Field(default_factory=SchedulerConfig)
     extra: dict[str, object] = Field(default_factory=dict)
 
     # --- source-tree locations ---------------------------------------------
@@ -310,6 +362,16 @@ class LoopcraftConfig(BaseModel):
     def db_path(self) -> Path:
         """Path to the derived run-history database in the memory tree."""
         return self.memory_path / DB_FILENAME
+
+    @property
+    def systemd_stage_dir(self) -> Path:
+        """Directory (under the memory tree) where units are rendered pre-install.
+
+        Rendered units are generated files, so they are staged under the memory
+        tree's ``var/`` scratch area rather than either git tree; ``loopctl
+        apply --install`` copies them into the real systemd unit directory.
+        """
+        return self.memory_path.joinpath(*SYSTEMD_STAGE_SUBPATH)
 
     def resolve_state_path(self, declared: str) -> Path:
         """Map a loop-declared output path to a concrete file in the ledger.
@@ -409,12 +471,18 @@ class LoopcraftConfig(BaseModel):
         dependencies = _load_project_dependencies(source, "dependencies")
         optional_dependencies = _load_project_dependencies(source, "optional-dependencies")
 
+        scheduler_raw = raw.get("scheduler", {})
+        scheduler = SchedulerConfig.model_validate(
+            scheduler_raw if isinstance(scheduler_raw, dict) else {}
+        )
+
         known = {
             "default_vendor",
             "host",
             "memory_path",
             "artifact_store",
             "worktree_keep_last",
+            "scheduler",
         }
         extra = {k: v for k, v in raw.items() if k not in known}
 
@@ -430,5 +498,6 @@ class LoopcraftConfig(BaseModel):
             artifact_store=(
                 str(raw["artifact_store"]) if raw.get("artifact_store") else None
             ),
+            scheduler=scheduler,
             extra=extra,
         )

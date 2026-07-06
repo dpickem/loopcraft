@@ -62,6 +62,39 @@ def emit(
     return rc
 
 
+def render_table(headers: list[str], rows: list[list[str]]) -> list[str]:
+    """Render an aligned, box-drawn table as a list of text lines.
+
+    Column widths are sized to the widest header or cell so the table stays
+    aligned regardless of content. Kept dependency-free (no ``rich``/``tabulate``)
+    to match the project's minimal footprint.
+
+    Args:
+        headers: Column header labels.
+        rows: Rows of already-stringified cells; each row must have one cell per
+            header.
+
+    Returns:
+        The table's lines (top border, header, separator, rows, bottom border),
+        ready to hand to :func:`emit` as ``lines``.
+    """
+    widths = [len(h) for h in headers]
+    for row in rows:
+        for index, cell in enumerate(row):
+            widths[index] = max(widths[index], len(str(cell)))
+
+    def _row(cells: list[str]) -> str:
+        return "│ " + " │ ".join(str(c).ljust(widths[i]) for i, c in enumerate(cells)) + " │"
+
+    def _rule(left: str, mid: str, right: str) -> str:
+        return left + mid.join("─" * (w + 2) for w in widths) + right
+
+    lines = [_rule("┌", "┬", "┐"), _row(headers), _rule("├", "┼", "┤")]
+    lines += [_row(row) for row in rows]
+    lines.append(_rule("└", "┴", "┘"))
+    return lines
+
+
 def fail(command: str, rc: int, message: str, *, as_json: bool) -> int:
     """Emit a failure result: a JSON error envelope, or a stderr message.
 

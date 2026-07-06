@@ -21,3 +21,27 @@ worktree_keep_last = 100
 
 # Optional: offload large/binary artifacts to an external object store.
 # artifact_store = "s3://..."
+
+# Scheduler (M2): how `loopctl apply` renders + installs systemd units on the
+# host. These are per-host operational choices and never affect loop semantics,
+# so they live here rather than in the loop manifests. All fields are optional.
+[scheduler]
+# Command the rendered service runs (ExecStart). Prefer an absolute path on a
+# hardened host so the unit does not depend on PATH.
+# loopctl_bin = "/usr/local/bin/loopctl"
+
+# Filename prefix for every rendered unit (loop-<id>.timer / .service / .path).
+# unit_prefix = "loop-"
+
+# Which systemd manager owns the units: "system" (/etc/systemd/system, root) or
+# "user" (~/.config/systemd/user, no root but needs a lingering login session).
+# scope = "system"
+
+# User= for system-scope services (ignored for user scope). Lets the fleet run
+# as a dedicated unprivileged account.
+# user = "loopcraft"
+
+# EnvironmentFile= holding the host's secrets. Per the security model this lives
+# OUTSIDE both git trees, with locked-down permissions; manifests reference
+# credential names, never values.
+# environment_file = "/etc/loopcraft/loopcraft.env"
