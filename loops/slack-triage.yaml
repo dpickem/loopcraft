@@ -1,0 +1,50 @@
+# loops/slack-triage.yaml — L1: the lowest-risk observe loop, built first.
+id: slack-triage
+name: "Slack triage & summarizer"
+description: >-
+  Scan everything aimed at me — @mentions, DMs, group DMs, and a configured list
+  of high-signal channels — and produce a categorized digest (action / review / FYI).
+
+runtime:
+  vendor: codex
+  model: gpt-5.5           # valid Codex model slug (list them with `codex debug models`)
+  reasoning_effort: medium # low | medium | high | xhigh (per the model's catalog)
+
+locus: vm
+cadence:
+  type: cron
+  at: "0 9,13,17 * * 1-5"   # 09:00, 13:00, 17:00 on weekdays
+tier: observe
+budget:
+  max_turns: 20
+  max_tokens: 300000
+  max_runtime: 10m
+  max_consecutive_failures: 2
+
+# --- explicit dependencies: validated before the loop runs ---
+depends_on:
+  apis:  [slack]
+  tools: [nv-tools]
+  auth:  [nv-tools]
+  env:   []
+  loops: []
+
+# --- I/O contract: drives ordering + the dependency graph ---
+# seen.json is the durable cursor: read at the start of a run, rewritten at the
+# end. Declaring it as both input and output makes that state explicit to
+# validation and the dependency graph (a self-edge, not a cycle).
+inputs:
+  - state/slack/seen.json
+outputs:
+  - state/slack/triage-latest.md
+  - state/slack/history/{{run_id}}.md
+  - state/slack/seen.json
+artifacts: []
+
+logic:
+  skill: skills/slack-triage/SKILL.md
+  # Goal/stop conditions live in a dedicated file colocated with the skill.
+  verify: skills/slack-triage/verify.md
+
+approval:
+  required: false            # observe-tier: read-only, no approval needed

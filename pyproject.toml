@@ -1,0 +1,46 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "loopcraft"
+version = "0.1.0"
+description = "Local intelligence workflows for loopcraft."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Daniel Pickem" }]
+dependencies = [
+  "networkx>=3.0",
+  "pydantic>=2.0",
+  "pyyaml>=6.0",
+  "tenacity>=8.0",
+]
+
+[dependency-groups]
+dev = [
+  "pytest>=8.0",
+]
+
+[project.scripts]
+loopctl = "loopcraft.cli:main"
+loopcraft-x-intel = "loopcraft.research_intel.x.cli:main"
+loopcraft-arxiv-intel = "loopcraft.research_intel.arxiv.cli:main"
+
+[tool.loopcraft.dependencies]
+# Required M1 external runtime/tool dependencies checked by `loopctl deps check`.
+# Missing any of these fails the check. Python package dependencies live in
+# [project].dependencies above.
+python = "python"
+git = "git"
+codex = "codex"
+nv-tools = "nv-tools"
+
+[tool.loopcraft.optional-dependencies]
+# Future-runtime binaries. `loopctl deps check` reports these as optional and
+# does NOT fail when they are missing, so a Codex-only M1 setup stays green.
+claude = "claude"
+cursor-agent = "cursor-agent"
+
+[tool.setuptools.packages.find]
+where = ["src"]

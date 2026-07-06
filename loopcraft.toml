@@ -1,0 +1,23 @@
+# Loopcraft control-plane configuration.
+#
+# Wires the SOURCE tree (this repo: code, manifests, skills) to the MEMORY
+# tree (the operator-specific ledger + artifact store). The two are different
+# git repos with different lifecycles; this file is the only link between them.
+
+# Default runtime adapter for loops that don't pin `runtime.vendor`.
+default_vendor = "codex"
+
+# Where the fleet runs by default (informational in M1; used by the scheduler in M2).
+host = "vm"
+
+# The MEMORY tree: holds ledger/ (the memory spine), artifacts/, and loopcraft.db.
+# Override at runtime with the LOOPCRAFT_MEMORY environment variable.
+memory_path = "~/workspace/loopcraft_memory"
+
+# Per-loop scratch worktree retention. Run records and durable outputs stay in
+# ledger/; only <memory>/var/worktrees/<loop>/<run_id>/ scratch dirs are pruned.
+# Override with LOOPCRAFT_WORKTREE_KEEP_LAST. Clamped to 0..100.
+worktree_keep_last = 100
+
+# Optional: offload large/binary artifacts to an external object store.
+# artifact_store = "s3://..."

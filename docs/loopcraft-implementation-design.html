@@ -1,0 +1,1762 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Loopcraft — Implementation Design</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f5f1ea;
+      --bg-2: #eee9df;
+      --panel: #fbf8f1;
+      --panel-2: #eee9df;
+      --ink: #191713;
+      --muted: #57534b;
+      --soft: #6f6859;
+      --line: #d8d1c5;
+      --green: #748b5d;
+      --blue: #7c8fa6;
+      --violet: #8c829b;
+      --amber: #c88a61;
+      --red: #c96f5d;
+      --cyan: #6f8c8d;
+      --code-bg: #eee8dc;
+      --shadow: 0 14px 34px rgba(53, 45, 36, 0.12);
+      font-family:
+        Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+        "Segoe UI", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background:
+        radial-gradient(circle at 88% 8%, rgba(205, 119, 87, 0.08), transparent 22rem),
+        radial-gradient(circle at 12% 0%, rgba(116, 139, 93, 0.07), transparent 30rem),
+        linear-gradient(180deg, #f8f5ee 0%, var(--bg) 100%);
+      color: var(--ink);
+      line-height: 1.62;
+    }
+
+    a { color: #7f533f; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    h1, h2, h3, p { margin-top: 0; }
+    ul, ol { padding-left: 22px; }
+    li { margin: 6px 0; color: var(--muted); }
+    li strong, p strong { color: var(--ink); }
+
+    .page {
+      width: min(1180px, calc(100vw - 32px));
+      margin: 0 auto;
+      padding: 48px 0 72px;
+    }
+
+    .hero {
+      position: relative;
+      overflow: hidden;
+      padding: 36px;
+      border: 1px solid var(--line);
+      border-radius: 28px;
+      background:
+        linear-gradient(135deg, #fbf8f1, #f3ede1),
+        radial-gradient(circle at 82% 12%, rgba(116, 139, 93, 0.12), transparent 22rem);
+      box-shadow: var(--shadow);
+    }
+
+    .hero::after {
+      content: "";
+      position: absolute;
+      inset: auto -80px -140px auto;
+      width: 420px;
+      height: 420px;
+      border-radius: 999px;
+      background: conic-gradient(from 180deg, rgba(116, 139, 93, 0.24), rgba(124, 143, 166, 0.28), rgba(140, 130, 155, 0.24), rgba(116, 139, 93, 0.24));
+      filter: blur(8px);
+      opacity: 0.7;
+      pointer-events: none;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      gap: 8px;
+      align-items: center;
+      margin: 0 0 18px;
+      padding: 7px 11px;
+      border: 1px solid rgba(116, 139, 93, 0.35);
+      border-radius: 999px;
+      color: var(--green);
+      background: rgba(116, 139, 93, 0.08);
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.09em;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      max-width: 920px;
+      margin-bottom: 18px;
+      font-size: clamp(36px, 6vw, 64px);
+      line-height: 0.98;
+      letter-spacing: -0.05em;
+    }
+
+    .lead {
+      max-width: 900px;
+      color: #4a4640;
+      font-size: clamp(17px, 1.8vw, 22px);
+    }
+
+    .quick-facts, .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(245px, 1fr));
+      gap: 20px;
+    }
+
+    .fact, .mini, .card, .note {
+      border: 1px solid var(--line);
+      background: var(--panel);
+      box-shadow: 0 14px 36px rgba(0, 0, 0, 0.2);
+      backdrop-filter: blur(14px);
+    }
+
+    .fact { min-height: 118px; padding: 18px; border-radius: 20px; }
+
+    .fact strong {
+      display: block;
+      margin-bottom: 7px;
+      color: var(--ink);
+      font-size: 21px;
+      letter-spacing: -0.03em;
+    }
+
+    .fact span { color: var(--muted); font-size: 14px; }
+
+    section { margin-top: 34px; }
+    section[id] { scroll-margin-top: 18px; }
+
+    .card {
+      padding: 26px;
+      border-radius: 28px;
+    }
+
+    .card > p:last-child { margin-bottom: 0; }
+    .card p { color: var(--muted); }
+    .card h2 {
+      margin: 0 0 16px;
+      font-size: clamp(24px, 3.6vw, 38px);
+      line-height: 1;
+      letter-spacing: -0.04em;
+    }
+
+    .card h3 {
+      margin: 22px 0 8px;
+      font-size: 17px;
+      letter-spacing: -0.02em;
+    }
+
+    .card h4 {
+      margin: 18px 0 8px;
+      color: var(--blue);
+      font-size: 13px;
+      font-weight: 900;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+
+    .mini {
+      border-radius: 20px;
+      padding: 20px;
+    }
+
+    .mini b {
+      display: block;
+      margin-bottom: 8px;
+      color: var(--ink);
+      font-size: 17px;
+      letter-spacing: -0.02em;
+    }
+
+    .mini span { color: var(--muted); font-size: 14px; }
+
+    .mini code {
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }
+
+    .note {
+      margin: 16px 0 22px;
+      padding: 16px 18px;
+      border-radius: 18px;
+      background: rgba(124, 143, 166, 0.12);
+      border-color: rgba(124, 143, 166, 0.4);
+      color: #3f5063;
+    }
+
+    .note.good {
+      background: rgba(116, 139, 93, 0.12);
+      border-color: rgba(116, 139, 93, 0.35);
+      color: #465b35;
+    }
+
+    .note.warn {
+      background: rgba(200, 138, 97, 0.1);
+      border-color: rgba(200, 138, 97, 0.3);
+      color: #8a5a30;
+    }
+
+    .note.risk {
+      background: rgba(201, 111, 93, 0.1);
+      border-color: rgba(201, 111, 93, 0.3);
+      color: #884036;
+    }
+
+    .note + p,
+    .note + .grid,
+    .note + table,
+    .note + details,
+    .note + h3,
+    .note + ul,
+    .note + ol {
+      margin-top: 22px;
+    }
+
+    details.explain {
+      margin: 22px 0;
+      padding: 0;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: linear-gradient(180deg, rgba(53, 45, 36, 0.045), rgba(53, 45, 36, 0.015));
+      overflow: hidden;
+    }
+
+    details.explain[open] {
+      background: rgba(53, 45, 36, 0.07);
+      border-color: rgba(111, 140, 141, 0.3);
+    }
+
+    details.explain summary {
+      cursor: pointer;
+      display: block;
+      padding: 16px 18px;
+      color: var(--ink);
+      font-weight: 800;
+      letter-spacing: -0.01em;
+      outline: none;
+    }
+
+    details.explain summary::marker {
+      color: var(--blue);
+    }
+
+    details.explain summary:focus-visible {
+      box-shadow: inset 0 0 0 2px rgba(200, 138, 97, 0.8);
+      border-radius: 16px;
+    }
+
+    details.explain > :not(summary) {
+      margin: 0 18px 16px;
+    }
+
+    details.explain > summary + * {
+      margin-top: 0;
+    }
+
+    details.explain pre {
+      margin: 0 18px 16px;
+    }
+
+    details.explain p,
+    details.explain li {
+      color: var(--muted);
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 6px 10px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      color: var(--muted);
+      background: rgba(53, 45, 36, 0.04);
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      white-space: nowrap;
+    }
+
+    .pill.green { color: #465b35; background: rgba(116, 139, 93, 0.12); }
+    .pill.purple { color: #5b5367; background: rgba(140, 130, 155, 0.14); }
+    .pill.amber { color: #8a5a30; background: rgba(200, 138, 97, 0.12); }
+    .pill.red { color: #884036; background: rgba(201, 111, 93, 0.12); }
+    .pill.blue { color: #3f5063; background: rgba(124, 143, 166, 0.14); }
+
+    code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 0.92em;
+      color: #37322b;
+      background: var(--code-bg);
+      padding: 0.1em 0.36em;
+      border-radius: 5px;
+    }
+
+    pre {
+      margin: 18px 0 22px;
+      padding: 16px 18px;
+      border-radius: 16px;
+      border: 1px solid #25324a;
+      background: #0f1b2d;
+      overflow-x: auto;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    pre code {
+      padding: 0;
+      color: #cfe6ff;
+      background: transparent;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 18px 0 22px;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      font-size: 14px;
+    }
+
+    th, td {
+      padding: 11px 12px;
+      border-bottom: 1px solid var(--line);
+      vertical-align: top;
+      text-align: left;
+    }
+
+    th {
+      color: var(--ink);
+      background: rgba(53, 45, 36, 0.06);
+      font-size: 12px;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    td { color: var(--muted); }
+    tr td:first-child { color: var(--ink); font-weight: 600; }
+
+    .meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 18px;
+    }
+
+    .flow {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 12px;
+      margin: 18px 0 22px;
+      align-items: stretch;
+    }
+
+    .flow div {
+      position: relative;
+      border: 1px solid var(--line);
+      background: linear-gradient(180deg, rgba(53, 45, 36, 0.045), rgba(53, 45, 36, 0.015));
+      border-radius: 16px;
+      padding: 14px 12px;
+      text-align: center;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 800;
+    }
+
+    .flow div small {
+      display: block;
+      margin-top: 4px;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--soft);
+    }
+
+    .muted { color: var(--muted); }
+
+    .card > .grid,
+    .card > .quick-facts {
+      margin-top: 20px;
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: 248px minmax(0, 1fr);
+      gap: 26px;
+      align-items: start;
+      margin-top: 34px;
+    }
+
+    .toc-panel {
+      position: sticky;
+      top: 18px;
+      max-height: calc(100vh - 36px);
+      overflow: auto;
+      padding: 20px 18px;
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      background: var(--panel);
+      box-shadow: 0 14px 36px rgba(0, 0, 0, 0.2);
+      backdrop-filter: blur(14px);
+    }
+
+    .toc-brand {
+      display: block;
+      margin-bottom: 14px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--line);
+      font-size: 14px;
+      font-weight: 800;
+      letter-spacing: -0.01em;
+      color: var(--ink);
+    }
+
+    .toc-brand span {
+      display: block;
+      margin-top: 2px;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--blue);
+    }
+
+    .toc-panel h2 {
+      margin: 0 0 10px;
+      color: var(--soft);
+      font-size: 12px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    #generated-toc { counter-reset: toc; display: grid; gap: 4px; }
+    .toc-group + .toc-group { margin-top: 3px; }
+
+    #generated-toc a {
+      display: block;
+      position: relative;
+      padding: 7px 8px 7px 34px;
+      border-radius: 10px;
+      color: var(--muted);
+      font-size: 13.5px;
+      line-height: 1.3;
+      counter-increment: toc;
+    }
+
+    #generated-toc a::before {
+      content: counter(toc, decimal-leading-zero);
+      position: absolute;
+      left: 8px;
+      top: 7px;
+      color: var(--soft);
+      font-size: 12px;
+      font-variant-numeric: tabular-nums;
+    }
+
+    #generated-toc a.active::before { color: var(--blue); }
+    #generated-toc a:hover { color: var(--ink); background: rgba(53, 45, 36, 0.055); text-decoration: none; }
+    #generated-toc a.active { color: #06111c; background: linear-gradient(135deg, var(--green), var(--blue)); font-weight: 900; box-shadow: 0 8px 22px rgba(124, 143, 166, 0.22); }
+    .toc-group.current > .toc-parent:not(.active) { color: var(--ink); background: rgba(116, 139, 93, 0.1); font-weight: 900; }
+    .toc-children {
+      display: none;
+      margin: 2px 0 8px 16px;
+      padding-left: 10px;
+      border-left: 1px solid var(--line);
+    }
+    .toc-group.current .toc-children { display: block; }
+    .toc-children a {
+      padding: 6px 8px 6px 10px !important;
+      font-size: 12.5px !important;
+      line-height: 1.25 !important;
+      counter-increment: none !important;
+    }
+    .toc-children a::before { content: none !important; }
+
+    .content-col { min-width: 0; counter-reset: section; }
+    .content-col > section:first-child { margin-top: 0; }
+    .content-col section[id] > h2 { counter-increment: section; }
+
+    .content-col section[id] > h2::before {
+      content: counter(section, decimal-leading-zero);
+      margin-right: 14px;
+      color: var(--blue);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .footer { margin-top: 40px; color: var(--soft); font-size: 13px; text-align: center; }
+
+    /* ASCII-art wireframe blocks for the UI mockups */
+    .wire {
+      margin: 18px 0 22px;
+      padding: 16px 18px;
+      border-radius: 16px;
+      border: 1px dashed var(--line);
+      background: rgba(53, 45, 36, 0.03);
+      overflow-x: auto;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 12px;
+      line-height: 1.45;
+      color: var(--soft);
+      white-space: pre;
+    }
+
+    @media (max-width: 980px) {
+      .layout { grid-template-columns: 1fr; }
+      .toc-panel { position: relative; top: 0; max-height: none; }
+      .quick-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+
+    @media (max-width: 640px) {
+      .page { width: min(100vw - 20px, 1180px); padding-top: 20px; }
+      .hero, .card { padding: 20px; border-radius: 22px; }
+      .quick-facts { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header class="hero">
+      <p class="eyebrow">Loopcraft / Implementation Design</p>
+      <h1>Loopcraft Control Plane</h1>
+      <p class="lead">
+        A vendor-neutral system for declaring, scheduling, running, and monitoring background agent loops. One streamlined setup stands up the whole fleet on any vendor (Codex and Claude first), runs it <strong>cloud/always-on first</strong>, keeps its memory and produced artifacts in a git-backed store (separate from the source repo) mirrored to Linear, and surfaces everything &mdash; timelines, dependencies, approvals, and an inbox &mdash; in one web UI. This is the buildable companion to the <a href="loopcraft-loop-engineering.html">Loopcraft field guide</a>.
+      </p>
+      <div class="quick-facts" style="margin-top: 30px;">
+        <div class="fact">
+          <strong>Portable by design</strong>
+          <span>A loop is a vendor-neutral package; thin adapters run it on Codex or Claude. No lock-in.</span>
+        </div>
+        <div class="fact">
+          <strong>Declarative loops</strong>
+          <span>Each loop manifest encodes its dependencies, auth, env, execution locus, cadence, and upstream loops.</span>
+        </div>
+        <div class="fact">
+          <strong>Cloud-first, observable</strong>
+          <span>Loops default to an always-on host; a web UI shows the fleet, a Gantt timeline, the dependency DAG, and the approval inbox.</span>
+        </div>
+      </div>
+      <div class="meta">
+        <span class="pill">Draft v0.1 &middot; RFC</span>
+        <span class="pill green">CLI: loopctl</span>
+        <span class="pill blue">Codex + Claude + Cursor adapters</span>
+        <span class="pill amber">State: git (ledger + LFS artifacts) + Linear</span>
+        <span class="pill purple">VM-first execution</span>
+      </div>
+    </header>
+
+    <div class="layout">
+      <aside class="toc-panel" aria-label="Page navigation">
+        <span class="toc-brand">Loopcraft<span>Implementation Design</span></span>
+        <h2>Navigate</h2>
+        <nav id="generated-toc"></nav>
+      </aside>
+      <div class="content-col">
+
+  <section class="card tldr-section">
+    <h2>TL;DR</h2>
+    <div class="note good">
+      <strong>Working name:</strong> <span class="pill green">Loopcraft Control Plane</span> &nbsp; Repo/package: <code>loopcraft</code>. CLI: <code>loopctl</code>. Host: an always-on Linux VM. First runtimes: <strong>Codex</strong> and <strong>Claude Code</strong>, with <strong>Cursor</strong> as a third adapter &mdash; the one that runs cross-provider sub-agents (e.g. GPT implementer + Opus reviewer) natively.
+    </div>
+    <p>
+      We propose a small control plane that turns the field guide&rsquo;s loops into running infrastructure. A loop is declared once as a <strong>vendor-neutral manifest</strong> (logic + declared dependencies + execution locus + cadence). A <strong>runtime adapter</strong> translates that manifest into a headless Codex or Claude invocation, so swapping vendors is a one-line change. A <strong>scheduler</strong> deploys loops to an always-on host (cloud/VM first) as systemd units, ordered by their declared dependencies. State spans three stores in <em>one git repo</em> (<code>loopcraft_memory</code>, separate from the source repo): a <strong>git-versioned markdown/JSONL ledger</strong> (memory, the source of truth), a <strong>git-backed artifact store</strong> for the reports/diagrams/files loops produce (git-LFS for large blobs), and a <strong>Linear board</strong> (the human surface). A <strong>web UI</strong> renders the fleet, a Gantt-style run timeline, the loop-to-loop dependency DAG, and a unified <strong>inbox</strong> for approvals, reviews, and follow-ups.
+    </p>
+    <div class="grid summary-grid">
+      <div class="mini">
+        <b>Portability first</b>
+        <span>Logic is vendor-neutral (a skill + I/O contract + tool list). Adapters for Codex and Claude map it to each CLI. Adding a vendor = adding an adapter, not rewriting loops.</span>
+      </div>
+      <div class="mini">
+        <b>Dependencies are explicit</b>
+        <span>Every manifest declares its APIs, tool collections, auth, env vars, and upstream loops. The system validates them before a loop ever runs.</span>
+      </div>
+      <div class="mini">
+        <b>Cloud / always-on first</b>
+        <span>Default locus is the VM so loops fire whether or not your laptop is open. Local is the exception, declared per loop.</span>
+      </div>
+      <div class="mini">
+        <b>One screen for everything</b>
+        <span>Fleet board + Gantt timeline + dependency DAG + approval/review inbox. No off-the-shelf tool does the cross-vendor, interaction-aware view.</span>
+      </div>
+      <div class="mini">
+        <b>Trivial setup</b>
+        <span><code>loopctl init</code> &rarr; <code>loopctl auth</code> &rarr; <code>loopctl apply</code>. Three commands stand up the host, provision credentials, and deploy every loop.</span>
+      </div>
+    </div>
+    <div class="note">
+      <strong>Initial fleet (Section 11):</strong> a nightly code-sanitizing loop on <code>nemotron-data-plane</code>, the full W7 multi-source paper-discovery loop, an end-of-day contribution summarizer (via <code>nv-tools</code>), and a Slack triage/summarizer loop. These four exercise every part of the design.
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Goals &amp; Design Principles</h2>
+    <p>These are the properties the system must have, in priority order. Everything downstream is in service of them.</p>
+    <div class="grid">
+      <div class="mini">
+        <b>1 &middot; Vendor portability</b>
+        <span>No lock-in to Claude, Codex, or any single product. The same loop runs on any supported runtime; the runtime is a configuration value, not a rewrite.</span>
+      </div>
+      <div class="mini">
+        <b>2 &middot; Explicit dependencies</b>
+        <span>A loop declares everything it needs to run: external APIs, tool/connector collections, authentication, environment variables, and other loops it consumes.</span>
+      </div>
+      <div class="mini">
+        <b>3 &middot; Explicit execution</b>
+        <span>Each loop states where it runs (local vs. VM/cloud) and on what cadence. Default is remote/always-on so loops are dependable, not laptop-bound.</span>
+      </div>
+      <div class="mini">
+        <b>4 &middot; Trivial setup</b>
+        <span>Standing up the whole fleet on a fresh host is a handful of commands. Adding a loop is dropping a manifest and re-applying.</span>
+      </div>
+      <div class="mini">
+        <b>5 &middot; Monitorable</b>
+        <span>A web UI visualizes the fleet, a timeline of runs, and the loop dependency graph &mdash; because no off-the-shelf dashboard does this across vendors.</span>
+      </div>
+      <div class="mini">
+        <b>6 &middot; Human-in-the-loop</b>
+        <span>The UI surfaces approval requests, an inbox, and a clear view of what needs review or follow-up. Irreversible actions are never autonomous.</span>
+      </div>
+      <div class="mini">
+        <b>7 &middot; Durable, legible state</b>
+        <span>Memory is a versioned markdown/JSONL ledger; produced reports/diagrams/files are persisted with provenance in an artifact store; both are mirrored to Linear for human action.</span>
+      </div>
+      <div class="mini">
+        <b>8 &middot; Zero-blast-radius default</b>
+        <span>Loops start read-only (observe) and only act within hard budgets. The control plane itself executes nothing irreversible.</span>
+      </div>
+      <div class="mini">
+        <b>9 &middot; Explicit, earned promotion</b>
+        <span>Every loop&rsquo;s autonomy level (observe &rarr; propose &rarr; act) is a first-class, tracked property. A loop is only promoted after an evidence-based track record, and demoted automatically when it regresses. Promotion is a deliberate, auditable step &mdash; never a default.</span>
+      </div>
+    </div>
+    <div class="note good">
+      <strong>Goal 9 in detail &mdash; the promotion lifecycle.</strong> Autonomy is not set-and-forget; it is a state machine the system manages and the operator approves:
+      <ul style="margin-top:10px;">
+        <li><strong>observe (tier 0):</strong> read-only. The loop reports findings into the inbox; it changes nothing. Every loop starts here.</li>
+        <li><strong>propose (tier 1):</strong> the loop drafts the action (a reply, an MR, a ticket) and parks it for one-click approval. Nothing happens until a human approves.</li>
+        <li><strong>act (tier 2):</strong> the loop performs the action autonomously within hard budgets &mdash; reserved for reversible, low-stakes, in-house operations only.</li>
+      </ul>
+      <strong>Promotion rule:</strong> a loop graduates a tier only after <em>N consecutive runs the operator would have approved unchanged</em> (the accept-rate the harvester already tracks). The record lives in the loop&rsquo;s state and the UI shows &ldquo;X/N toward promotion.&rdquo; Promotion is an explicit operator action (<code>loopctl promote &lt;loop&gt;</code> or a UI button), never automatic. <strong>Auto-demotion:</strong> if a promoted loop&rsquo;s accept rate drops below threshold or it trips a budget/failure cap, it is automatically dropped a tier and flagged in the inbox. Irreversible actions (send/merge/spend) stay gated at propose forever, regardless of tier.
+    </div>
+    <div class="note">
+      <strong>Non-goals (v0.1):</strong> building our own agent/LLM runtime (we wrap Codex/Claude), a hosted multi-tenant SaaS (this is single-operator), and auto-executing irreversible actions (sending external mail, spending money, force-pushing) without human approval.
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>System Architecture</h2>
+    <p>
+      Six components, each with one job. The boundary that matters most is between <strong>loop logic</strong> (vendor-neutral) and the <strong>runtime adapter</strong> (vendor-specific) &mdash; that seam is what delivers portability.
+    </p>
+    <div class="flow">
+      <div>Manifests<small>declarative loop specs (git)</small></div>
+      <div>Scheduler<small>deploys + orders by deps</small></div>
+      <div>Runtime adapters<small>Codex / Claude</small></div>
+      <div>Tool proxy<small>policy-gated tool calls</small></div>
+      <div>State store<small>ledger + artifacts + Linear</small></div>
+      <div>Harvester<small>runs + artifacts &rarr; SQLite</small></div>
+      <div>Web UI + API<small>fleet, timeline, DAG, inbox</small></div>
+    </div>
+    <h3>Component responsibilities</h3>
+    <table>
+      <thead><tr><th>Component</th><th>Responsibility</th><th>Implementation</th></tr></thead>
+      <tbody>
+        <tr><td>Manifest layer</td><td>Source of truth for what loops exist and what they need; validated on load.</td><td>YAML files in <code>loops/</code>, schema-checked by <code>loopctl</code>.</td></tr>
+        <tr><td>Scheduler / orchestrator</td><td>Render manifests into systemd timers/services on the host; enforce dependency ordering; trigger on cadence or on upstream artifact change.</td><td><code>loopctl apply</code> generates units; a tiny supervisor daemon handles event/artifact triggers.</td></tr>
+        <tr><td>Runtime adapters</td><td>Translate a normalized loop invocation into a headless run on a specific vendor; capture logs, cost, exit status.</td><td>Pluggable <code>Runner</code> interface; <code>codex</code>, <code>claude</code>, and <code>cursor</code> implementations.</td></tr>
+        <tr><td>Tool proxy + executor</td><td>Route every tool call through a policy gate; auto-run reads, queue gated writes/sends for approval, then execute on approval.</td><td>MCP shim / <code>nv-tools</code> wrapper + a small executor; policy from the manifest.</td></tr>
+        <tr><td>State store</td><td>Persist loop memory + produced artifacts (reports, diagrams, files); version everything; mirror actionable items to Linear. Lives in the memory tree (<code>~/workspace/loopcraft_memory</code>), separate from source.</td><td>One <code>loopcraft_memory</code> git repo: ledger (markdown/JSONL) + artifacts (git-LFS) + a Linear sync worker.</td></tr>
+        <tr><td>Harvester</td><td>Read vendor run logs + artifact mtimes + manifests; auto-discover loops; infer the dependency graph; record history.</td><td>File watchers + SQLite (in the memory tree); reads <code>~/.codex</code>, <code>~/.claude</code>, and <code>~/workspace/loopcraft_memory</code>.</td></tr>
+        <tr><td>Web UI + API</td><td>Render fleet board, Gantt timeline, dependency DAG, and the approval/review inbox; route approvals back to the scheduler.</td><td>REST + WebSocket API over SQLite + the memory tree; React frontend.</td></tr>
+      </tbody>
+    </table>
+    <h3>Data &amp; control flow</h3>
+    <ol class="explain-list">
+      <li>You write or edit a <strong>manifest</strong> and run <code>loopctl apply</code>.</li>
+      <li>The <strong>scheduler</strong> validates dependencies, then renders systemd units (and registers event/artifact triggers) on the host.</li>
+      <li>On cadence (or trigger), a unit invokes the <strong>runtime adapter</strong>, which runs the loop headless on Codex or Claude inside an isolated worktree. Its tool calls route through the <strong>tool proxy</strong>, which auto-runs reads and queues gated calls for approval.</li>
+      <li>The loop reads its declared inputs, writes memory to the <strong>state ledger</strong> (markdown/JSONL) and any produced <strong>artifacts</strong> (reports, diagrams, files) to the artifact store with provenance; actionable items are mirrored to <strong>Linear</strong>.</li>
+      <li>The <strong>harvester</strong> records the run (status, cost, artifacts touched) and updates the inferred dependency graph.</li>
+      <li>The <strong>web UI</strong> shows it all live; any approval the operator grants is routed back to the scheduler to release the gated action.</li>
+    </ol>
+    <div class="note good">
+      <strong>Key seam:</strong> loop logic never names a vendor. It references a skill, a tool list, and an I/O contract. The manifest&rsquo;s <code>runtime.vendor</code> field (or a global default) selects the adapter at deploy time. That single indirection is the whole portability story.
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>The Loop Manifest</h2>
+    <p>
+      A loop is fully described by one declarative YAML file. It encodes the logic reference, the execution contract, and &mdash; per the requirements &mdash; <strong>every dependency explicitly</strong>. The control plane refuses to deploy a loop whose declared dependencies are unmet, so failures surface at <code>apply</code> time, not at 3am.
+    </p>
+    <h3>Annotated example</h3>
+    <pre><code class="language-yaml"># loops/eod-summary.yaml
+id: eod-work-summary
+name: "End-of-day work summary"
+description: "Scrape my contributions across Slack + GitLab and write a daily log."
+
+runtime:
+  vendor: codex            # codex | claude | cursor  (or omit -> global default)
+  model: gpt-5.5-medium    # optional; adapter maps to vendor-appropriate flag
+  reasoning_effort: medium
+
+# optional: per-role models for a maker/checker (multi-model) loop.
+# omit `roles` for a single-model loop (uses `runtime` + logic.skill above).
+# each role binds an AGENT DEFINITION (behavior) + an execution binding (vendor+model).
+roles:
+  implementer:
+    agent:  agents/implementer.md   # vendor-neutral agent def (instructions, tools)
+    vendor: codex
+    model:  gpt-5.5
+  reviewer:
+    agent:  agents/reviewer.md      # the checker's own instructions + readonly tools
+    vendor: claude                  # cross-provider checker
+    model:  opus
+  # execution:
+  #   intra-run  -> one harness spawns both as sub-agents (native on cursor)
+  #   inter-stage-> control plane runs each as an ordered stage (any providers)
+
+locus: vm                  # vm | cloud | local   (default: vm — always-on first)
+cadence:
+  type: cron               # cron | event | on-artifact
+  at: "0 18 * * 1-5"       # 6pm on weekdays
+tier: observe              # observe | propose | act
+budget:
+  max_turns: 20
+  max_tokens: 400000
+  max_runtime: 15m
+  max_consecutive_failures: 2
+
+# --- explicit dependencies: validated before the loop runs ---
+depends_on:
+  apis:   [slack, gitlab]
+  tools:  [nv-tools]               # tool/connector collections
+  auth:   [nv-tools, openai]       # credential bundles that must be present
+  env:    [NVTOOLS_HOME]           # required environment variables
+  loops:  [slack-triage]           # upstream loops this one consumes
+
+# --- I/O contract: drives ordering + the dependency graph ---
+inputs:
+  - state/slack/triage-latest.md   # produced by slack-triage
+outputs:
+  - state/work-log/{{date}}.md
+  - linear:project/Daily            # mirror a summary issue to Linear
+artifacts:                          # produced files: persisted + versioned
+  - path: summary.md   type: report   retention: keep
+
+logic:
+  skill: skills/eod-summary/SKILL.md   # vendor-neutral prompt/skill
+  verify: "work-log file for today exists and lists >=1 contribution"
+
+approval:
+  required: false          # observe-tier: no approval needed</code></pre>
+
+    <h3>Field reference</h3>
+    <table>
+      <thead><tr><th>Field</th><th>Meaning</th></tr></thead>
+      <tbody>
+        <tr><td><code>runtime</code></td><td>Which vendor adapter runs it (<code>codex</code>/<code>claude</code>/<code>cursor</code> + optional model/effort). Omit to inherit the global default &mdash; this is the portability lever.</td></tr>
+        <tr><td><code>roles</code></td><td>Optional maker/checker decomposition. Each role binds an <strong>agent definition</strong> (its behavior) to an <strong>execution binding</strong> (vendor + model) &mdash; e.g. <code>implementer</code> on gpt-5.5, <code>reviewer</code> on opus. Run intra-run (sub-agents in one harness &mdash; cross-provider native on Cursor) or inter-stage (ordered adapter runs across any providers). See <a href="#vendor-portability-the-runtime-adapter-multi-model-loops">Multi-model loops</a>.</td></tr>
+        <tr><td><code>locus</code></td><td>Where it executes: <code>vm</code> (default, always-on), <code>cloud</code> (vendor cloud agent), or <code>local</code>. Surfaced in the UI so laptop-bound loops are obvious.</td></tr>
+        <tr><td><code>cadence</code></td><td>How it fires: <code>cron</code> schedule, an external <code>event</code> (webhook), or <code>on-artifact</code> (when an upstream output changes).</td></tr>
+        <tr><td><code>tier</code></td><td>Autonomy level: observe (read-only) / propose (drafts for approval) / act (executes within budget). Governs whether approvals are required. It is <strong>earned, not set arbitrarily</strong> &mdash; loops start at observe and are promoted via the lifecycle in <a href="#goals-design-principles">Goal 9</a>; the system tracks progress and auto-demotes on regression.</td></tr>
+        <tr><td><code>budget</code></td><td>Hard caps: turns, tokens, runtime, consecutive failures. The scheduler aborts and reports when any is exceeded.</td></tr>
+        <tr><td><code>depends_on</code></td><td><strong>The explicit-dependency requirement.</strong> APIs, tool collections, auth bundles, env vars, and upstream loops. Validated pre-deploy. Each <code>tools</code> entry may carry an <code>approval: auto|required</code> flag (see <a href="#inbox-approvals-review">tool-call approvals</a>).</td></tr>
+        <tr><td><code>policy</code></td><td>Default tool-call gating for the loop (e.g. <code>writes: required, reads: auto</code>). The guarded tool proxy enforces it at runtime; per-tool <code>approval</code> flags override it.</td></tr>
+        <tr><td><code>inputs</code> / <code>outputs</code></td><td>Ledger paths read/written (and Linear targets). Drive run ordering and the inferred dependency DAG.</td></tr>
+        <tr><td><code>artifacts</code></td><td>Produced files to persist &mdash; reports, diagrams, charts, exports &mdash; each with a type and retention. Captured into the artifact store with provenance (see <a href="#persistent-state">Persistent State</a>).</td></tr>
+        <tr><td><code>logic</code></td><td>The vendor-neutral skill/prompt + a verifiable stop condition. No vendor names appear here.</td></tr>
+        <tr><td><code>approval</code></td><td>Whether (and how) a human must approve before a propose/act loop&rsquo;s output takes effect.</td></tr>
+      </tbody>
+    </table>
+    <h4>Roles are backed by agent definitions</h4>
+    <p>
+      A role is not just &ldquo;a model&rdquo; &mdash; it is a <strong>behavior</strong> bound to an <strong>execution</strong>. The behavior is an <strong>agent definition</strong>: a small, vendor-neutral spec (instructions, the tools it may touch, read-only vs. write, an optional stop/verify rubric) &mdash; the same shape as a <code>SKILL.md</code>, just scoped to one role. The execution binding (<code>vendor</code> + <code>model</code>) says <em>which engine</em> runs that behavior. Keeping the two separate is what lets you, say, point the <em>reviewer</em> behavior at Opus today and at a different model tomorrow without rewriting the reviewer&rsquo;s instructions.
+    </p>
+    <pre><code class="language-markdown"># agents/reviewer.md  — a role's agent definition (vendor-neutral)
+---
+name: reviewer
+description: "Adversarial code reviewer. Verifies the implementer's diff
+              against the spec and tests; never edits code."
+readonly: true                 # checker must not be able to 'fix' its own verdict
+tools: [nv-tools.gitlab, repo-read]
+verify: "every claimed issue cites a file:line; no false 'looks good'"
+---
+You are the checker, not the maker. Find what the implementer talked itself
+into. Output: blockers, then nits, then an explicit PASS/FAIL.</code></pre>
+    <p>
+      At deploy time the adapter <strong>compiles each role&rsquo;s agent definition into the chosen runtime&rsquo;s native agent format</strong> &mdash; <code>.codex/agents/*.toml</code>, <code>.claude/agents/*</code>, or <code>.cursor/agents/*.yaml</code> &mdash; and attaches the role&rsquo;s model. For an <em>intra-run</em> loop the harness spawns both as sub-agents in one process; for an <em>inter-stage</em> loop the control plane runs each agent definition as its own ordered adapter invocation, passing the diff through the memory ledger. Either way, the <strong>agent definition is the single source of truth for what a role does</strong>, and the vendor/model is a swappable binding on top of it.
+    </p>
+    <div class="note">
+      <strong>Why this matters:</strong> separating behavior (agent def) from execution (vendor+model) keeps the maker/checker split portable and honest &mdash; the reviewer&rsquo;s <code>readonly: true</code> and verify rubric travel with the <em>role</em>, not the model, so a checker can never quietly become a maker just because you swapped its engine.
+    </div>
+    <div class="note">
+      <strong>Validation at <code>apply</code>:</strong> <code>loopctl</code> checks that every <code>auth</code> bundle is present, every <code>env</code> var is set, every <code>tools</code> collection is installed, every upstream <code>loops</code> id exists, and every <code>roles.*.agent</code> file resolves &mdash; and that <code>inputs</code>/<code>outputs</code> form a DAG (no cycles). A loop with an unmet dependency is reported, not deployed.
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Vendor Portability &mdash; The Runtime Adapter</h2>
+    <p>
+      Portability lives in one narrow interface. Loop logic is expressed once as a <strong>skill</strong> (a <code>SKILL.md</code> with instructions), a <strong>declared tool list</strong>, and an <strong>I/O contract</strong>. A <code>Runner</code> adapter knows how to take that normalized invocation and execute it headless on a specific vendor, then return a normalized result (status, cost, logs, artifacts touched).
+    </p>
+    <h3>The Runner interface</h3>
+    <pre><code class="language-python">class Runner(Protocol):
+    vendor: str  # "codex" | "claude" | "cursor"
+
+    def preflight(self, loop: LoopManifest) -> PreflightReport:
+        """Check this vendor can satisfy the loop: tools mappable,
+        auth present, model available."""
+
+    def run(self, loop: LoopManifest, ctx: RunContext) -> RunResult:
+        """Execute the loop headless in an isolated worktree.
+        Returns status, token/cost usage, log path, artifacts touched."""
+
+# RunContext: worktree path, env, resolved secrets, memory paths (ledger + artifacts)
+# RunResult: status (done|stalled|failed|needs_approval), cost, logs, io</code></pre>
+    <h3>How each adapter maps the loop</h3>
+    <p>Codex and Claude are the first two adapters; <strong>Cursor</strong> is a third, called out because it is the one that runs <em>cross-provider</em> sub-agents natively (see <a href="#vendor-portability-the-runtime-adapter-multi-model-loops">Multi-model loops</a>).</p>
+    <table>
+      <thead><tr><th>Loop concept</th><th>Codex adapter</th><th>Claude adapter</th><th>Cursor adapter</th></tr></thead>
+      <tbody>
+        <tr><td>Invoke logic (skill)</td><td><code>codex exec --skill &lt;name&gt;</code></td><td><code>claude -p</code> + skill</td><td><code>cursor-agent --print</code> + skill</td></tr>
+        <tr><td>Tools / connectors</td><td>MCP + <code>nv-tools</code></td><td>MCP + <code>nv-tools</code></td><td>MCP + <code>nv-tools</code></td></tr>
+        <tr><td>Stop condition</td><td><code>/goal</code>-style check</td><td><code>/goal</code> + evaluator</td><td>wrapper loop + evaluator sub-agent</td></tr>
+        <tr><td>Isolation</td><td>built-in worktree</td><td><code>git worktree</code></td><td><code>--worktree</code> flag</td></tr>
+        <tr><td>Sub-agents</td><td><code>.codex/agents/</code> (TOML)</td><td><code>.claude/agents/</code></td><td><code>.cursor/agents/</code> (YAML)</td></tr>
+        <tr><td>Run logs / cost</td><td><code>~/.codex/</code></td><td><code>~/.claude/</code></td><td>Cursor session logs</td></tr>
+        <tr><td>Model selection</td><td><code>--model</code> / effort</td><td><code>--model</code></td><td><code>--model</code>; per-subagent model</td></tr>
+        <tr><td>Cross-provider in one run</td><td>via gateway only</td><td>via gateway only</td><td><strong>native</strong> (GPT + Opus)</td></tr>
+      </tbody>
+    </table>
+    <div class="note good">
+      <strong>What makes this clean:</strong> all three speak <strong>MCP</strong>, run the same <strong>SKILL.md</strong> format, and ship worktree isolation and a <code>/goal</code>-style (or wrappable) stop primitive. The adapter only translates the invocation and normalizes the result. The shared dependency layer is <code>nv-tools</code> (Jira, Slack, GitLab, Gerrit, Confluence, Linear, &hellip; behind one CLI), vendor-agnostic by construction.
+    </div>
+    <div class="note warn">
+      <strong>Portability caveats to handle in the adapter:</strong> capability gaps (a tool one vendor can&rsquo;t do), cost/latency differences per model, and slightly different stop-condition semantics. <code>preflight()</code> exists precisely to fail fast when a loop names a capability the chosen vendor can&rsquo;t satisfy &mdash; so you learn before deploy, and can pin that loop to the vendor that supports it.
+    </div>
+
+    <h3>Multi-model loops</h3>
+    <p>
+      A loop often wants <em>different frontier models for different roles</em> &mdash; e.g. a <code>gpt-5.5</code> implementer with an <code>opus</code> reviewer/checker. There are two ways to get there, and the design supports both.
+    </p>
+    <h4>Mechanism A &mdash; intra-run (sub-agents inside one harness)</h4>
+    <p>
+      Each harness lets a sub-agent declare its own <code>model</code>, so the maker/checker split runs inside a single invocation. The catch is <strong>cross-provider</strong> (GPT <em>and</em> Opus in the same run):
+    </p>
+    <ul>
+      <li><strong>Cursor &mdash; native.</strong> It brokers OpenAI/Anthropic/&hellip;, so a <code>gpt-5.5</code> main agent can spawn a <code>claude-opus</code> reviewer sub-agent (<code>.cursor/agents/</code> with a per-agent <code>model</code>). This is the cleanest fit for your exact example. (Caveat: per-sub-agent model selection on the CLI is plan-dependent &mdash; usage-based / Max Mode is reliable; prefer an explicit model id over <code>inherit</code>.)</li>
+      <li><strong>Codex / Claude &mdash; same-provider only, natively.</strong> Sub-agents can use different models <em>within</em> the parent&rsquo;s provider (e.g. gpt-5.5 + a cheaper gpt worker, or Opus + Sonnet). Cross-provider requires routing through a translating gateway (LiteLLM / OpenRouter).</li>
+    </ul>
+    <h4>Mechanism B &mdash; inter-stage (the control plane composes single-model runs)</h4>
+    <p>
+      Split the loop into stages and run each as its own adapter invocation with a different <code>runtime</code>/<code>model</code>, handing the artifact between them through the memory ledger: implement on <code>codex / gpt-5.5</code>, then review on <code>claude / opus</code>. This yields <strong>GPT + Opus across any providers with no gateway</strong>, using the same adapter seam and ordering machinery the rest of the design already has. It is the portable default.
+    </p>
+    <div class="note good">
+      <strong>Recommendation:</strong> support both. Use <strong>intra-run on Cursor</strong> when you want a single, tightly-coupled maker/checker loop with one process and shared context. Make <strong>inter-stage the portable default</strong> &mdash; it gives you a GPT maker + Opus checker on <em>any</em> mix of Codex/Claude/Cursor without depending on one harness brokering both providers, and every stage is independently observable, costed, and approvable.
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Execution &amp; Scheduling</h2>
+    <p>
+      Execution is <strong>remote/cloud-first</strong>: the default <code>locus</code> is the always-on Linux VM, so loops run whether or not your laptop is open (per the field guide&rsquo;s <a href="loopcraft-loop-engineering.html#where-loops-run">Where Loops Run</a>). <code>local</code> is the exception you opt into for interactive or private loops.
+    </p>
+    <h3>Locus options</h3>
+    <table>
+      <thead><tr><th>Locus</th><th>Runs on</th><th>Use when</th></tr></thead>
+      <tbody>
+        <tr><td><code>vm</code> (default)</td><td>The always-on Linux VM, as a systemd timer/service.</td><td>Anything that must fire on a fixed cadence regardless of you. The default for the whole initial fleet.</td></tr>
+        <tr><td><code>cloud</code></td><td>A vendor cloud agent (e.g. Cursor Cloud / hosted runner).</td><td>Long-running or event-triggered work you want fully off your own infra.</td></tr>
+        <tr><td><code>local</code></td><td>Your laptop (terminal session).</td><td>Interactive/iterating loops, or ones needing uncommitted local state. Flagged in the UI as laptop-bound.</td></tr>
+      </tbody>
+    </table>
+    <h3>Scheduling &amp; dependency ordering</h3>
+    <p>
+      <code>loopctl apply</code> renders each loop into a systemd <code>.timer</code> + <code>.service</code> pair (or registers an event/artifact trigger). Cron-style loops run on their schedule; <code>on-artifact</code> loops are woken by the supervisor when an upstream output changes &mdash; that is how W7&rarr;W8 style chains stay ordered without a central queue.
+    </p>
+    <pre><code># Generated by `loopctl apply` from loops/paper-discovery.yaml
+# /etc/systemd/system/loop-paper-discovery.timer
+[Timer]
+OnCalendar=*-*-* 07:00:00
+Persistent=true            # catch up if the VM was down at trigger time
+
+# /etc/systemd/system/loop-paper-discovery.service
+[Service]
+WorkingDirectory=/srv/loopcraft/worktrees/paper-discovery
+ExecStart=/usr/local/bin/loopctl run paper-discovery
+# loopctl run -> selects adapter, resolves secrets, runs headless,
+#                writes outputs to the memory tree, emits a run record</code></pre>
+    <div class="note">
+      <strong>Ordering rule:</strong> the scheduler builds the DAG from <code>inputs</code>/<code>outputs</code> + <code>depends_on.loops</code>. A downstream loop either (a) runs on its own cadence and simply reads the latest upstream artifact, or (b) declares <code>cadence.type: on-artifact</code> to be woken the moment its input updates. Cycles are rejected at <code>apply</code>.
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Persistent State</h2>
+    <p>
+      State has three stores, each tuned to what it holds: a <strong>state ledger</strong> (small, diffable memory), an <strong>artifact store</strong> (the reports, diagrams, and files loops produce), and a <strong>Linear board</strong> (the human surface). Code is excluded on purpose &mdash; it lives in its own repos &mdash; but everything else a loop emits is captured, versioned, and traceable back to the run that made it.
+    </p>
+    <div class="note good">
+      <strong>Logic and memory live in separate trees.</strong> The system&rsquo;s <em>source</em> (the <code>loopctl</code> code, adapters, UI, loop manifests, and skills) lives in <code>~/workspace/loopcraft</code>. The system&rsquo;s <em>memory</em> (the ledger and the artifact store) lives in <code>~/workspace/loopcraft_memory</code>. They are different repos with different lifecycles: source is reviewed, deployed, and shareable; memory is operator-specific data that grows over time and is synced across hosts. You can blow away and redeploy the source tree without touching a byte of memory &mdash; and back up or relocate memory without touching the code.
+    </div>
+    <table>
+      <thead><tr><th>Tree</th><th>Path</th><th>Holds</th><th>Lifecycle</th></tr></thead>
+      <tbody>
+        <tr><td>Logic / source</td><td><code>~/workspace/loopcraft</code></td><td><code>loopctl</code>, adapters, UI, <code>loops/</code> manifests, <code>skills/</code>, config.</td><td>Reviewed, versioned, deployable, shareable.</td></tr>
+        <tr><td>Memory</td><td><code>~/workspace/loopcraft_memory</code></td><td>The state ledger + the artifact store (and run records).</td><td>Operator-specific, append-mostly, synced across hosts, backed up.</td></tr>
+      </tbody>
+    </table>
+    <table>
+      <thead><tr><th>Store</th><th>Holds</th><th>Backed by</th></tr></thead>
+      <tbody>
+        <tr><td>State ledger</td><td>Small memory: queues, dedup sets, logs, findings, run records, work-logs.</td><td>Git repo (markdown / JSONL).</td></tr>
+        <tr><td>Artifact store</td><td>Produced outputs: reports, diagrams, charts, images, PDFs, exported tables/datasets.</td><td>The <em>same</em> <code>loopcraft_memory</code> git repo &mdash; small text committed directly, large/binary via git-LFS. (Object-store offload optional.)</td></tr>
+        <tr><td>Linear board</td><td>Human actions: approvals, reviews, follow-ups &mdash; each linking to the ledger entry and artifacts.</td><td>Linear via <code>nv-tools</code> (issues / projects / comments / relations).</td></tr>
+      </tbody>
+    </table>
+
+    <h3>Tier 1 &mdash; the state ledger (canonical memory)</h3>
+    <p>
+      The memory tree (<code>~/workspace/loopcraft_memory</code>, cloned on the VM and synced to your laptop/Obsidian vault) holds every loop&rsquo;s memory under <code>ledger/</code>. Each loop writes only to its own namespace. Because it is git, you get full history, diffs, blame, and rollback for free &mdash; the &ldquo;memory spine&rdquo; the field guide insists must live on disk. It keeps small, diffable text; large or binary outputs go to the artifact store (<code>artifacts/</code>, Tier 2) and are <em>referenced</em> from here.
+    </p>
+    <pre><code>~/workspace/loopcraft_memory/      # the MEMORY tree (separate from source)
+  ledger/                          # git: the memory spine (small, diffable text)
+    loops.lock                     # last-applied manifest snapshot
+    runs/                          # one record per run (status, cost, io, artifacts[])
+    code-sanitize/
+      nemotron-data-plane/2026-06-26.md   # findings -> link report artifact
+    research/
+      discovery-queue.jsonl        # W7 output
+      seen.json                    # W7 dedup set
+      themes.md
+    work-log/
+      2026-06-26.md
+    slack/
+      triage-latest.md
+    inbox/                         # findings awaiting human action
+      0042-codesan-bug.md
+      0043-slack-reply-draft.md
+  artifacts/                       # produced files (Tier 2, below)</code></pre>
+
+    <h3>Tier 2 &mdash; the artifact store (produced reports, diagrams &amp; files)</h3>
+    <p>
+      Loops do not just update memory &mdash; they <strong>produce things</strong>: a code-quality report, a dependency diagram, a portfolio chart, a rendered PDF, an exported CSV. These are first-class, persisted outputs that live in the <strong>same <code>loopcraft_memory</code> git repo</strong> as the ledger, under <code>artifacts/</code> &mdash; one repo, one history, one thing to back up. Small text artifacts (markdown, SVG, CSV) are committed directly; large or binary ones (PNG/PDF/parquet) are tracked by <strong>git-LFS in that same repo</strong>, with a small <strong>artifact manifest committed to git</strong> so the pointer, hash, and provenance are always versioned even when the bytes are LFS-backed. (An external object store is an optional offload for very large blobs, not a requirement.)
+    </p>
+    <pre><code>~/workspace/loopcraft_memory/      # one git repo (git-LFS for big blobs)
+  artifacts/                       # produced files, versioned in-repo
+    code-sanitize/
+      nemotron-data-plane/2026-06-26/
+        report.md                  # human-readable quality report
+        dep-graph.svg              # generated diagram
+        manifest.json              # {run_id, loop, sha256, size, mime, inputs_hash}
+    research/
+      2026-06-26/digest.pdf
+    portfolio/                     # (future) charts, scorecards
+      2026-06-26/returns.png
+# manifest.json travels in git even when the blob is in LFS/object storage</code></pre>
+    <h4>How artifacts are accounted for</h4>
+    <ul>
+      <li><strong>Declared in the manifest.</strong> A loop lists what it emits under <code>artifacts:</code> (path or pattern + type + retention), so the system knows to capture and version them rather than letting them rot in a worktree.</li>
+      <li><strong>Provenance on every artifact.</strong> Each gets a <code>manifest.json</code>: the producing loop + run id, a content hash, size/mime, and the hash of the inputs that produced it &mdash; so any report or diagram traces back to exactly the run and inputs that made it.</li>
+      <li><strong>Immutable &amp; addressable.</strong> Artifacts are write-once per run (dated/run-scoped paths, content-addressed). Re-runs produce new versions; nothing is overwritten, so history is intact.</li>
+      <li><strong>Referenced, not duplicated.</strong> The ledger entry, the Linear issue, and the UI all link to the artifact by id; the bytes live once in the artifact store.</li>
+      <li><strong>Retention policy.</strong> Per-artifact retention (e.g. keep reports forever, prune large intermediates after N days) keeps the repo (and its LFS store) from growing without bound.</li>
+    </ul>
+    <pre><code># manifest excerpt: declaring produced artifacts
+outputs:
+  - state/code-sanitize/nemotron-data-plane/{{date}}.md   # ledger (text)
+artifacts:
+  - path: report.md            type: report    retention: keep
+  - path: dep-graph.svg        type: diagram   retention: keep
+  - path: "coverage-*.png"     type: image     retention: 30d</code></pre>
+
+    <h3>Tier 3 &mdash; the Linear board (human surface)</h3>
+    <p>
+      Loops that produce something a human must see, approve, or follow up on mirror it to a Linear project. <strong>Linear is reached through <code>nv-tools</code></strong> (issues, projects, comments, relations) &mdash; the same connector layer the loops already use for Slack/GitLab/Jira, so there is no separate integration to build or authenticate. A finding becomes a Linear issue; its lifecycle (open &rarr; in review &rarr; approved/rejected &rarr; done) is the approval and review workflow. The markdown file remains canonical; the Linear issue links back to it and carries the human decision back.
+    </p>
+    <table>
+      <thead><tr><th>Ledger / artifact</th><th>Linear mirror</th><th>Sync direction</th></tr></thead>
+      <tbody>
+        <tr><td><code>inbox/*.md</code> (a finding)</td><td>Issue in the loop&rsquo;s project, labeled by loop + tier</td><td>ledger &rarr; Linear (create/update)</td></tr>
+        <tr><td>Produced report / diagram (artifact)</td><td>Attached to / linked from the issue by artifact id</td><td>artifact store &rarr; Linear (link)</td></tr>
+        <tr><td>Issue state change (you mark Done/Approved)</td><td>&mdash;</td><td>Linear &rarr; ledger (record decision, release gated action)</td></tr>
+        <tr><td><code>work-log/{{date}}.md</code></td><td>A daily summary issue/comment</td><td>ledger &rarr; Linear</td></tr>
+      </tbody>
+    </table>
+    <div class="note good">
+      <strong>Why three stores (in two repos):</strong> the ledger gives durable, diffable, agent-friendly memory; the artifact store &mdash; the <code>artifacts/</code> dir of the same <code>loopcraft_memory</code> repo, with git-LFS keeping the diffable history lean &mdash; persists the actual reports and diagrams loops produce; Linear gives a familiar board, notifications, mobile access, and a natural approval state machine. Each item links to the others, so a Linear issue &rarr; its ledger finding &rarr; the exact report/diagram that backs it.
+    </div>
+    <div class="note warn">
+      <strong>Conflict &amp; identity policy:</strong> the ledger is authoritative for content, the artifact store for produced files (immutable per run), and Linear for human decisions (status/approval). The sync worker is idempotent and stores mappings (<code>finding_id &harr; linear_issue_id</code>, <code>artifact_id &harr; blob</code>) so re-runs update or version rather than duplicate.
+    </div>
+    <div class="note good">
+      <strong>One storage model &mdash; no per-loop side databases.</strong> Every loop reads and writes <em>only</em> through this shared model: small/seen/queue state &rarr; the <strong>ledger</strong>, produced files &rarr; the <strong>artifact store</strong>, run metadata/metrics &rarr; the single harvester <strong>SQLite</strong> (<code>loopcraft_memory/loopcraft.db</code>), human-actionable items &rarr; <strong>Linear</strong>. Loops must not stand up their own stores (the way the early prototypes kept separate <code>state.sqlite3</code> files) &mdash; that fragments state, hides it from the control plane, and breaks versioning. A thin <code>loopcraft.store</code> API is the only sanctioned persistence path; ported code (e.g. the arXiv/X intel modules) is rewired onto it.
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Monitoring &mdash; The Web UI</h2>
+    <p>
+      No off-the-shelf tool shows a cross-vendor, interaction-aware view of your loops, so the control plane ships its own. It is read-only observability plus an approval surface; it executes nothing except routing your approvals back to the scheduler.
+    </p>
+    <div class="flow">
+      <div>Fleet board<small>every loop: vendor, locus, status, cost</small></div>
+      <div>Run timeline<small>Gantt of runs over time</small></div>
+      <div>Dependency DAG<small>who feeds whom</small></div>
+      <div>Inbox<small>approvals + review + follow-ups</small></div>
+      <div>Loop detail<small>manifest, history, logs, artifacts</small></div>
+    </div>
+
+    <h3>Fleet board</h3>
+    <p>One row per loop across both vendors: status (running / idle / stalled / failed), vendor, locus, last run, next run, recent findings, rolling cost. The single screen the products don&rsquo;t give you.</p>
+
+    <h3>Run timeline (Gantt)</h3>
+    <p>
+      Each loop is a lane; each run is a bar positioned by start time and sized by duration, colored by outcome. You see at a glance the nightly cluster, overlaps, long-runners, and gaps where a scheduled loop silently stopped firing. Hovering a bar shows cost and a link to that run&rsquo;s logs.
+    </p>
+    <div class="wire">  Run Timeline                         Mon        Tue        Wed
+  ─────────────────────────────────────────────────────────────────
+  paper-discovery   │ ▇07:00     ▇07:00     ▇07:00            (ok)
+  slack-triage      │ ▇ ▇ ▇      ▇ ▇ ▇      ▇ ▇ ▇             (ok)
+  eod-work-summary  │      ▇18:00      ▇18:00      ▥18:00     (1 stalled)
+  code-sanitize     │ ▇02:00     ▇02:00     ▇02:00 ▇(rerun)   (1 fail)
+  ─────────────────────────────────────────────────────────────────
+  ▇ ok   ▥ stalled   ▨ failed   ░ skipped/not-fired</div>
+
+    <h3>Dependency DAG (interaction graph)</h3>
+    <p>
+      Nodes are loops; edges are shared artifacts (loop B depends on loop A if B reads what A writes). The graph is <strong>inferred</strong> from the manifests&rsquo; <code>inputs</code>/<code>outputs</code> and confirmed by observed file accesses &mdash; you don&rsquo;t draw it by hand. It highlights chains and flags a stalled upstream that is starving everything downstream.
+    </p>
+    <div class="wire">  Dependency DAG
+
+   [slack-triage] ──▶ state/slack/triage-latest.md ──▶ [eod-work-summary]
+                                                              │
+   [code-sanitize] ──▶ inbox/codesan-*.md ────────────────▶  ├─▶ Linear: Daily
+                                                              │
+   [paper-discovery] ──▶ research/discovery-queue.jsonl ─▶ [W8 paper-read]*  (*future)
+
+   ●=ok  ◑=stalled  ✕=failed     edge label = shared artifact</div>
+
+    <h3>Loop detail</h3>
+    <p>Per loop: the rendered manifest, full run history with status/cost, the last log, and its position in the DAG. Crucially it also <strong>previews the produced artifacts</strong> &mdash; renders the markdown report, displays the generated diagram/chart/image, links the PDF or exported table &mdash; each tagged with the run that made it and a diff against the previous version. This is where you read what the loop actually did &mdash; the antidote to comprehension debt.</p>
+
+    <div class="note">
+      <strong>How it gets the data:</strong> the harvester watches <code>~/.codex/</code>, <code>~/.claude/</code>, and the memory tree (run records + artifact mtimes), normalizes runs across vendors into SQLite, and serves them over a REST/WebSocket API. The UI is a thin client over that.
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Inbox, Approvals &amp; Review</h2>
+    <p>
+      Most loops in the fleet produce things a human must act on: a fix to approve, a reply to send, a finding to triage. The control plane funnels all of these into one <strong>inbox</strong> &mdash; the operational core of the human-in-the-loop requirement (field guide <a href="loopcraft-loop-engineering.html#your-first-week-a-concrete-rollout">rollout</a> + monitoring).
+    </p>
+    <h3>What lands in the inbox</h3>
+    <div class="grid">
+      <div class="mini">
+        <b>Approval requests</b>
+        <span>From <code>propose</code>/<code>act</code> loops: &ldquo;send this reply,&rdquo; &ldquo;open this MR,&rdquo; &ldquo;file this ticket.&rdquo; One-click approve/reject; approval releases the gated action via the scheduler.</span>
+      </div>
+      <div class="mini">
+        <b>Review items</b>
+        <span>Outputs worth your eyes even if no action is gated &mdash; the code-sanitize findings, the daily summary, anything the loop flagged as high-signal.</span>
+      </div>
+      <div class="mini">
+        <b>Follow-ups</b>
+        <span>Commitments and open threads the loops detected (&ldquo;you said you&rsquo;d reply to X&rdquo;), so nothing slips.</span>
+      </div>
+      <div class="mini">
+        <b>Alerts</b>
+        <span>Operational problems the loop can&rsquo;t fix itself: a failed run, a stalled chain, an exhausted budget, a missing credential.</span>
+      </div>
+    </div>
+    <h3>The approval mechanism</h3>
+    <ol class="explain-list">
+      <li>A <code>propose</code>/<code>act</code> loop finishes its work but stops before the irreversible step, writing a request to <code>inbox/</code> with status <code>needs_approval</code> and the exact action it wants to take.</li>
+      <li>The sync worker mirrors it to Linear and the UI surfaces it in the inbox.</li>
+      <li>You approve or reject (in the UI or in Linear). The decision is written back to the file and the Linear issue.</li>
+      <li>On approval, the scheduler runs the loop&rsquo;s <strong>release step</strong> (a bounded follow-up invocation) that performs the now-approved action and records the result.</li>
+    </ol>
+    <div class="wire">  Inbox                                                    [ 3 need approval ]
+  ─────────────────────────────────────────────────────────────────────────
+  ⚑ NEEDS APPROVAL  slack-triage     Reply draft to @alice (#nemotron-data)
+                                       [ View ] [ Approve & send ] [ Reject ]
+  ⚑ NEEDS APPROVAL  code-sanitize    Open MR: fix null-deref in loader.py
+                                       [ View diff ] [ Approve & open ] [ Reject ]
+  ◆ REVIEW          eod-work-summary  Today: 4 MRs, 11 Slack threads, 2 reviews
+  ◷ FOLLOW-UP       slack-triage      You owe @bob an answer on RFC (2d old)
+  ✕ ALERT           code-sanitize     Run failed: gitlab auth expired
+  ─────────────────────────────────────────────────────────────────────────</div>
+    <div class="note">
+      <strong>Two granularities of approval.</strong> The mechanism above gates the loop&rsquo;s <em>anticipated</em> action at the loop boundary &mdash; the author knows the irreversible step is coming and structures the loop to stop there. But an agent may decide <em>mid-run</em> that it needs a gated tool the author didn&rsquo;t anticipate. For that we gate at the <strong>tool-call</strong> level too.
+    </div>
+
+    <h3>Tool-call approvals &mdash; the guarded tool proxy</h3>
+    <p>
+      In headless/unattended mode on the VM there is no interactive permission prompt &mdash; a tool call either runs or it doesn&rsquo;t. So we move the approval boundary <em>down to the tool layer</em>: every tool call routes through a <strong>guarded proxy</strong> (an MCP shim / <code>nv-tools</code> wrapper) that holds a per-loop policy of which tools require approval. This makes approval per-call, mid-run, and vendor-independent &mdash; the agent never executes a gated action itself, in any tier, even if it &ldquo;decides&rdquo; to.
+    </p>
+    <ol class="explain-list">
+      <li>The agent calls a tool. The proxy checks the policy.</li>
+      <li><strong>Not gated</strong> (e.g. a read) &rarr; executes normally and returns the result.</li>
+      <li><strong>Gated</strong> (e.g. a WRITE / external send) &rarr; the proxy <em>does not execute</em>. It records the intended call (tool + args) to <code>inbox/</code> as a pending approval and returns a structured <code>queued: pending-approval</code> result, so the agent logs what it wanted and exits gracefully instead of hanging.</li>
+      <li>You approve/reject in the UI or Linear. On approval a separate <strong>executor</strong> performs the call, records the result, and (optionally) feeds it back on the loop&rsquo;s next run.</li>
+    </ol>
+    <div class="note good">
+      <strong>Why a proxy, not the vendor&rsquo;s prompt:</strong> it works headless on the VM, it is identical across Codex and Claude (preserving portability), and it sits on top of <code>nv-tools</code>&rsquo;s existing READ/WRITE safety model &mdash; the proxy simply refuses to pass <code>--write</code> for a gated tool until the call is approved. Reads stay friction-free; mutations are caught by construction.
+    </div>
+    <h4>Declaring the policy in the manifest</h4>
+    <p>Each loop declares which tools are gated; sane global defaults mean you rarely have to (any WRITE / external send is gated unless explicitly opened).</p>
+    <pre><code># in a loop manifest
+depends_on:
+  tools:
+    - name: nv-tools.slack.search   approval: auto       # read-only: runs freely
+    - name: nv-tools.slack.send     approval: required   # gated: queue + approve
+    - name: nv-tools.gitlab.mr      approval: required
+policy:
+  default: { writes: required, reads: auto }   # any WRITE gated unless overridden</code></pre>
+    <div class="wire">  Tool call (mid-run)
+    │
+    ▼
+  [guarded proxy] ── policy? ──▶ auto  ──▶ execute ──▶ result to agent
+                       │
+                       └─▶ required ─▶ inbox: "pending approval" (tool + args)
+                                        │  agent gets {queued} and exits gracefully
+                                        ▼
+                              you approve ─▶ [executor] runs it ─▶ result recorded</div>
+    <div class="note">
+      <strong>Two paths, composed.</strong> The loop-boundary <strong>release step</strong> stays the clean path for <em>anticipated</em> actions (the agent finished a plan you approve in one click). The <strong>guarded proxy</strong> is the safety net for <em>unanticipated</em> gated calls mid-run. For <code>locus: local</code> loops you may additionally allow the vendor&rsquo;s interactive permission prompt; the proxy is what makes it work on the always-on VM.
+    </div>
+    <div class="note warn">
+      <strong>Hard rule:</strong> sending external messages, opening MRs/PRs, spending money, and any other irreversible action are <em>always</em> gated &mdash; at the loop boundary or by the proxy &mdash; regardless of tier. <code>act</code> tier only auto-executes reversible, low-stakes, in-house operations (e.g. writing a state file, filing an internal draft ticket).
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Trivial Setup</h2>
+    <p>
+      Standing up the whole system on a fresh always-on host is a one-time dependency install (step 0) plus three commands. Adding a loop is dropping a manifest and re-applying. This is the &ldquo;setup should be trivial&rdquo; requirement made concrete.
+    </p>
+    <h3>Bootstrap</h3>
+    <pre><code># 0 · install loopctl + ALL dependencies on a clean host (idempotent).
+#     This is the only step that needs system-level installs.
+curl -fsSL https://&lt;loopcraft&gt;/install.sh | bash      # installs the loopctl CLI
+loopctl deps install --runtimes codex,claude,cursor
+#   installs + version-checks everything the fleet needs:
+#     • runtimes:  codex CLI, claude code, cursor-agent (Cursor CLI)
+#     • connector: nv-tools  (Slack/GitLab/Jira/Linear/...)
+#     • storage:   git + git-lfs  (memory tree, LFS artifacts)
+#     • runtime:   python, node  (loopctl + the web UI)
+#     • host:      systemd present (timers); MCP shims for the tool proxy
+loopctl deps check                                    # report any gaps, no installs
+
+# 1 · bootstrap the host. Clones SOURCE to ~/workspace/loopcraft and
+#     inits MEMORY at ~/workspace/loopcraft_memory (paths are configurable).
+loopctl init --host vm --runtimes codex,claude,cursor \
+        --source ~/workspace/loopcraft \
+        --memory ~/workspace/loopcraft_memory
+
+# 2 · provision all credentials in one guided flow
+loopctl auth          # walks through nv-tools, openai, anthropic, slack, gitlab, linear
+
+# 3 · deploy every loop in loops/ (validates deps, renders units, starts timers)
+loopctl apply ./loops
+
+# that's it — the fleet is live and the UI is up
+loopctl ui            # prints the dashboard URL</code></pre>
+    <div class="note">
+      <strong>What step 0 covers:</strong> it installs the per-vendor <em>runtimes</em> you ask for (so the adapters have a CLI to call), the shared <code>nv-tools</code> connector layer, <code>git-lfs</code> for the artifact store, and the <code>python</code>/<code>node</code> the control plane and UI need. <code>loopctl deps check</code> is the same probe <code>preflight</code> runs before any loop &mdash; so a missing runtime is reported at install time, not at 3am. Re-running step 0 is safe (idempotent) and is how you add a runtime later (e.g. <code>loopctl deps install --runtimes claude</code>).
+    </div>
+    <p>The source&ndash;memory wiring lives in one config file in the source tree:</p>
+    <pre><code># ~/workspace/loopcraft/loopcraft.toml
+default_vendor = "codex"
+host           = "vm"
+memory_path    = "~/workspace/loopcraft_memory"   # ledger/ + artifacts/ + loopcraft.db
+# artifact_store = "s3://..."  # optional: large/binary blobs offloaded here</code></pre>
+    <h3>Everyday operations</h3>
+    <pre><code>loopctl add slack-triage      # scaffold a new manifest + skill from a template
+loopctl run eod-work-summary  # run one loop now (ad hoc), stream its output
+loopctl status                # fleet status in the terminal
+loopctl logs paper-discovery  # tail a loop's last run
+loopctl reindex               # rebuild loopcraft.db from logs + ledger (DB is derived)
+loopctl vendor set claude     # flip the global default runtime (portability!)
+loopctl promote slack-triage  # graduate a tier (observe->propose->act) once earned
+loopctl demote  slack-triage  # drop a tier manually (auto-demotion also happens)
+loopctl apply ./loops         # re-deploy after any change</code></pre>
+    <h3>Repo layout &mdash; logic and memory are separate trees</h3>
+    <pre><code>~/workspace/loopcraft/         # SOURCE (logic): reviewed, deployable, shareable
+  loopctl/                     # the CLI + scheduler + adapters + harvester + tool proxy
+    adapters/{codex,claude}.py
+  ui/                          # React dashboard
+  loops/                       # YOUR manifests (one yaml per loop)
+    slack-triage.yaml
+    paper-discovery.yaml
+    eod-summary.yaml
+    build-review-ship.yaml
+  skills/                      # vendor-neutral SKILL.md per loop
+    slack-triage/SKILL.md
+    paper-discovery/SKILL.md
+    ...
+  agents/                      # vendor-neutral agent defs for roles (maker/checker)
+    implementer.md
+    reviewer.md
+  loopcraft.toml               # global config: default vendor, host, memory path
+
+~/workspace/loopcraft_memory/  # MEMORY: operator-specific data, synced + backed up
+  ledger/                      # versioned state (markdown/JSONL) — the memory spine
+  artifacts/                   # produced reports/diagrams/files (git-LFS, same repo)
+  loopcraft.db                 # SQLite run history/metrics (harvester)</code></pre>
+    <div class="note">
+      <strong>Why split the trees:</strong> the source repo is what you review, deploy, and could open-source; the memory repo is your private, ever-growing data. Re-clone or upgrade <code>~/workspace/loopcraft</code> without risking memory; back up, snapshot, or move <code>~/workspace/loopcraft_memory</code> independently. <code>loopcraft.toml</code> simply points the source at the memory path, so the two are wired together at runtime but versioned apart.
+    </div>
+    <div class="note good">
+      <strong>Portability in one command:</strong> because logic is vendor-neutral, <code>loopctl vendor set claude</code> (or a per-loop <code>runtime.vendor</code>) re-points the entire fleet at a different runtime. The same loops, the same state, a different engine.
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Initial Loops</h2>
+    <p>
+      Four loops to build first, in build order &mdash; lowest-risk observe loops first, the multi-model build/ship loop last. Together they exercise every part of the design: multiple vendors, all three tiers, file + Linear state, the dependency graph, the approval inbox, and a cross-provider maker/checker. All default to <code>locus: vm</code>.
+    </p>
+
+    <h3>How they connect</h3>
+    <div class="wire">  [L1 slack-triage]   ─▶ state/slack/triage-latest.md ──┐
+                                                        ▼
+  [L2 paper-discovery]─▶ research/discovery-queue.jsonl   [L3 eod-summary] ─▶ work-log/ + Linear
+                         (feeds future W8/W9)
+
+  [L4 build-review-ship]  task (inbox/backlog) ─▶ branch + MR draft ─▶ inbox (approval)
+       implementer = codex/gpt-5.5   reviewer = claude/opus</div>
+
+    <h3>L1 &mdash; Slack triage &amp; summarizer</h3>
+    <div class="note">
+      <strong>Cadence:</strong> 3&times;/day (09:00, 13:00, 17:00). <strong>Tier:</strong> observe&rarr;propose. <strong>Deps:</strong> <code>nv-tools</code> slack. <strong>Outputs:</strong> <code>state/slack/triage-latest.md</code> + inbox items.
+    </div>
+    <p>
+      Scans everything aimed at you &mdash; @mentions, DMs, group DMs, and a configured list of high-signal channels &mdash; and produces a categorized digest: <em>action required</em> / <em>review-FYI</em> / <em>informational</em>, leading with what needs a reply and ending with a prioritized checklist. At propose tier it drafts replies to the easy ones and parks them in the inbox (sending is always approval-gated). Pure observe to start &mdash; the lowest-risk loop, built first.
+    </p>
+    <pre><code>$slack-triage
+Scope: @mentions, DMs, group DMs, channels in skills/slack-triage/channels.txt.
+Window: since last run (cursor in state/slack/seen.json).
+- categorize: ACTION / REVIEW / FYI ; dedup threads
+- write state/slack/triage-latest.md (lead with action items + checklist)
+- surface ACTION items to inbox; (propose) draft replies, approval-gated
+Never send without approval.</code></pre>
+
+    <h3>L2 &mdash; Multi-source paper discovery (full W7)</h3>
+    <div class="note">
+      <strong>Cadence:</strong> daily 07:00. <strong>Tier:</strong> observe. <strong>Deps:</strong> arXiv API, X/Twitter lists, newsletter inbox (nv-tools outlook/gmail), RSS, Glean. <strong>Outputs:</strong> <code>research/discovery-queue.jsonl</code>, <code>research/seen.json</code>.
+    </div>
+    <p>
+      The full <a href="loopcraft-loop-engineering.html#work-loops-nemotron-post-training">W7</a> loop, not just arXiv. Fans out across arXiv (<code>cs.CL/LG/AI</code>, filtered to post-training/RLHF/RLVR/distillation/reward-modeling/evals/agentic), curated X lists, subscribed newsletters, RSS, and Glean; normalizes every hit to a common record; dedups across sources; scores against <code>research/themes.md</code>; and appends keepers to one queue with a one-line &ldquo;why.&rdquo; It is the funnel that feeds the future W8/W9 reading/experiment loops.
+    </p>
+    <div class="note good">
+      <strong>Reuse existing prototype code.</strong> Two of L2&rsquo;s sources are already built in the <code>~/workspace/loopcraft</code> source tree and can be lifted in directly:
+      <ul style="margin-top:10px;">
+        <li><code>loopcraft.arxiv_intel</code> &mdash; an abstract-first arXiv workflow with <code>client</code>, <code>ranking</code> (relevance scoring), and <code>digest</code>; automation-ready via <code>scripts/daily_arxiv_intel.sh</code>.</li>
+        <li><code>loopcraft.x_intel</code> &mdash; an X/Twitter workflow on the official X API with <code>client</code>, <code>ranking</code>, <code>digest</code>, and <code>follow_discovery</code> (surfaces new accounts to follow); CLI verbs <code>snapshot-following</code> / <code>run</code> / <code>discover-follows</code>.</li>
+        <li>Bundled skills <code>arxiv-intelligence-reporting</code> and <code>x-intelligence-reporting</code> already encode the reporting behavior.</li>
+      </ul>
+      So the arXiv and X sources, their relevance ranking, and digest logic already exist. <strong>What L2 adds on top:</strong> the remaining sources (newsletters via nv-tools Outlook/Gmail, RSS, Glean), and a thin <em>normalizer</em> that merges all sources into the single <code>research/discovery-queue.jsonl</code> (+ <code>seen.json</code>) and scores against <code>research/themes.md</code> &mdash; reusing the existing <code>ranking</code> and <code>digest</code> code as the starting point.
+    </div>
+    <div class="note warn">
+      <strong>Migration: drop the per-tool SQLite stores.</strong> The prototypes each keep their own <code>state.sqlite3</code> (<code>var/arxiv_intel/</code>, <code>var/x_intel/</code>). Those are <em>retired</em> in favor of the <a href="#persistent-state">unified storage model</a>: dedup/seen and queue state move into the ledger (<code>research/seen.json</code>, <code>research/discovery-queue.jsonl</code>) in the memory tree, and run metadata into the single harvester DB (<code>loopcraft_memory/loopcraft.db</code>). The <code>store</code> modules are reimplemented against that shared layer &mdash; no loop keeps its own side database, so state stays versioned, diffable, and visible to the control plane.
+    </div>
+    <pre><code>$paper-discover
+Sources: arxiv (cs.CL, cs.LG, cs.AI), X list "ml-research", newsletters, RSS, Glean.
+For each new candidate since last run:
+  - normalize to {title, authors, url, source, date, abstract, surfaced_by}
+  - dedup against research/seen.json (arxiv id / normalized title)
+  - score 0-1 vs research/themes.md ; keep >= 0.6
+  - append to research/discovery-queue.jsonl with a 1-line "why"
+Update seen.json. Report top-5 to inbox; archive the rest silently.</code></pre>
+
+    <h3>L3 &mdash; End-of-day work summarizer</h3>
+    <div class="note">
+      <strong>Cadence:</strong> daily 18:00 (weekdays). <strong>Tier:</strong> observe&rarr;propose. <strong>Deps:</strong> <code>nv-tools</code> (slack, gitlab, jira, linear, calendar); consumes <code>slack-triage</code> (L1). <strong>Outputs:</strong> <code>work-log/{{date}}.md</code> + Linear Daily.
+    </div>
+    <p>
+      Uses <code>nv-tools</code> to scrape the day&rsquo;s contributions across Slack (your messages/threads), GitLab (commits, MRs opened/reviewed), Jira, and <strong>Linear</strong> (issues you completed or moved &mdash; including those closed by other loops, like L4&rsquo;s shipped MRs), plus the L1 Slack triage output, into a single dated work-log entry. This rolls forward all year so focal self-assessment becomes a query. At propose tier it also drafts a standup blurb for approval. First loop with an upstream dependency.
+    </p>
+    <pre><code>$eod-summary
+Window: today. Tools: nv-tools {slack, gitlab, jira, linear}.
+- collect my Slack messages/threads, GitLab commits + MRs (authored & reviewed)
+- tally completed work: Jira moves + Linear issues closed/advanced today
+- fold in state/slack/triage-latest.md   # from L1
+- write state/work-log/{{date}}.md grouped by project, with links as evidence
+- mirror a concise summary to Linear:Daily
+Optional (propose): draft tomorrow's standup for approval.</code></pre>
+
+    <h3>L4 &mdash; Build &rarr; Review &rarr; Iterate &rarr; Ship (multi-model)</h3>
+    <div class="note">
+      <strong>Cadence:</strong> on-artifact (a task lands in the backlog) or manual. <strong>Tier:</strong> propose. <strong>Roles:</strong> <code>implementer = codex / gpt-5.5</code>, <code>reviewer = claude / opus</code>. <strong>Deps:</strong> gitlab auth, repo checkout, test runner, both runtimes (codex + claude), the two agent defs. <strong>Outputs:</strong> a per-ticket feature branch + an MR draft parked in the inbox + a build-log artifact.
+    </div>
+    <p>
+      The most complex loop, built last &mdash; and the canonical <strong>cross-provider maker/checker</strong> (the <a href="#vendor-portability-the-runtime-adapter-multi-model-loops">multi-model</a> pattern made real). It <strong>always cuts a fresh feature branch per ticket</strong> (e.g. <code>loopcraft/&lt;ticket-id&gt;-&lt;slug&gt;</code>) off the latest <code>main</code> and works only there &mdash; <strong>never on <code>main</code> directly</strong>. Given a scoped task, the <strong>implementer</strong> (Codex / GPT-5.5) writes the change on that branch in an isolated worktree and gets the tests green; then the <strong>reviewer</strong> (Claude / Opus, <em>read-only</em>) grades the diff against the spec and tests. If the reviewer returns blockers, the implementer iterates; the loop repeats until <em>both</em> the reviewer passes <em>and</em> the gates are green, or the budget is hit. On success it ships a <strong>draft MR</strong> (feature branch &rarr; <code>main</code>) into the approval inbox &mdash; it never pushes to <code>main</code> or merges on its own. Maker and checker are deliberately different providers so the reviewer isn&rsquo;t grading its own homework.
+    </p>
+    <p>
+      Execution is <strong>inter-stage</strong> (implement on Codex, review on Claude, iterating via the memory ledger) so it works cross-provider with no gateway; on Cursor it can also run intra-run with both as sub-agents in one process.
+    </p>
+    <pre><code>$build-review-ship
+Input: a scoped task/ticket (from inbox/backlog) with an explicit acceptance check.
+Repo: &lt;target&gt;. Fresh worktree off origin/main.
+BRANCH: always create a new feature branch  loopcraft/&lt;ticket-id&gt;-&lt;slug&gt;
+        from latest origin/main. NEVER commit on main.
+
+LOOP until reviewer=PASS and gates green, or max_iterations:
+  1. IMPLEMENTER (codex/gpt-5.5, agents/implementer.md):
+       commit the smallest change that satisfies the task to the feature branch;
+       run lint+tests
+  2. REVIEWER (claude/opus, agents/reviewer.md, readonly):
+       grade the diff vs the spec + tests; emit blockers/nits + PASS|FAIL
+  3. if FAIL -> feed blockers back to the implementer; iterate
+SHIP: open a DRAFT MR (feature branch -> main), attach build log + reviewer verdict,
+      request approval in inbox.
+Tier=propose: never push to main or merge without approval.</code></pre>
+    <div class="note">
+      <strong>Stop condition:</strong> &ldquo;reviewer verdict = PASS <em>and</em> <code>pytest</code>/<code>lint</code> exit 0,&rdquo; bounded by <code>max_iterations</code> &mdash; a verifiable contract, not &ldquo;looks done.&rdquo; The reviewer&rsquo;s <code>readonly: true</code> (from its agent def) guarantees it can flag but never &ldquo;fix&rdquo; its way to a green verdict.
+    </div>
+
+    <div class="note good">
+      <strong>Coverage &amp; build order:</strong> L1 exercises high-frequency cadence + propose-tier drafts; L2 exercises multi-connector fan-out + dedup state; L3 exercises cross-tool scraping + an upstream loop dependency; L4 exercises the full multi-model maker/checker (two providers), iterate-to-green stop condition, MR-drafting, and approval gating. Build in order: <strong>L1 &rarr; L2</strong> (pure observe, lowest risk), then <strong>L3</strong> (depends on L1), then <strong>L4</strong> last (the only one that writes code and the only multi-model loop).
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Coverage of the Six Loop Primitives</h2>
+    <p>
+      The <a href="loopcraft-loop-engineering.html#anatomy-of-a-loop-five-primitives-memory">field guide</a> defines a loop as five primitives plus a memory: <strong>automations, worktrees, skills, connectors, sub-agents, and state</strong>. A useful test of this design is whether it actually delivers all six. The short version: it implements every one &mdash; mostly by <em>composing</em> capabilities the vendors already ship and adding the cross-cutting layer (manifest, scheduler, state, UI) that turns them into a managed fleet.
+    </p>
+    <table>
+      <thead><tr><th>Primitive</th><th>Field-guide job</th><th>How this design delivers it</th><th>Coverage</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>Automations (heartbeat)</td>
+          <td>Trigger the loop on a cadence without you.</td>
+          <td>The scheduler renders each manifest&rsquo;s <code>cadence</code> into systemd timers; a supervisor handles <code>event</code>/<code>on-artifact</code> triggers; the adapter wraps a <code>/goal</code>-style stop condition.</td>
+          <td><span class="pill green">Strong</span></td>
+        </tr>
+        <tr>
+          <td>Worktrees (isolation)</td>
+          <td>Parallel agents that can&rsquo;t collide.</td>
+          <td>Every run executes in an isolated worktree via the adapter (Codex built-in; Claude <code>git worktree</code>); <code>RunContext</code> hands the loop its own checkout.</td>
+          <td><span class="pill green">Strong</span></td>
+        </tr>
+        <tr>
+          <td>Skills (codified knowledge)</td>
+          <td>Project knowledge the agent reads every run.</td>
+          <td><code>logic.skill</code> points at a vendor-neutral <code>SKILL.md</code> in <code>skills/</code>; <code>loopctl add</code> scaffolds one; it&rsquo;s versioned in git and identical across vendors.</td>
+          <td><span class="pill green">Strong</span></td>
+        </tr>
+        <tr>
+          <td>Connectors (real tools)</td>
+          <td>Act inside your actual environment.</td>
+          <td><code>nv-tools</code> + MCP as the unified connector layer, declared per loop in <code>depends_on.tools/apis/auth</code> and validated pre-deploy. Same layer serves Linear.</td>
+          <td><span class="pill green">Strong</span></td>
+        </tr>
+        <tr>
+          <td>Sub-agents (maker vs checker)</td>
+          <td>A separate agent grades the work.</td>
+          <td>Delegated to the runtime (<code>.codex/agents</code> / <code>.claude/agents</code>); the L4 build/ship loop uses a cross-provider implementer + reviewer. The harvester surfaces sub-agent trees from vendor logs.</td>
+          <td><span class="pill amber">Strong, delegated</span></td>
+        </tr>
+        <tr>
+          <td>State / memory (the spine)</td>
+          <td>Persist what&rsquo;s done outside the conversation.</td>
+          <td>The most developed part: a three-store model (ledger + artifact store + Linear), versioned, with provenance and an explicit <code>inputs</code>/<code>outputs</code> contract.</td>
+          <td><span class="pill green">Strong</span></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h3>The one nuance: sub-agents are delegated</h3>
+    <p>
+      The only primitive the control plane does not own is sub-agents. By design, the plane treats a loop as a black box and lets the <em>vendor</em> spawn the maker/checker/evaluator inside the run (that is also what keeps it portable &mdash; we don&rsquo;t reimplement orchestration per vendor). The maker/checker split therefore lives in the loop&rsquo;s skill, not the scheduler. We still get <em>visibility</em> because the harvester parses sub-agent trees and costs out of the vendor logs, but we do not <em>orchestrate</em> them centrally. Where the split needs <em>different frontier models per role</em> (a GPT implementer + an Opus reviewer), the design offers two routes &mdash; intra-run sub-agents (cross-provider native on Cursor) or inter-stage composition by the control plane &mdash; see <a href="#vendor-portability-the-runtime-adapter-multi-model-loops">Multi-model loops</a>. If we later want cross-loop sub-agent reuse (one shared &ldquo;security reviewer&rdquo; agent), that would be a future addition.
+    </p>
+
+    <h3>What this design adds beyond the six</h3>
+    <p>
+      The six primitives describe a <em>single</em> loop. This design&rsquo;s real contribution is the fleet layer on top of them &mdash; the things the field guide&rsquo;s monitoring and maturity sections ask for but no single primitive provides:
+    </p>
+    <div class="grid">
+      <div class="mini">
+        <b>Portability across vendors</b>
+        <span>The adapter seam makes all six primitives vendor-neutral &mdash; the field guide notes the primitives exist in every tool; this design lets one loop use them on any tool.</span>
+      </div>
+      <div class="mini">
+        <b>Declared dependencies + validation</b>
+        <span>Every primitive a loop needs (tools, auth, env, upstream loops) is declared and checked before deploy &mdash; not discovered at 3am.</span>
+      </div>
+      <div class="mini">
+        <b>Inter-loop dependency graph</b>
+        <span>The primitives are within-loop; this adds the between-loop DAG (who feeds whom) inferred from the I/O contract.</span>
+      </div>
+      <div class="mini">
+        <b>Promotion + observability</b>
+        <span>The earned observe&rarr;propose&rarr;act lifecycle and the cross-vendor UI (fleet, timeline, inbox) operationalize the field guide&rsquo;s L4 &ldquo;operating system&rdquo; rung.</span>
+      </div>
+    </div>
+    <div class="note good">
+      <strong>Verdict:</strong> the design implements all six primitives &mdash; four owned outright (automations, worktrees via the adapter, connectors, state), skills as a vendor-neutral artifact, and sub-agents delegated-but-observed &mdash; and then adds the fleet-level layer (portability, dependency graph, promotion, monitoring) that a single loop&rsquo;s anatomy does not cover. The honest gap is central sub-agent orchestration, which is deliberately left to the runtime to preserve portability.
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Tech Stack</h2>
+    <div class="grid">
+      <div class="mini">
+        <b>Core / CLI</b>
+        <span>Python (Typer CLI). Easy to wrap <code>nv-tools</code> and the vendor CLIs; good MCP and subprocess story.</span>
+      </div>
+      <div class="mini">
+        <b>Scheduler</b>
+        <span>systemd timers + a small supervisor daemon for event/artifact triggers. No external queue in v0.1.</span>
+      </div>
+      <div class="mini">
+        <b>State</b>
+        <span>Git repo (markdown/JSONL) as truth; SQLite for run history/metrics; Linear via <code>nv-tools</code>.</span>
+      </div>
+      <div class="mini">
+        <b>API + UI</b>
+        <span>FastAPI (REST + WebSocket) over SQLite + the memory tree; React frontend with vis-timeline (Gantt) and Cytoscape/d3-force (DAG).</span>
+      </div>
+    </div>
+    <div class="note">
+      <strong>Reuse, don&rsquo;t reinvent:</strong> the harvester deliberately mirrors how the community Claude/Codex monitors already parse <code>~/.claude/</code> and <code>~/.codex/</code>. The genuinely new parts are the <em>cross-vendor</em> normalization, the <em>manifest-driven</em> scheduling, and the <em>artifact-inferred</em> dependency graph.
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Build Plan &amp; Milestones</h2>
+    <p>An incremental path: each milestone is independently useful, and the order front-loads the lowest-risk, highest-leverage pieces (the core run path and read-only observability) before anything that mutates remote state. Expand each for scope, deliverables, dependencies, exit criteria, and risks.</p>
+
+    <details class="explain">
+      <summary>M1 &mdash; Manifest + Codex adapter + one loop</summary>
+      <p>Prove the core run path end to end on a single vendor with the simplest loop.</p>
+      <ul>
+        <li><strong>Build:</strong> the loop-manifest schema + validator; the Codex <code>Runner</code> (<code>run</code> + <code>preflight</code>); <code>loopctl run &lt;loop&gt;</code> executing one loop headless in an isolated worktree; the thin <code>loopcraft.store</code> write path into the ledger.</li>
+        <li><strong>Convenience layer:</strong> a <code>Makefile</code> that wraps the common <code>loopctl</code> calls so day-to-day use is one short command &mdash; great for muscle memory and for CI/automation to call uniformly.</li>
+        <li><strong>First loop:</strong> <code>slack-triage</code> (L1) &mdash; observe-only, single connector, no dependencies.</li>
+        <li><strong>Depends on:</strong> step-0 deps (codex CLI, nv-tools, git, python).</li>
+        <li><strong>Exit criteria:</strong> <code>make run LOOP=slack-triage</code> writes <code>state/slack/triage-latest.md</code> + a run record to the memory tree.</li>
+        <li><strong>Risks:</strong> nv-tools auth setup; headless Codex invocation quirks (capture exit/cost reliably).</li>
+      </ul>
+      <pre><code class="language-makefile"># Makefile — convenience wrappers over loopctl (M1)
+setup:        ## install deps + bootstrap host (steps 0–1)
+	loopctl deps install --runtimes codex,claude,cursor
+	loopctl init --host vm --source ~/workspace/loopcraft \
+	                       --memory ~/workspace/loopcraft_memory
+auth:         ## guided credential provisioning
+	loopctl auth
+run:          ## run one loop now:  make run LOOP=slack-triage
+	loopctl run $(LOOP)
+apply:        ## validate + (re)deploy all manifests in loops/
+	loopctl apply ./loops
+status:       ## fleet status in the terminal
+	loopctl status
+logs:         ## tail a loop's last run:  make logs LOOP=paper-discovery
+	loopctl logs $(LOOP)
+ui:           ## print the dashboard URL
+	loopctl ui
+test:         ## run the loopcraft unit tests
+	pytest -q
+check:        ## verify deps + manifests without deploying
+	loopctl deps check && loopctl apply ./loops --dry-run</code></pre>
+      <div class="note">
+        <strong>Why a Makefile:</strong> it is the lowest-friction convenience layer &mdash; self-documenting (<code>make help</code> from the <code>##</code> comments), zero extra deps, and the same entry points work locally, on the VM, and in CI. It wraps <code>loopctl</code> (which stays the real interface) rather than replacing it.
+      </div>
+    </details>
+
+    <details class="explain">
+      <summary>M2 &mdash; Scheduler + auth + apply (deploy L1 + L2)</summary>
+      <p>Turn one-shot runs into a scheduled, unattended fleet on the VM.</p>
+      <ul>
+        <li><strong>Build:</strong> <code>loopctl init</code> (bootstrap host, source + memory trees), <code>loopctl auth</code> (guided creds), <code>loopctl apply</code> (render systemd timer/service units, register event/artifact triggers); pre-deploy dependency validation (auth/env/tools/upstream loops + DAG cycle check).</li>
+        <li><strong>Deploy:</strong> L1 (slack-triage) + L2 (paper-discovery), both pure observe, on cadence. Includes the L2 prototype migration off per-tool SQLite onto the unified store.</li>
+        <li><strong>Depends on:</strong> M1.</li>
+        <li><strong>Exit criteria:</strong> L1 + L2 fire on schedule with the laptop closed; an unmet dependency is reported at <code>apply</code>, not at runtime.</li>
+        <li><strong>Risks:</strong> VM provisioning + secret placement (outside both repos); systemd <code>Persistent=true</code> catch-up behavior.</li>
+      </ul>
+    </details>
+
+    <details class="explain">
+      <summary>M3 &mdash; Claude + Cursor adapters (portability)</summary>
+      <p>Make the runtime a config value, not a rewrite &mdash; the core portability proof.</p>
+      <ul>
+        <li><strong>Build:</strong> the Claude and Cursor <code>Runner</code> implementations; <code>loopctl vendor set</code> + per-loop <code>runtime.vendor</code> override; <code>preflight</code> capability checks (tools mappable, auth present, model available).</li>
+        <li><strong>Depends on:</strong> M1 (the adapter interface).</li>
+        <li><strong>Exit criteria:</strong> an existing loop runs unchanged on Codex <em>and</em> Claude; a vendor swap is one flag; a Cursor loop can spawn a cross-provider sub-agent.</li>
+        <li><strong>Risks:</strong> Cursor CLI per-sub-agent model caveats (plan-dependent); Codex/Claude cross-provider needing a gateway; normalizing results across three log formats.</li>
+      </ul>
+    </details>
+
+    <details class="explain">
+      <summary>M3.5 &mdash; Multi-model loops</summary>
+      <p>Enable per-role models (maker/checker on different providers).</p>
+      <ul>
+        <li><strong>Build:</strong> the <code>roles:</code> manifest block; the agent-definition compiler (role def &rarr; <code>.codex/.claude/.cursor</code> agent formats); both execution paths &mdash; intra-run sub-agents (native on Cursor) and inter-stage composition across adapters via the memory ledger.</li>
+        <li><strong>Depends on:</strong> M3 (adapters).</li>
+        <li><strong>Exit criteria:</strong> a maker/checker loop runs a <code>gpt-5.5</code> implementer + an <code>opus</code> reviewer and hands the diff between stages cleanly.</li>
+        <li><strong>Risks:</strong> passing context/diffs across stages without loss; two-model token cost; verifying the readonly reviewer can&rsquo;t mutate.</li>
+      </ul>
+    </details>
+
+    <details class="explain">
+      <summary>M4 &mdash; Harvester + fleet board + timeline</summary>
+      <p>First observability: see every loop and run across vendors on one screen.</p>
+      <ul>
+        <li><strong>Build:</strong> the harvester (watch <code>~/.codex</code>, <code>~/.claude</code>, the memory tree; normalize runs into the single SQLite); the read-only web UI &mdash; fleet board + Gantt timeline; the REST/WebSocket API.</li>
+        <li><strong>Depends on:</strong> M2 (runs exist to harvest).</li>
+        <li><strong>Exit criteria:</strong> every run from every vendor appears with status, last/next run, and rolling cost; the timeline shows the nightly cluster and any gaps.</li>
+        <li><strong>Risks:</strong> cross-vendor log-format drift; accurate per-vendor cost/pricing tables.</li>
+      </ul>
+      <h4>What goes in the SQLite DB (and why it isn&rsquo;t a second source of truth)</h4>
+      <p>
+        The DB holds <strong>operational telemetry only</strong> &mdash; not loop content. One row per run plus a few derived tables: <code>run_id</code>, loop id, vendor/model, start/end + duration, status (<code>done</code>/<code>stalled</code>/<code>failed</code>/<code>needs_approval</code>), tokens + cost, iteration count, exit code, a pointer to the log, the artifacts touched, and the inferred loop-to-loop edges. It deliberately does <em>not</em> store the findings, summaries, queues, or reports &mdash; those live in the ledger and artifact store.
+      </p>
+      <div class="note good">
+        <strong>It&rsquo;s a derived index, so there is no sync problem.</strong> The DB is a <em>one-way projection</em> built by the harvester from the vendor logs (<code>~/.codex</code>/<code>~/.claude</code>) and the memory tree&rsquo;s run records + file mtimes. Data flows <strong>logs/ledger &rarr; DB</strong>, never back. The ledger (git) stays the single source of truth; the DB is a fast, queryable cache for the UI. Because it&rsquo;s purely derived, it is <strong>rebuildable from scratch</strong> &mdash; <code>loopctl reindex</code> drops and repopulates it from the logs + ledger, so a corrupt or deleted <code>loopcraft.db</code> is a non-event, not data loss. That is exactly why it&rsquo;s safe to keep it out of git (or git-ignored in the memory tree).
+      </div>
+      <div class="note">
+        <strong>The one nuance &mdash; vendor logs are ephemeral.</strong> <code>~/.codex</code>/<code>~/.claude</code> can be rotated/pruned by the vendors, so a pure log-derived DB could lose old history. Fix: each run also writes a small durable <strong>run record to the ledger</strong> (<code>ledger/runs/&lt;run_id&gt;.json</code>) at finish &mdash; that, not the vendor log, is the authoritative input the harvester reindexes from. So the ledger remains complete and the DB is always reconstructable from it alone.
+      </div>
+    </details>
+
+    <details class="explain">
+      <summary>M5 &mdash; Dependency DAG + Linear sync (add L3)</summary>
+      <p>Show how loops interact, and wire the human surface.</p>
+      <ul>
+        <li><strong>Build:</strong> infer the loop DAG from <code>inputs</code>/<code>outputs</code> + observed file accesses; render the interaction graph; bidirectional Linear sync via <code>nv-tools</code> (findings &rarr; issues, status/approval &rarr; back).</li>
+        <li><strong>Deploy:</strong> L3 (eod-summary), the first loop with an upstream dependency (consumes L1).</li>
+        <li><strong>Depends on:</strong> M4 (UI) + M2 (loops).</li>
+        <li><strong>Exit criteria:</strong> the graph shows the L1&rarr;L3 edge; a finding becomes a Linear issue and marking it Done writes back to the ledger.</li>
+        <li><strong>Risks:</strong> idempotent <code>finding_id &harr; issue_id</code> mapping; Linear (via nv-tools) rate limits.</li>
+      </ul>
+    </details>
+
+    <details class="explain">
+      <summary>M6 &mdash; The approval inbox (the human-in-the-loop core), then L4</summary>
+      <p>
+        The <strong>inbox is the headline deliverable of this milestone</strong> &mdash; it is where the whole system meets the human. Everything a loop can&rsquo;t do unattended lands here, and nothing irreversible happens without a click. It is also the single surface that makes <code>propose</code>-tier loops (and tier promotion) actually usable, so it gets built first in M6 and the rest hangs off it.
+      </p>
+      <h4>The inbox &mdash; primary work of M6</h4>
+      <ul>
+        <li><strong>One unified queue</strong> of everything needing you: <em>approval requests</em>, <em>review</em> items, <em>follow-ups</em>, and <em>alerts</em> &mdash; across all loops and all vendors, deduplicated, newest/most-urgent first.</li>
+        <li><strong>One-click actions</strong> per item: Approve &amp; run / Reject / View diff / Snooze &mdash; with a keyboard-driven triage flow so clearing the inbox is fast.</li>
+        <li><strong>Full context inline:</strong> each item links to its ledger finding, the produced artifact (report/diff), the source run + logs, and the mirrored Linear issue &mdash; so you decide without leaving the screen.</li>
+        <li><strong>Mirrored to Linear</strong> (from M5) so the same queue is actionable on mobile and shows up in your normal workflow; state stays in sync both ways.</li>
+        <li><strong>Filter &amp; group</strong> by loop, type, tier, and age; an empty inbox is the &ldquo;all clear&rdquo; signal.</li>
+      </ul>
+      <h4>Supporting plumbing</h4>
+      <ul>
+        <li>Loop-boundary <strong>release steps</strong> (perform an approved anticipated action) and the <strong>guarded tool proxy + executor</strong> (queue mid-run gated calls, execute on approval) &mdash; both feed items <em>into</em> the inbox and act on its decisions.</li>
+      </ul>
+      <ul>
+        <li><strong>Then build L4:</strong> the multi-model build &rarr; review &rarr; iterate &rarr; ship loop &mdash; branch-per-ticket, draft-MR, fully gated through the inbox. L4 is the first heavy consumer of the inbox, which is why it comes after it.</li>
+        <li><strong>Depends on:</strong> M3.5 (multi-model), M5 (Linear sync), M2.</li>
+        <li><strong>Exit criteria:</strong> the inbox shows a live, cross-loop queue; approving an item releases the gated action and rejecting discards it; a mid-run gated tool call appears as a pending item rather than executing; L4 opens a draft MR on a feature branch and never touches <code>main</code>.</li>
+        <li><strong>Risks:</strong> inbox signal-to-noise (must not become a dumping ground &mdash; default to surfacing only what truly needs a human); tool-proxy coverage (no bypass path); evidence-based promotion/auto-demotion.</li>
+      </ul>
+    </details>
+
+    <details class="explain">
+      <summary>M7 &mdash; Health &amp; alerts</summary>
+      <p>Make the always-on fleet trustworthy to walk away from.</p>
+      <ul>
+        <li><strong>Build:</strong> stalled-run detection, budget alerts, starved-downstream flags, daily credential-health checks, and notifications &mdash; delivered as a <strong>Slack DM via <code>nv-tools</code></strong> (plus the inbox) so alerts reach you off the dashboard.</li>
+        <li><strong>Depends on:</strong> M4 (harvester history).</li>
+        <li><strong>Exit criteria:</strong> a hung run, an exhausted budget, an expired token, and a broken upstream chain each raise a timely alert (Slack DM + inbox).</li>
+        <li><strong>Risks:</strong> alert-noise tuning &mdash; too noisy and it gets ignored, too quiet and silent failures slip.</li>
+      </ul>
+    </details>
+
+    <details class="explain">
+      <summary>M8 &mdash; Event triggers &amp; webhooks (reactive loops)</summary>
+      <p>Move beyond cron + artifact-mtime polling to real-time triggers &mdash; high-value because it makes loops <em>reactive</em> instead of waiting for the next tick.</p>
+      <ul>
+        <li><strong>Build:</strong> a webhook ingress on the always-on VM that maps inbound events to loop runs &mdash; a new/updated MR or pipeline status (GitLab), a Slack mention/DM (events API), a new Linear issue, or a generic webhook. Extends the existing <code>cadence.type: event</code> the manifest already supports; the supervisor dispatches the matching loop with the event payload as input.</li>
+        <li><strong>Payoff for the initial fleet:</strong> <strong>L1</strong> triages the moment you&rsquo;re mentioned instead of at the next 4-hour tick; <strong>L4</strong> kicks off the build/review/ship loop the instant a ticket is labeled or assigned &mdash; turning the backlog into a true work queue.</li>
+        <li><strong>Depends on:</strong> M2 (scheduler/supervisor) + M6 (so reactive write-actions still flow through approvals).</li>
+        <li><strong>Exit criteria:</strong> labeling a ticket triggers L4 within seconds; an @mention triggers L1; webhook auth + replay protection in place; polling remains the fallback when no webhook source exists.</li>
+        <li><strong>Risks:</strong> webhook delivery reliability (need idempotency + dedup against the ledger&rsquo;s <code>seen</code> state); securing the public ingress; avoiding trigger storms (debounce/coalesce bursts).</li>
+      </ul>
+    </details>
+
+    <div class="note good">
+      <strong>First usable slice:</strong> M1&ndash;M2 already give you scheduled, headless loops writing to the memory tree &mdash; the rest layers portability, observability, and approvals on top. You get value before the UI exists.
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Security, Secrets &amp; Failure Modes</h2>
+    <div class="grid">
+      <div class="mini">
+        <b>Per-host secrets</b>
+        <span>The VM holds its own credentials (nv-tools auth, vendor API keys, git tokens) &mdash; never the laptop&rsquo;s. Secrets live outside <em>both</em> trees (e.g. systemd <code>EnvironmentFile</code> with locked perms or a secrets manager); manifests reference names, not values.</span>
+      </div>
+      <div class="mini">
+        <b>Least privilege per loop</b>
+        <span>A loop only gets the auth/tools it declares. Scoped tokens where possible; write access limited to its own state namespace.</span>
+      </div>
+      <div class="mini">
+        <b>Irreversible = gated</b>
+        <span>Sending, merging, spending always route through the approval inbox &mdash; at the loop boundary or, mid-run, via the guarded tool proxy. The control plane has no path to do them unattended.</span>
+      </div>
+      <div class="mini">
+        <b>Budgets cap blast radius</b>
+        <span>Per-loop turn/token/runtime/failure caps. An uncapped loop &ldquo;does not eventually succeed; it eventually drains the account.&rdquo;</span>
+      </div>
+      <div class="mini">
+        <b>Always-on cuts both ways</b>
+        <span>A runaway loop on the VM runs all night, not just until you close the laptop. Hence hard caps, stalled-run detection, and a kill switch (<code>loopctl pause &lt;loop&gt;</code> / <code>loopctl pause --all</code>).</span>
+      </div>
+      <div class="mini">
+        <b>Auth expiry is the #1 failure</b>
+        <span>Expired nv-tools/git tokens silently break loops. <code>preflight</code> + a daily credential-health check catch it early &mdash; and the check <strong>sends you a Slack DM via <code>nv-tools</code></strong> (the one connector most likely to still be valid) the moment any credential is missing or expiring, so you re-auth <em>before</em> the nightly run fails rather than after.</span>
+      </div>
+    </div>
+    <div class="note risk">
+      <strong>Comprehension debt is a system risk, not just a personal one.</strong> The loop-detail view (manifest + diff + logs) exists so the operator actually reads what shipped. A loop that no one ever reviews should be demoted to a louder review cadence, not left running on faith.
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Open Questions &amp; Future Work</h2>
+    <ul>
+      <li><strong>Cross-host loops.</strong> Some loops may want the vendor cloud (<code>locus: cloud</code>) instead of the VM. The adapter abstraction should extend to a cloud runner without changing manifests.</li>
+      <li><strong>Cost attribution accuracy.</strong> Normalizing token/cost across Codex and Claude pricing needs a per-vendor pricing table; &ldquo;cost per accepted change&rdquo; is the metric we actually want to surface.</li>
+      <li><strong>The research pipeline (W8/W9).</strong> Paper-discovery (L2) is the funnel; the reading/summarization and experiment-generation loops are the obvious next additions once the plane is solid.</li>
+      <li><strong>Self-evolving loops.</strong> A meta-loop that proposes manifest edits (cadence, budget, even new loops) is the L5 frontier &mdash; powerful, but it must stay propose-tier and human-approved.</li>
+      <li><strong>Multi-operator / team.</strong> Out of scope for v0.1, but the Linear board already hints at how shared review could work.</li>
+    </ul>
+  </section>
+
+  <section class="card">
+    <h2>Appendix &mdash; Glossary</h2>
+    <table>
+      <thead><tr><th>Term</th><th>Meaning</th></tr></thead>
+      <tbody>
+        <tr><td>Control plane</td><td>The system that declares, schedules, runs, and monitors loops (this proposal). It orchestrates; the vendors execute.</td></tr>
+        <tr><td>Manifest</td><td>The YAML file fully describing one loop: logic, dependencies, locus, cadence, tier, budget, I/O.</td></tr>
+        <tr><td>Runtime adapter / Runner</td><td>Vendor-specific code that runs a vendor-neutral loop on Codex or Claude and normalizes the result.</td></tr>
+        <tr><td>Locus</td><td>Where a loop executes: <code>vm</code> (default, always-on), <code>cloud</code>, or <code>local</code>.</td></tr>
+        <tr><td>Tier</td><td>Autonomy level: observe (read-only) / propose (drafts for approval) / act (executes within budget).</td></tr>
+        <tr><td>Memory tree</td><td><code>~/workspace/loopcraft_memory</code> &mdash; the separate repo holding all memory (<code>ledger/</code> + <code>artifacts/</code> + SQLite), distinct from the source tree.</td></tr>
+        <tr><td>State ledger</td><td>The git-versioned markdown/JSONL collection (<code>loopcraft_memory/ledger/</code>) holding loop memory &mdash; the system&rsquo;s source of truth.</td></tr>
+        <tr><td>Artifact store</td><td>Produced files (reports, diagrams, charts, PDFs, exports) under <code>loopcraft_memory/artifacts/</code> &mdash; same git repo, git-LFS for big blobs (object-store offload optional), with provenance manifests in git.</td></tr>
+        <tr><td>Harvester</td><td>The component that reads vendor logs + artifacts into SQLite and infers the dependency graph.</td></tr>
+        <tr><td>Release step</td><td>The bounded follow-up invocation that performs a loop&rsquo;s anticipated action after a human approves it (loop-boundary approval).</td></tr>
+        <tr><td>Guarded tool proxy</td><td>The MCP shim / <code>nv-tools</code> wrapper that all tool calls route through; auto-runs reads, queues gated writes/sends for approval, and executes them post-approval (tool-call-level approval).</td></tr>
+        <tr><td>nv-tools</td><td>The unified NVIDIA developer CLI (Jira, Slack, GitLab, Gerrit, Confluence, Linear, &hellip;) used as the vendor-agnostic connector layer &mdash; including the Linear access the state store uses.</td></tr>
+      </tbody>
+    </table>
+    <p class="muted" style="margin-top:14px;">Companion to the <a href="loopcraft-loop-engineering.html">Loopcraft field guide</a>. Draft v0.1 &mdash; request for comment.</p>
+  </section>
+
+      </div>
+    </div>
+
+    <p class="footer">
+      Loopcraft Control Plane &mdash; an implementation design for portable, declarative, cloud-first, observable agent loops. Draft v0.1.
+    </p>
+  </main>
+
+  <script>
+    const slugify = (text) => text
+      .toLowerCase()
+      .replace(/&amp;/g, "and")
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "");
+
+    const toc = document.getElementById("generated-toc");
+    const sections = [...document.querySelectorAll(".content-col section")];
+    const tocLinks = new Map();
+    const tocGroups = new Map();
+
+    for (const section of sections) {
+      const heading = section.querySelector(":scope > h2");
+      if (!heading) continue;
+      if (!section.id) section.id = slugify(heading.textContent);
+
+      const group = document.createElement("div");
+      group.className = "toc-group";
+      const a = document.createElement("a");
+      a.className = "toc-parent";
+      a.href = "#" + section.id;
+      a.textContent = heading.textContent;
+      group.appendChild(a);
+
+      const children = document.createElement("div");
+      children.className = "toc-children";
+      const subheads = [...section.querySelectorAll("h3")];
+      for (const subhead of subheads) {
+        if (!subhead.id) subhead.id = `${section.id}-${slugify(subhead.textContent)}`;
+        const child = document.createElement("a");
+        child.href = "#" + subhead.id;
+        child.textContent = subhead.textContent.replace(/\s+/g, " ").trim();
+        children.appendChild(child);
+        tocLinks.set(subhead.id, child);
+      }
+      if (subheads.length > 0) group.appendChild(children);
+      toc.appendChild(group);
+      tocLinks.set(section.id, a);
+      tocGroups.set(section.id, group);
+    }
+
+    const setActiveTocLink = (id) => {
+      const active = tocLinks.get(id);
+      if (!active) return;
+      for (const link of tocLinks.values()) link.classList.remove("active");
+      for (const group of tocGroups.values()) group.classList.remove("current");
+      active.classList.add("active");
+      const currentSection = sections.find((section) => (
+        section.id === id || Boolean(section.querySelector(`#${CSS.escape(id)}`))
+      ));
+      if (currentSection) tocGroups.get(currentSection.id)?.classList.add("current");
+    };
+
+    const targets = sections
+      .flatMap((section) => [
+        { section, id: section.id },
+        ...[...section.querySelectorAll("h3[id]")].map((subhead) => ({ section: subhead, id: subhead.id })),
+      ])
+      .filter((target) => tocLinks.has(target.id));
+
+    let ticking = false;
+    const updateActiveTocLink = () => {
+      ticking = false;
+      const current = targets
+        .filter(({ section }) => section.getBoundingClientRect().top <= 220)
+        .at(-1) || targets[0];
+      if (current) setActiveTocLink(current.id);
+    };
+
+    window.addEventListener("scroll", () => {
+      if (ticking) return;
+      ticking = true;
+      requestAnimationFrame(updateActiveTocLink);
+    }, { passive: true });
+
+    window.addEventListener("hashchange", updateActiveTocLink);
+    if (window.location.hash) {
+      requestAnimationFrame(() => {
+        document.querySelector(window.location.hash)?.scrollIntoView();
+        updateActiveTocLink();
+      });
+    }
+    updateActiveTocLink();
+  </script>
+</body>
+</html>
