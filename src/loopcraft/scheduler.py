@@ -228,7 +228,9 @@ def unit_name(config: LoopcraftConfig, loop_id: str, kind: UnitKind) -> str:
     return f"{config.scheduler.unit_prefix}{loop_id}.{kind.value}"
 
 
-def _render_service(config: LoopcraftConfig, manifest: LoopManifest) -> RenderedUnit:
+def _render_service(
+    config: LoopcraftConfig, manifest: LoopManifest, loopctl_command: str
+) -> RenderedUnit:
     """Render the ``.service`` unit that executes one loop headless.
 
     The service is ``Type=oneshot`` (a loop run starts, does its work, and
@@ -236,6 +238,11 @@ def _render_service(config: LoopcraftConfig, manifest: LoopManifest) -> Rendered
     per-run worktree under the memory tree. Both tree roots are passed through
     the environment so the unit does not depend on the invoking shell, and the
     host's out-of-tree secrets file is referenced (never inlined) when set.
+
+    Args:
+        loopctl_command: The command prefix for ``ExecStart`` (before
+            ``run <loop>``). Callers pass a resolved, absolute command so a
+            scheduled service does not depend on systemd's PATH.
     """
     scheduler = config.scheduler
     lines = [
@@ -254,13 +261,24 @@ def _render_service(config: LoopcraftConfig, manifest: LoopManifest) -> Rendered
         lines.append(f"EnvironmentFile={scheduler.environment_file}")
     if scheduler.scope == SystemdScope.SYSTEM and scheduler.user:
         lines.append(f"User={scheduler.user}")
-    lines.append(f"ExecStart={scheduler.loopctl_bin} run {manifest.id}")
+    lines.append(f"ExecStart={loopctl_command} run {manifest.id}")
     lines.append("")
     return RenderedUnit(
         kind=UnitKind.SERVICE,
         filename=unit_name(config, manifest.id, UnitKind.SERVICE),
         content="\n".join(lines),
     )
+
+
+def install_target(scope: SystemdScope) -> str:
+    """Return the ``[Install] WantedBy=`` target appropriate for a scope.
+
+    ``multi-user.target`` is a system-manager target; user-scope units are
+    enabled under ``default.target``. Timers accept ``timers.target`` in both
+    scopes, but path units must not point at a system target under a user
+    manager or they never enable.
+    """
+    return "default.target" if scope == SystemdScope.USER else "multi-user.target"
 
 
 def _render_timer(config: LoopcraftConfig, manifest: LoopManifest, oncalendar: str) -> RenderedUnit:
@@ -300,7 +318,7 @@ def _render_path(config: LoopcraftConfig, manifest: LoopManifest, watched: list[
         f"Unit={service}",
         "",
         "[Install]",
-        "WantedBy=multi-user.target",
+        f"WantedBy={install_target(config.scheduler.scope)}",
         "",
     ]
     return RenderedUnit(
@@ -337,12 +355,18 @@ def _watched_inputs(config: LoopcraftConfig, manifest: LoopManifest) -> list[str
     return watched
 
 
-def render_loop_units(config: LoopcraftConfig, manifest: LoopManifest) -> LoopUnits:
+def render_loop_units(
+    config: LoopcraftConfig, manifest: LoopManifest, *, loopctl_command: str | None = None
+) -> LoopUnits:
     """Render every systemd unit for one loop from its cadence.
 
     Args:
         config: Resolved control-plane config (supplies host/scheduler settings).
         manifest: The loop manifest to render.
+        loopctl_command: Resolved command prefix for the service ``ExecStart``.
+            Defaults to the raw ``scheduler.loopctl_bin``; the deploy planner
+            passes an absolute-resolved command so a scheduled service does not
+            depend on systemd's PATH.
 
     Returns:
         The rendered service plus its trigger unit and a schedule summary.
@@ -352,7 +376,8 @@ def render_loop_units(config: LoopcraftConfig, manifest: LoopManifest) -> LoopUn
             (missing cron expression, unsupported cron construct, no watchable
             input for on-artifact, or the not-yet-supported ``event`` cadence).
     """
-    service = _render_service(config, manifest)
+    command = loopctl_command or config.scheduler.loopctl_bin
+    service = _render_service(config, manifest, command)
     cadence = manifest.cadence
 
     if cadence.type == CadenceType.CRON:

@@ -82,9 +82,10 @@ loopctl apply ./loops # validate the fleet, then render systemd units
   check the design runs before `apply`.
 - **`loopctl apply`** runs the full pre-deploy check first — manifest schema,
   the cross-loop dependency DAG (duplicate ids, multi-producer outputs, unknown
-  upstream loops, cycles), and each loop's adapter preflight (tools/auth/env) —
-  so **an unmet dependency is reported at `apply`, not at 3am**. It then renders
-  each loop's `cadence` into systemd units under `<memory>/var/systemd/`:
+  upstream loops, cycles), the scheduled environment (see below), and each
+  loop's adapter preflight (tools/auth/env) — so **an unmet dependency is
+  reported at `apply`, not at 3am**. It then renders each loop's `cadence` into
+  systemd units under `<memory>/var/systemd/`:
   - a `cron` cadence renders a `.timer` + `.service` pair (`OnCalendar=` from the
     cron expression, `Persistent=true` so a trigger missed while the VM was down
     is caught up);
@@ -92,10 +93,24 @@ loopctl apply ./loops # validate the fleet, then render systemd units
     loop when an upstream ledger output changes;
   - `event` cadence has no unattended representation yet (it lands in M8).
 
+  The rendered `ExecStart` uses the **absolute** path of `scheduler.loopctl_bin`
+  (resolved on PATH when a bare name), since a systemd unit does not inherit
+  your shell PATH; `apply` fails if it cannot be resolved. Default `apply` is
+  **side-effect-free unless the plan is fully clean** — a plan blocked by an
+  unmet dependency writes nothing (pass `--render-invalid` to render diagnostic
+  units anyway), so `fleet` never shows `staged` for a rejected loop.
+
   Flags: `--dry-run` (validate + plan, write nothing), `--skip-preflight`
-  (structural + DAG checks only), `--out DIR` (render elsewhere), and
-  `--install` (copy units into the systemd unit directory and `enable --now`
-  their triggers — only when every check passed; requires `systemctl`).
+  (structural + DAG checks only), `--render-invalid` (render even when checks
+  fail), `--out DIR` (render elsewhere), and `--install` (transactionally copy
+  units into the systemd unit directory and `enable --now` their triggers, with
+  rollback on failure — only when every check passed; requires `systemctl`).
+
+When `scheduler.environment_file` is set, `apply`/`auth` treat it as the
+authority for a scheduled service's credentials (a service does not see your
+`.env` or shell): the file must exist, live outside **both** git trees, and
+contain every env var the loops declare. `auth` counts an env var as satisfied
+when it is present in the process env **or** that file.
 
 Per-host deployment settings (unit scope, service `User=`, the out-of-tree
 secrets `EnvironmentFile=`, the `loopctl` path) live in the `[scheduler]` table

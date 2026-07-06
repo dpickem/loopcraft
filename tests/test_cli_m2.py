@@ -40,6 +40,9 @@ def _demo_source(monkeypatch, tmp_path: Path, manifest_text: str, filename: str 
     (source / "loops" / filename).write_text(manifest_text, encoding="utf-8")
     monkeypatch.setenv("LOOPCRAFT_SOURCE", str(source))
     monkeypatch.setenv("LOOPCRAFT_MEMORY", str(tmp_path / "mem"))
+    # Resolve the service command deterministically so apply rendering does not
+    # depend on whether `loopctl` happens to be on the test runner's PATH.
+    monkeypatch.setattr(deploy, "resolve_loopctl_command", lambda config: ("/usr/bin/loopctl", None))
     return source
 
 
@@ -136,6 +139,31 @@ def test_auth_reports_missing_with_guidance(monkeypatch, tmp_path: Path, capsys)
     assert nv["guidance"]
 
 
+def test_auth_env_var_satisfied_by_environment_file(monkeypatch, tmp_path: Path, capsys) -> None:
+    """A declared env var absent from the process env but present in the
+    scheduler environment_file counts as satisfied (finding 3)."""
+    env_file = tmp_path / "secrets.env"
+    env_file.write_text("DEMO_TOKEN=abc\n", encoding="utf-8")
+    source = _demo_source(
+        monkeypatch,
+        tmp_path,
+        "id: demo\n"
+        "name: Demo\n"
+        "cadence: {type: cron, at: '0 9 * * *'}\n"
+        "depends_on: {env: [DEMO_TOKEN]}\n"
+        "logic: {skill: skills/demo/SKILL.md}\n",
+    )
+    (source / "loopcraft.toml").write_text(
+        f'[scheduler]\nenvironment_file = "{env_file}"\n', encoding="utf-8"
+    )
+    monkeypatch.delenv("DEMO_TOKEN", raising=False)
+    rc = cli.main(["--json", "auth"])
+    payload = json.loads(capsys.readouterr().out)
+    assert rc == 0
+    token = next(i for i in payload["data"]["items"] if i["name"] == "DEMO_TOKEN")
+    assert token["ok"] is True
+
+
 # --- apply -------------------------------------------------------------------
 
 
@@ -164,8 +192,9 @@ def test_apply_renders_units(monkeypatch, tmp_path: Path, capsys) -> None:
     assert payload["data"]["written"]
 
 
-def test_apply_reports_unmet_dependency_at_apply(monkeypatch, tmp_path: Path, capsys) -> None:
-    """Exit criterion: an unmet dependency is reported at apply (nonzero)."""
+def test_apply_reports_unmet_dependency_and_writes_nothing(monkeypatch, tmp_path: Path, capsys) -> None:
+    """Exit criterion + finding 2: an unmet dependency is reported at apply and
+    nothing is written by default."""
     monkeypatch.setattr(deploy, "get_runner", lambda vendor: _FailRunner())
     _demo_source(monkeypatch, tmp_path, _CRON_MANIFEST)
     rc = cli.main(["--json", "apply"])
@@ -173,18 +202,34 @@ def test_apply_reports_unmet_dependency_at_apply(monkeypatch, tmp_path: Path, ca
     assert rc == 1
     assert payload["ok"] is False
     assert payload["data"]["preflight_problems"] == ["demo: missing token"]
-    # Units still render (files are harmless); deployment is what's blocked.
+    assert payload["data"]["written"] == []
+    # Nothing staged, so `fleet` cannot report `staged` for a rejected loop.
+    assert not (tmp_path / "mem" / "var" / "systemd").exists()
+
+
+def test_apply_render_invalid_writes_diagnostics(monkeypatch, tmp_path: Path, capsys) -> None:
+    """--render-invalid renders diagnostic units but still exits nonzero."""
+    monkeypatch.setattr(deploy, "get_runner", lambda vendor: _FailRunner())
+    _demo_source(monkeypatch, tmp_path, _CRON_MANIFEST)
+    rc = cli.main(["--json", "apply", "--render-invalid"])
+    payload = json.loads(capsys.readouterr().out)
+    assert rc == 1
+    assert payload["data"]["written"]
     assert (tmp_path / "mem" / "var" / "systemd" / "loop-demo.timer").exists()
 
 
-def test_apply_refuses_install_with_unmet_dependency(monkeypatch, tmp_path: Path, capsys) -> None:
-    """apply --install refuses to enable units when the plan has unmet deps."""
+def test_apply_install_refused_and_writes_nothing_with_unmet_dependency(
+    monkeypatch, tmp_path: Path, capsys
+) -> None:
+    """apply --install with unmet deps writes nothing and never installs."""
     monkeypatch.setattr(deploy, "get_runner", lambda vendor: _FailRunner())
     _demo_source(monkeypatch, tmp_path, _CRON_MANIFEST)
     rc = cli.main(["--json", "apply", "--install"])
     payload = json.loads(capsys.readouterr().out)
     assert rc == 1
-    assert payload["data"].get("installed") is False
+    assert payload["data"]["written"] == []
+    assert "install" not in payload["data"]
+    assert not (tmp_path / "mem" / "var" / "systemd").exists()
 
 
 # --- fleet -------------------------------------------------------------------

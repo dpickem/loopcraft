@@ -124,6 +124,14 @@ def test_user_scope_omits_user_directive(tmp_path) -> None:
     assert "User=" not in service.content
 
 
+def test_render_service_uses_explicit_loopctl_command(tmp_path) -> None:
+    """A resolved absolute command flows into ExecStart (finding 1)."""
+    config = _config(tmp_path)
+    units = render_loop_units(config, _cron_manifest(), loopctl_command="/opt/venv/bin/loopctl")
+    service = next(u for u in units.units if u.kind == UnitKind.SERVICE)
+    assert "ExecStart=/opt/venv/bin/loopctl run demo" in service.content
+
+
 def test_render_on_artifact_loop_units(tmp_path) -> None:
     """An on-artifact loop renders a path unit watching its upstream input."""
     config = _config(tmp_path)
@@ -145,6 +153,26 @@ def test_render_on_artifact_loop_units(tmp_path) -> None:
     cursor = str(config.resolve_state_path("state/downstream/seen.json"))
     assert f"PathModified={cursor}" not in path_unit.content
     assert "Unit=loop-downstream.service" in path_unit.content
+
+
+def test_on_artifact_path_unit_target_follows_scope(tmp_path) -> None:
+    """User-scope path units install under default.target, not multi-user (finding 4)."""
+    manifest = LoopManifest.from_dict(
+        {
+            "id": "downstream",
+            "name": "Downstream",
+            "cadence": {"type": "on-artifact"},
+            "inputs": ["state/slack/triage-latest.md"],
+            "outputs": ["state/downstream/out.md"],
+            "logic": {"skill": "skills/demo/SKILL.md"},
+        }
+    )
+    system = _config(tmp_path, SchedulerConfig(scope=SystemdScope.SYSTEM))
+    user = _config(tmp_path, SchedulerConfig(scope=SystemdScope.USER))
+    system_path = next(u for u in render_loop_units(system, manifest).units if u.kind == UnitKind.PATH)
+    user_path = next(u for u in render_loop_units(user, manifest).units if u.kind == UnitKind.PATH)
+    assert "WantedBy=multi-user.target" in system_path.content
+    assert "WantedBy=default.target" in user_path.content
 
 
 def test_on_artifact_without_watchable_input_raises(tmp_path) -> None:

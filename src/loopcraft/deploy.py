@@ -12,6 +12,7 @@ effects and easy to test.
 
 from __future__ import annotations
 
+import shlex
 import shutil
 import subprocess
 from pathlib import Path
@@ -19,7 +20,9 @@ from pathlib import Path
 from pydantic import BaseModel, Field
 
 from loopcraft.config import LoopcraftConfig, SystemdScope
+from loopcraft.env import parse_env_file
 from loopcraft.manifest import LoopManifest, load_all
+from loopcraft.paths import assert_under
 from loopcraft.runners import get_runner
 from loopcraft.scheduler import LoopUnits, SchedulerError, UnitKind, render_loop_units
 
@@ -47,7 +50,10 @@ class DeploymentPlan(BaseModel):
     Attributes:
         loops_dir: The loops directory that was planned.
         manifest_problems: Structural manifest/DAG problems (from ``load_all``).
-        render_problems: Cadences that could not be rendered into units.
+        render_problems: Cadences (or an unresolvable ``loopctl`` command) that
+            could not be rendered into correct units.
+        env_problems: Scheduled-environment problems (a missing/misplaced
+            ``EnvironmentFile`` or declared env vars absent from it).
         preflights: Per-loop adapter preflight results (empty when skipped).
         preflight_ran: Whether adapter preflight was executed.
         units: The rendered units per loop (only for cleanly rendered loops).
@@ -56,6 +62,7 @@ class DeploymentPlan(BaseModel):
     loops_dir: str
     manifest_problems: list[str] = Field(default_factory=list)
     render_problems: list[str] = Field(default_factory=list)
+    env_problems: list[str] = Field(default_factory=list)
     preflights: list[LoopPreflight] = Field(default_factory=list)
     preflight_ran: bool = False
     units: list[LoopUnits] = Field(default_factory=list)
@@ -71,15 +78,21 @@ class DeploymentPlan(BaseModel):
 
     @property
     def problems(self) -> list[str]:
-        """All blocking problems across manifest, render, and preflight phases."""
-        return self.manifest_problems + self.render_problems + self.preflight_problems
+        """All blocking problems across every validation phase."""
+        return (
+            self.manifest_problems
+            + self.render_problems
+            + self.env_problems
+            + self.preflight_problems
+        )
 
     @property
     def renderable(self) -> bool:
-        """Whether units can be safely written (manifests + rendering are clean).
+        """Whether units can be safely rendered (manifests + rendering are clean).
 
-        Preflight problems (missing auth/tools) do not block *rendering* the
-        unit files — they are just text — but they do block ``--install``.
+        Environment and preflight problems (missing auth/tools/secrets) do not
+        corrupt the unit *text*, so they don't block rendering — but they do
+        block a default ``apply`` write and any ``--install`` (see ``ok``).
         """
         return not self.manifest_problems and not self.render_problems
 
@@ -112,6 +125,107 @@ def preflight_loop(config: LoopcraftConfig, manifest: LoopManifest) -> LoopPrefl
     return LoopPreflight(loop=manifest.id, vendor=vendor, ok=report.ok, problems=report.problems)
 
 
+def resolve_loopctl_command(config: LoopcraftConfig) -> tuple[str | None, str | None]:
+    """Resolve ``scheduler.loopctl_bin`` to an absolute service command.
+
+    A systemd unit does not inherit the operator's interactive shell PATH, so
+    the rendered ``ExecStart`` must name an absolute executable. This splits the
+    configured command (supporting a multi-word prefix like ``uv run loopctl``),
+    resolves its first token to an absolute path (via PATH when not already
+    absolute), and returns the reassembled command.
+
+    Returns:
+        A ``(command, problem)`` pair: the resolved absolute command with a
+        None problem on success, or ``(None, problem)`` when the executable
+        cannot be resolved for the systemd context.
+    """
+    raw = config.scheduler.loopctl_bin.strip()
+    if not raw:
+        return None, "scheduler.loopctl_bin is empty"
+    try:
+        parts = shlex.split(raw)
+    except ValueError as exc:
+        return None, f"scheduler.loopctl_bin is not a valid command: {exc}"
+    head, *rest = parts
+    if Path(head).is_absolute():
+        resolved = head if Path(head).exists() else None
+    else:
+        resolved = shutil.which(head)
+    if resolved is None:
+        return None, (
+            f"scheduler.loopctl_bin '{raw}' cannot be resolved to an absolute "
+            "executable for the systemd context (set an absolute path in "
+            "[scheduler].loopctl_bin)"
+        )
+    return " ".join([resolved, *rest]), None
+
+
+def environment_file_health(config: LoopcraftConfig) -> tuple[set[str], list[str]]:
+    """Inspect ``scheduler.environment_file``: return its keys and any problems.
+
+    File-level checks only (existence + placement outside both git trees); the
+    per-loop "does it contain the declared vars" check lives in
+    :func:`validate_environment`. Shared by ``apply`` and ``auth`` so both agree
+    on which keys a scheduled service would see.
+
+    Returns:
+        A ``(keys, problems)`` pair. ``keys`` is the set of env var names in the
+        file (empty when unset or missing); ``problems`` describes a missing or
+        misplaced file.
+    """
+    env_file = config.scheduler.environment_file
+    if not env_file:
+        return set(), []
+    path = Path(env_file).expanduser()
+    if not path.exists():
+        return set(), [f"scheduler.environment_file not found: {env_file}"]
+    problems: list[str] = []
+    for label, root in (("source", config.source_path), ("memory", config.memory_path)):
+        try:
+            assert_under(root, path, label="environment file")
+        except ValueError:
+            continue  # good: the secrets file is outside this tree
+        problems.append(
+            f"scheduler.environment_file must live outside the {label} tree "
+            f"(secrets stay out of git): {env_file}"
+        )
+    return set(parse_env_file(path)), problems
+
+
+def validate_environment(config: LoopcraftConfig, manifests: list[LoopManifest]) -> list[str]:
+    """Validate the scheduled-service environment against declared env vars.
+
+    When ``scheduler.environment_file`` is configured it is treated as the
+    authority for a scheduled service's credentials (a service does not see the
+    operator's ``.env`` or interactive shell): the file must exist, live outside
+    *both* git trees, and contain every env var the deployed loops declare. When
+    it is not configured but loops declare env vars, that gap is reported too —
+    otherwise ``apply`` could pass on the operator's shell while the service
+    later fails at runtime.
+
+    Returns:
+        A list of problem strings (empty when the scheduled environment can
+        satisfy every declared env var).
+    """
+    required = sorted({var for m in manifests for var in m.depends_on.env})
+    if not config.scheduler.environment_file:
+        if required:
+            return [
+                "no scheduler.environment_file is configured, but loops declare "
+                f"env vars {required}; a scheduled service will not inherit them "
+                "from .env or the interactive shell"
+            ]
+        return []
+
+    keys, problems = environment_file_health(config)
+    # A missing file already fails clearly; don't also list every var as absent.
+    if not any("not found" in problem for problem in problems):
+        missing = [var for var in required if var not in keys]
+        if missing:
+            problems.append(f"scheduler.environment_file is missing declared env vars: {missing}")
+    return problems
+
+
 def plan_deployment(
     config: LoopcraftConfig,
     *,
@@ -135,11 +249,19 @@ def plan_deployment(
 
     render_problems: list[str] = []
     units: list[LoopUnits] = []
-    for manifest in catalog.manifests:
-        try:
-            units.append(render_loop_units(config, manifest))
-        except SchedulerError as exc:
-            render_problems.append(f"{manifest.id}: {exc}")
+    # A single unresolvable service command breaks every rendered unit, so it is
+    # a fleet-wide render problem and nothing is rendered until it is fixed.
+    command, command_problem = resolve_loopctl_command(config)
+    if command_problem:
+        render_problems.append(command_problem)
+    else:
+        for manifest in catalog.manifests:
+            try:
+                units.append(render_loop_units(config, manifest, loopctl_command=command))
+            except SchedulerError as exc:
+                render_problems.append(f"{manifest.id}: {exc}")
+
+    env_problems = validate_environment(config, catalog.manifests)
 
     preflights: list[LoopPreflight] = []
     if run_preflight:
@@ -149,6 +271,7 @@ def plan_deployment(
         loops_dir=str(target),
         manifest_problems=catalog.problems,
         render_problems=render_problems,
+        env_problems=env_problems,
         preflights=preflights,
         preflight_ran=run_preflight,
         units=units,
@@ -201,11 +324,19 @@ def _enable_targets(plan: DeploymentPlan) -> list[str]:
 
 
 class InstallResult(BaseModel):
-    """Outcome of installing rendered units into systemd."""
+    """Outcome of installing rendered units into systemd.
+
+    Attributes:
+        installed: Unit filenames left in place after the call.
+        enabled: Trigger units enabled and left running after the call.
+        problems: Failures encountered (empty on success).
+        rolled_back: Whether a failure triggered a rollback to the prior state.
+    """
 
     installed: list[str] = Field(default_factory=list)
     enabled: list[str] = Field(default_factory=list)
     problems: list[str] = Field(default_factory=list)
+    rolled_back: bool = False
 
     @property
     def ok(self) -> bool:
@@ -214,41 +345,69 @@ class InstallResult(BaseModel):
 
 
 def install_units(config: LoopcraftConfig, plan: DeploymentPlan) -> InstallResult:
-    """Copy rendered units into the systemd unit dir and enable their triggers.
+    """Transactionally install rendered units and enable their triggers.
 
-    Requires ``systemctl`` on PATH. Copies every rendered unit to the scope's
-    unit directory, runs ``daemon-reload``, then ``enable --now`` on each timer/
-    path trigger. Any failing step is captured as a problem rather than raising,
-    so the CLI can report a partial install cleanly.
+    Requires ``systemctl`` on PATH. Copies every rendered unit into the scope's
+    unit directory (backing up any unit it overwrites), runs ``daemon-reload``,
+    then ``enable --now`` on each timer/path trigger. If any step fails, the
+    invocation rolls back — disabling the triggers it enabled and restoring or
+    removing the units it wrote — so a failed ``apply --install`` leaves the
+    fleet as it was rather than half-deployed.
     """
     if shutil.which("systemctl") is None:
         return InstallResult(problems=["systemctl not found on PATH; cannot install units"])
 
     unit_dir = systemd_unit_dir(config)
-    result = InstallResult()
+    base = _systemctl_base(config)
+    units = [unit for loop_units in plan.units for unit in loop_units.units]
+
+    # filename -> prior content (None when the file did not exist), so rollback
+    # can restore a replaced unit or remove a newly written one.
+    backups: dict[str, str | None] = {}
     try:
         unit_dir.mkdir(parents=True, exist_ok=True)
-        for loop_units in plan.units:
-            for unit in loop_units.units:
-                (unit_dir / unit.filename).write_text(unit.content, encoding="utf-8")
-                result.installed.append(unit.filename)
+        for unit in units:
+            dest = unit_dir / unit.filename
+            backups[unit.filename] = dest.read_text(encoding="utf-8") if dest.exists() else None
+            dest.write_text(unit.content, encoding="utf-8")
     except OSError as exc:
-        result.problems.append(f"could not write units to {unit_dir}: {exc}")
-        return result
+        _rollback_install(unit_dir, backups, enabled=[], base=base)
+        return InstallResult(problems=[f"could not write units to {unit_dir}: {exc}"], rolled_back=True)
 
-    base = _systemctl_base(config)
     reload_problem = _run_systemctl([*base, "daemon-reload"])
     if reload_problem:
-        result.problems.append(reload_problem)
-        return result
+        _rollback_install(unit_dir, backups, enabled=[], base=base)
+        return InstallResult(problems=[reload_problem], rolled_back=True)
 
+    enabled: list[str] = []
     for trigger in _enable_targets(plan):
         problem = _run_systemctl([*base, "enable", "--now", trigger])
         if problem:
-            result.problems.append(problem)
+            _rollback_install(unit_dir, backups, enabled=enabled, base=base)
+            return InstallResult(problems=[problem], rolled_back=True)
+        enabled.append(trigger)
+
+    return InstallResult(installed=[unit.filename for unit in units], enabled=enabled)
+
+
+def _rollback_install(
+    unit_dir: Path, backups: dict[str, str | None], *, enabled: list[str], base: list[str]
+) -> None:
+    """Undo a partial install: disable enabled triggers and restore units.
+
+    Best-effort — each step is attempted regardless of the others so one
+    failing cleanup command does not strand the rest — then a final
+    ``daemon-reload`` settles the manager.
+    """
+    for trigger in enabled:
+        _run_systemctl([*base, "disable", "--now", trigger])
+    for filename, prior in backups.items():
+        dest = unit_dir / filename
+        if prior is None:
+            dest.unlink(missing_ok=True)
         else:
-            result.enabled.append(trigger)
-    return result
+            dest.write_text(prior, encoding="utf-8")
+    _run_systemctl([*base, "daemon-reload"])
 
 
 def _run_systemctl(cmd: list[str]) -> str | None:

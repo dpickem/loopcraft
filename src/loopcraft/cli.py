@@ -26,9 +26,11 @@ from loopcraft.config import (
     RUN_ID_ENV,
     ExitCode,
     LoopcraftConfig,
+    SystemdScope,
 )
 from loopcraft.deploy import (
     DeploymentPlan,
+    environment_file_health,
     install_units,
     plan_deployment,
     systemd_unit_dir,
@@ -97,6 +99,11 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Validate manifests + DAG only; skip per-loop auth/tool preflight.",
     )
+    p_apply.add_argument(
+        "--render-invalid",
+        action="store_true",
+        help="Render diagnostic units even when preflight/env checks fail (default: don't write).",
+    )
 
     sub.add_parser("list", help="List known loops.")
     sub.add_parser("fleet", help="Show all loops in a formatted table (schedule, last run, install state).")
@@ -133,6 +140,7 @@ def main(argv: list[str] | None = None) -> int:
             out=args.out,
             install=args.install,
             skip_preflight=args.skip_preflight,
+            render_invalid=args.render_invalid,
             as_json=as_json,
         )
     if args.command == "list":
@@ -608,14 +616,25 @@ def _cmd_auth(config: LoopcraftConfig, *, as_json: bool) -> int:
         apis.update(manifest.depends_on.apis)
         env_vars.update(manifest.depends_on.env)
 
+    # A scheduled service reads its credentials from scheduler.environment_file,
+    # not the operator's .env/shell, so an env var counts as satisfied when it is
+    # in the process env OR that file. Also surface the file's own health.
+    env_file_keys, env_file_problems = environment_file_health(config)
+
     items: list[dict[str, Any]] = []
     for bundle in sorted(auth_bundles):
         items.append(_auth_item("auth", bundle, _probe_auth_bundle(config, bundle), AUTH_GUIDANCE))
     for api in sorted(apis):
         items.append(_auth_item("api", api, _probe_declared_api(config, api), API_GUIDANCE))
     for var in sorted(env_vars):
-        problem = None if config.env_value(var) else f"env var not set: {var}"
+        satisfied = config.env_value(var) or var in env_file_keys
+        problem = None if satisfied else f"env var not set (process env or environment_file): {var}"
         items.append(_auth_item("env", var, problem, {}))
+    if config.scheduler.environment_file:
+        problem = env_file_problems[0] if env_file_problems else None
+        items.append(
+            _auth_item("env-file", config.scheduler.environment_file, problem, {})
+        )
 
     missing = [item for item in items if not item["ok"]]
     ok = not missing
@@ -668,16 +687,19 @@ def _cmd_apply(
     out: str | None,
     install: bool,
     skip_preflight: bool,
+    render_invalid: bool,
     as_json: bool,
 ) -> int:
     """Validate the fleet, render systemd units, and optionally install them.
 
-    The full pre-deploy check runs first (manifest schema, cross-loop DAG, and —
-    unless ``--skip-preflight`` — each loop's auth/tool/env preflight), so an
-    unmet dependency is reported here at ``apply``, not at runtime. With
-    ``--dry-run`` nothing is written; otherwise cleanly rendered units are
-    written to the staging dir, and ``--install`` additionally enables them via
-    systemctl (only when every check passed).
+    The full pre-deploy check runs first (manifest schema, cross-loop DAG, the
+    scheduled environment, and — unless ``--skip-preflight`` — each loop's
+    auth/tool preflight), so an unmet dependency is reported here at ``apply``,
+    not at runtime. Default ``apply`` is side-effect-free unless the plan is
+    fully clean: with ``--dry-run`` nothing is written; a plan with unmet
+    dependencies writes nothing unless ``--render-invalid`` is given (diagnostic
+    rendering); a clean plan writes the staging units, and ``--install``
+    additionally enables them via systemctl.
     """
     target = Path(loops_dir) if loops_dir else None
     plan = plan_deployment(config, loops_dir=target, run_preflight=not skip_preflight)
@@ -691,12 +713,14 @@ def _cmd_apply(
         "preflight_ran": plan.preflight_ran,
         "manifest_problems": plan.manifest_problems,
         "render_problems": plan.render_problems,
+        "env_problems": plan.env_problems,
         "preflight_problems": plan.preflight_problems,
         "triggers": [{"loop": lu.loop, "trigger": lu.trigger} for lu in plan.units],
     }
     lines = [
         f"planned {len(plan.units)} loop(s) from {plan.loops_dir}",
         *[f"  {lu.loop}: {lu.trigger}" for lu in plan.units],
+        *_env_file_guidance(config),
     ]
 
     if dry_run:
@@ -711,21 +735,54 @@ def _cmd_apply(
         _print_apply_problems(plan, as_json=as_json)
         return rc
 
+    # Default apply is side-effect-free unless the plan is fully clean. A plan
+    # blocked only by unmet dependencies (preflight/env) renders diagnostics
+    # solely on explicit request, so `fleet` never reports `staged` for a loop
+    # whose deployment was rejected.
+    if not plan.ok and not render_invalid:
+        data["written"] = []
+        lines.append(
+            "not written: unmet dependencies block deployment "
+            "(fix the problems above, or use --render-invalid to render diagnostics)"
+        )
+        rc = _apply_emit(plan, data, lines, as_json=as_json)
+        _print_apply_problems(plan, as_json=as_json)
+        return rc
+
     written = write_units(plan, out_dir)
     data["out_dir"] = str(out_dir)
     data["written"] = [str(p) for p in written]
-    lines.append(f"rendered {len(written)} unit(s) into {out_dir}")
+    label = "rendered" if plan.ok else "rendered (diagnostic; deployment still blocked)"
+    lines.append(f"{label} {len(written)} unit(s) into {out_dir}")
 
     if install:
         rc = _apply_install(config, plan, data, lines, as_json=as_json)
         _print_apply_problems(plan, as_json=as_json)
         return rc
 
-    if not plan.ok:
-        lines.append("units rendered, but unmet dependencies block deployment (see problems)")
     rc = _apply_emit(plan, data, lines, as_json=as_json)
     _print_apply_problems(plan, as_json=as_json)
     return rc
+
+
+def _env_file_guidance(config: LoopcraftConfig) -> list[str]:
+    """Return human guidance about the scheduled secrets file, if relevant.
+
+    For system scope with a ``User=`` and a configured ``environment_file``,
+    readability by that user cannot be verified portably, so we surface an
+    explicit reminder rather than a false pass.
+    """
+    scheduler = config.scheduler
+    if (
+        scheduler.scope == SystemdScope.SYSTEM
+        and scheduler.user
+        and scheduler.environment_file
+    ):
+        return [
+            f"note: ensure user '{scheduler.user}' can read "
+            f"{scheduler.environment_file} (the service runs as that user)"
+        ]
+    return []
 
 
 def _apply_install(
