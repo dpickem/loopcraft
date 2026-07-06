@@ -16,6 +16,16 @@ validator, the Codex runtime adapter (`preflight` + `run`), `loopctl run` in an
 isolated worktree, and the thin ledger write-path. The first loop is
 `slack-triage` (L1) — observe-only, single connector, no upstream dependencies.
 
+Install [uv](https://docs.astral.sh/uv/) and prepare the project environment:
+
+```bash
+uv sync
+```
+
+The Makefile uses `uv run` for every Python command, so tests, control-plane
+commands, and direct intelligence CLIs all execute in the same locked project
+environment.
+
 ```bash
 make list                       # show known loops
 make validate                   # validate every manifest in loops/
@@ -28,17 +38,20 @@ make logs LOOP=slack-triage     # tail the last run's log
 make test                       # unit tests
 ```
 
-`loopctl` is the real interface; the `make` targets are thin wrappers. A run
+`loopctl` is the real interface; the `make` targets are thin `uv run` wrappers.
+A run
 writes its output(s) into the memory tree's ledger (e.g.
 `ledger/slack/triage-latest.md`) and a durable run record to `ledger/runs/`.
 
 Configuration lives in `loopcraft.toml` (default vendor, host, memory path).
 Override the memory location at runtime with `LOOPCRAFT_MEMORY`.
 
-> Requires the `codex` CLI and `nv-tools` on PATH to actually run `slack-triage`;
+> Requires `uv`, the `codex` CLI, and `nv-tools` on PATH to actually run
+> `slack-triage`;
 > `make check` reports anything missing before a run rather than failing at 3am.
 > `loopctl deps check` fails only on the **required** M1 binaries
-> (`python`, `git`, `codex`, `nv-tools`); **optional** future-runtime binaries
+> (`python` from uv's environment, `git`, `codex`, `nv-tools`); **optional**
+> future-runtime binaries
 > (`claude`, `cursor-agent`) are reported but never fail the check, so a
 > Codex-only M1 setup stays green. Use `loopctl deps check --loop <id>` to check
 > just one loop's declared runtime and dependencies. Claude/Cursor adapters, the
@@ -110,12 +123,12 @@ This repo includes a Loopcraft loop plus a direct CLI that uses the official X A
 
 ```bash
 cp .env.example .env
-python -m loopcraft.research_intel.x.cli snapshot-following
+uv run loopcraft-x-intel snapshot-following
 make run LOOP=x-intel
-python -m loopcraft.research_intel.x.cli discover-follows --config config/x_intel.yaml
+uv run loopcraft-x-intel discover-follows --config config/x_intel.yaml
 ```
 
-Fill in `X_API_BEARER_TOKEN` in `.env` before running. Tune the committed public
+Fill in `X_API_BEARER_TOKEN` (or `X_API_OAUTH2_ACCESS_TOKEN`; either satisfies the loop's `x-api` auth dependency) in `.env` before running. Tune the committed public
 defaults in `config/x_intel.yaml`, or create a gitignored
 `config/x_intel.local.yaml` for private/local overrides (including a private
 `sources.following_snapshot`, e.g. `config/x_following_snapshot.local.json`).
@@ -148,4 +161,3 @@ the direct CLI) and staged into the run worktree by the control plane. Outputs
 are written to `~/workspace/loopcraft_memory/ledger/research/arxiv/` by default
 (`latest.md`, `latest.json`, archived `history/*.md/json`, `seen.json`,
 `papers.jsonl`).
-

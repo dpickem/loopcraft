@@ -139,6 +139,100 @@ def test_capabilities_valid_content_config_passes(tmp_path: Path) -> None:
     assert capabilities.check_declared_capabilities(manifest, config) == []
 
 
+def test_capabilities_reject_symlinked_local_override_escaping_source(tmp_path: Path) -> None:
+    """Finding 1 (review 08): preflight contains the local sibling like staging.
+
+    A ``*.local.*`` symlink resolving outside the source tree must be a
+    preflight problem, not silently read and validated — otherwise ``--dry-run``
+    reports ready for a config the real run refuses to stage.
+    """
+    config = _config(tmp_path)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "private.yaml").write_text("a: 1\n", encoding="utf-8")
+    cfg_dir = config.source_path / "config"
+    cfg_dir.mkdir(parents=True)
+    (cfg_dir / "x.yaml").write_text("a: 1\n", encoding="utf-8")
+    (cfg_dir / "x.local.yaml").symlink_to(outside / "private.yaml")
+
+    manifest = _manifest(content={"config": "config/x.yaml"})
+    problems = capabilities.check_declared_capabilities(manifest, config)
+    assert any("escapes" in p for p in problems)
+
+
+def test_x_api_auth_probe_accepts_either_token(tmp_path: Path, monkeypatch) -> None:
+    """Finding 3 (review 08): either X credential satisfies the auth contract."""
+    config = _config(tmp_path)
+    manifest = _manifest(depends_on={"auth": ["x-api"]})
+
+    for present in ("X_API_BEARER_TOKEN", "X_API_OAUTH2_ACCESS_TOKEN"):
+        monkeypatch.delenv("X_API_BEARER_TOKEN", raising=False)
+        monkeypatch.delenv("X_API_OAUTH2_ACCESS_TOKEN", raising=False)
+        monkeypatch.setenv(present, "token")
+        assert capabilities.check_declared_capabilities(manifest, config) == [], present
+
+    monkeypatch.setenv("X_API_BEARER_TOKEN", "token")
+    monkeypatch.setenv("X_API_OAUTH2_ACCESS_TOKEN", "token")
+    assert capabilities.check_declared_capabilities(manifest, config) == []
+
+    monkeypatch.delenv("X_API_BEARER_TOKEN", raising=False)
+    monkeypatch.delenv("X_API_OAUTH2_ACCESS_TOKEN", raising=False)
+    problems = capabilities.check_declared_capabilities(manifest, config)
+    assert any("X_API_BEARER_TOKEN or X_API_OAUTH2_ACCESS_TOKEN" in p for p in problems)
+
+
+def _x_snapshot_manifest() -> "LoopManifest":
+    """Return an x-intel manifest declaring the shipped content config path."""
+    return _manifest(id="x-intel", content={"config": "config/x_intel.yaml"})
+
+
+def _write_x_config_with_snapshot(config, snapshot: str) -> None:
+    """Write an X content config referencing ``snapshot`` under the temp source."""
+    cfg_dir = config.source_path / "config"
+    cfg_dir.mkdir(parents=True, exist_ok=True)
+    (cfg_dir / "x_intel.yaml").write_text(
+        f"sources: {{following_snapshot: {snapshot}}}\n", encoding="utf-8"
+    )
+
+
+def test_capabilities_flag_missing_following_snapshot(tmp_path: Path) -> None:
+    """Finding 4 (review 08): a configured snapshot must exist at preflight."""
+    config = _config(tmp_path)
+    _write_x_config_with_snapshot(config, "config/x_following_snapshot.local.json")
+    problems = capabilities.check_declared_capabilities(_x_snapshot_manifest(), config)
+    assert any("content config invalid" in p and "snapshot not found" in p for p in problems)
+
+
+def test_capabilities_flag_malformed_following_snapshot(tmp_path: Path) -> None:
+    """Finding 4 (review 08): a malformed or wrong-shape snapshot fails preflight."""
+    config = _config(tmp_path)
+    _write_x_config_with_snapshot(config, "config/x_following_snapshot.local.json")
+    snapshot = config.source_path / "config" / "x_following_snapshot.local.json"
+
+    snapshot.write_text("{not json", encoding="utf-8")
+    problems = capabilities.check_declared_capabilities(_x_snapshot_manifest(), config)
+    assert any("not readable JSON" in p for p in problems)
+
+    snapshot.write_text('["just", "a", "list"]\n', encoding="utf-8")
+    problems = capabilities.check_declared_capabilities(_x_snapshot_manifest(), config)
+    assert any("unexpected shape" in p for p in problems)
+
+
+def test_capabilities_accept_valid_following_snapshot(tmp_path: Path) -> None:
+    """A valid configured snapshot passes preflight and is reported as an asset."""
+    config = _config(tmp_path)
+    _write_x_config_with_snapshot(config, "config/x_following_snapshot.local.json")
+    (config.source_path / "config" / "x_following_snapshot.local.json").write_text(
+        '{"users": [{"username": "alice"}]}\n', encoding="utf-8"
+    )
+    manifest = _x_snapshot_manifest()
+    assert capabilities.check_declared_capabilities(manifest, config) == []
+    # Finding 4 (review 08): staging learns about the snapshot via the resolver.
+    assert capabilities.content_assets(manifest, config) == [
+        "config/x_following_snapshot.local.json"
+    ]
+
+
 def test_capabilities_flag_escaping_content_config(tmp_path: Path) -> None:
     """A traversing content.config is reported as a preflight problem."""
     manifest = _manifest(content={"config": "../outside.yaml"})

@@ -17,8 +17,9 @@ import yaml
 
 from loopcraft.config import LoopcraftConfig, SourcePathError
 from loopcraft.manifest import LoopManifest
+from loopcraft.paths import assert_under
 from loopcraft.probes import run_probe
-from loopcraft.settings import local_override_path
+from loopcraft.settings import local_override_path, local_sibling_path
 
 #: Tool collections map to a CLI binary that must be on PATH for preflight.
 TOOL_BINARIES: dict[str, str] = {"nv-tools": "nv-tools"}
@@ -135,7 +136,7 @@ _ASSET_NOUNS = {
 }
 
 
-def _validate_arxiv_content(path: Path) -> None:
+def _validate_arxiv_content(path: Path, config: LoopcraftConfig) -> None:
     """Validate the effective arXiv content config against its typed model."""
     # Imported lazily so the runtime-neutral probe module stays decoupled from
     # loop-specific content packages at import time.
@@ -144,21 +145,65 @@ def _validate_arxiv_content(path: Path) -> None:
     ArxivIntelConfig.load(path)
 
 
-def _validate_x_content(path: Path) -> None:
-    """Validate the effective X content config against its typed model."""
+def _validate_x_content(path: Path, config: LoopcraftConfig) -> None:
+    """Validate the effective X content config and its referenced assets.
+
+    Beyond the typed model, a configured ``sources.following_snapshot`` is a
+    declared fetch source: it must exist as a contained regular file with the
+    expected JSON shape, so a scheduled run can never silently drop it.
+    """
+    from loopcraft.research_intel.x.config import IntelConfig
+    from loopcraft.research_intel.x.follow_discovery import load_following_snapshot_handles
+
+    content = IntelConfig.load(path)
+    snapshot = content.sources.following_snapshot
+    if snapshot is not None:
+        resolved = config.resolve_source_path(snapshot.as_posix())
+        load_following_snapshot_handles(resolved)
+
+
+def _x_content_assets(path: Path, config: LoopcraftConfig) -> list[str]:
+    """Source-relative extra assets referenced by the effective X content config."""
     from loopcraft.research_intel.x.config import IntelConfig
 
-    IntelConfig.load(path)
+    content = IntelConfig.load(path)
+    snapshot = content.sources.following_snapshot
+    return [snapshot.as_posix()] if snapshot else []
 
 
-#: Content-config validators: loop id -> callable(public config path) that loads
-#: the effective public/local file through the loop's typed model and raises on
-#: any parse/schema problem. Loops without a registered validator get a plain
-#: YAML parse of the effective file. Injectable like the probe registries.
-CONTENT_VALIDATORS: dict[str, Callable[[Path], None]] = {
+#: Content-config validators: loop id -> callable(public config path, config)
+#: that loads the effective public/local file through the loop's typed model and
+#: raises on any parse/schema/referenced-asset problem. Loops without a
+#: registered validator get a plain YAML parse of the effective file.
+#: Injectable like the probe registries.
+CONTENT_VALIDATORS: dict[str, Callable[[Path, LoopcraftConfig], None]] = {
     "arxiv-intel": _validate_arxiv_content,
     "x-intel": _validate_x_content,
 }
+
+#: Content-asset resolvers: loop id -> callable returning extra source-relative
+#: asset paths referenced by the effective content config, so staging can
+#: materialize them into the run worktree alongside the config itself.
+CONTENT_ASSET_RESOLVERS: dict[str, Callable[[Path, LoopcraftConfig], list[str]]] = {
+    "x-intel": _x_content_assets,
+}
+
+
+def content_assets(loop: LoopManifest, config: LoopcraftConfig) -> list[str]:
+    """Extra source-relative assets referenced by the loop's content config.
+
+    Best-effort: an unreadable or invalid content config yields no assets here —
+    preflight separately reports those as problems before staging matters.
+    """
+    declared = loop.content.config
+    resolver = CONTENT_ASSET_RESOLVERS.get(loop.id)
+    if not declared or resolver is None:
+        return []
+    try:
+        path = config.resolve_source_path(declared)
+        return resolver(path, config)
+    except Exception:  # noqa: BLE001 — preflight owns reporting config problems
+        return []
 
 
 def _check_content_config_validity(config: LoopcraftConfig, loop: LoopManifest) -> list[str]:
@@ -182,10 +227,18 @@ def _check_content_config_validity(config: LoopcraftConfig, loop: LoopManifest) 
         return []
     if not path.is_file():
         return []
+    # The effective file may be the gitignored local sibling; contain it before
+    # any validator reads it — the same rule staging applies when copying it.
+    local = local_sibling_path(path)
+    if local.exists():
+        try:
+            assert_under(config.source_path, local, label="content config local override")
+        except ValueError as exc:
+            return [f"content.config: {exc}"]
     validator = CONTENT_VALIDATORS.get(loop.id)
     try:
         if validator is not None:
-            validator(path)
+            validator(path, config)
         else:
             yaml.safe_load(local_override_path(path).read_text(encoding="utf-8"))
     except Exception as exc:  # noqa: BLE001 — any config load fault is a preflight problem

@@ -9,6 +9,7 @@ from typing import Any
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from loopcraft.config import safe_source_relpath
 from loopcraft.settings import local_override_path
 
 
@@ -26,6 +27,19 @@ class SourcesConfig(_ContentModel):
     following_snapshot: Path | None = None
     search_queries: list[str] = Field(default_factory=list)
     author_handles: list[str] = Field(default_factory=list)
+
+    @field_validator("following_snapshot", mode="before")
+    @classmethod
+    def validate_following_snapshot(cls, value: Any) -> Path | None:
+        """Require a safe source-relative snapshot path.
+
+        The snapshot is a declared content asset read by the loop, so an
+        absolute or traversing path would introduce an undeclared read outside
+        the source/worktree boundary.
+        """
+        if value in (None, ""):
+            return None
+        return Path(safe_source_relpath(str(value)))
 
 
 class FrontierLabsConfig(_ContentModel):

@@ -212,6 +212,43 @@ def test_arxiv_run_produces_manifest_outputs_for_control_plane_run_id(tmp_path, 
         assert resolved.exists(), f"missing declared output: {declared} -> {resolved}"
 
 
+def test_arxiv_run_rejects_malformed_run_date_env(tmp_path, monkeypatch, capsys) -> None:
+    """Finding 2 (review 08): a malformed LOOPCRAFT_RUN_DATE is a structured failure."""
+    import json
+
+    from loopcraft.research_intel.arxiv import cli as arxiv_cli
+
+    monkeypatch.setenv("LOOPCRAFT_SOURCE", str(REPO_ROOT))
+    monkeypatch.setenv("LOOPCRAFT_MEMORY", str(tmp_path / "mem"))
+    monkeypatch.delenv("LOOPCRAFT_RUN_ID", raising=False)
+    monkeypatch.setenv("LOOPCRAFT_RUN_DATE", "../../../../../escaped-date")
+
+    rc = arxiv_cli.main(
+        ["--json", "run", "--config", str(REPO_ROOT / "config" / "arxiv_intel.yaml")]
+    )
+    payload = json.loads(capsys.readouterr().out)
+    assert rc == 2
+    assert payload["ok"] is False
+    assert "invalid LOOPCRAFT_RUN_DATE" in payload["data"]["error"]
+    assert not (tmp_path / "mem").exists() or not list((tmp_path / "mem").rglob("escaped-date*"))
+
+
+def test_arxiv_store_write_digest_contains_stamps(tmp_path) -> None:
+    """Finding 2 (review 08): defense in depth — composed stamp paths stay contained."""
+    import pytest
+
+    config = LoopcraftConfig(source_path=tmp_path / "src", memory_path=tmp_path / "mem")
+    store = ArxivStore(config, OutputPaths())
+    with pytest.raises(ValueError, match="escapes"):
+        store.write_digest(
+            markdown="m",
+            payload="{}",
+            run_stamp="20260101T000000Z-deadbeef",
+            date_stamp="../../../../../escaped-date",
+        )
+    assert not list((tmp_path).glob("escaped-date*"))
+
+
 def test_arxiv_cli_reports_invalid_config_as_json_envelope(tmp_path, monkeypatch, capsys) -> None:
     """Finding 4 (review 07): a malformed config yields the JSON envelope, not a traceback."""
     import json

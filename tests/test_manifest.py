@@ -309,6 +309,19 @@ def test_state_prefixed_paths_are_accepted() -> None:
     assert ok.validate() == []
 
 
+def test_x_manifest_lets_auth_probe_own_credential_choice() -> None:
+    """Finding 3 (review 08): the manifest must not pin one exact X credential.
+
+    The runtime and the x-api auth probe accept either X_API_BEARER_TOKEN or
+    X_API_OAUTH2_ACCESS_TOKEN, so the manifest delegates the requirement to the
+    auth bundle instead of contradicting them with an exact env declaration.
+    """
+    manifests, _ = load_all(REPO_ROOT / "loops")
+    x_intel = next(m for m in manifests if m.id == "x-intel")
+    assert x_intel.depends_on.env == []
+    assert "x-api" in x_intel.depends_on.auth
+
+
 def test_slack_verify_file_mentions_cursor() -> None:
     """The dedicated verify file names the seen.json cursor as a stop condition."""
     text = (REPO_ROOT / "skills" / "slack-triage" / "verify.md").read_text(encoding="utf-8")

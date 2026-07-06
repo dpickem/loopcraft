@@ -42,37 +42,49 @@ def _assert_source_contained(config: LoopcraftConfig, candidate: Path) -> None:
 
 
 def _copytree_contained(config: LoopcraftConfig, src_dir: Path, dest: Path, workdir: Path) -> None:
-    """Copy a source directory into the worktree, validating every entry.
+    """Copy a skill directory into the worktree, validating every entry.
 
-    ``shutil.copytree``'s default symlink dereferencing would follow a sibling
-    or nested symlink anywhere on disk. Instead, every directory and file below
-    ``src_dir`` is individually required to resolve under the source root —
-    the same policy as ``logic.skill`` itself — before its contents are copied.
-    An in-source-resolving symlink is dereference-copied like any other file;
-    one that escapes aborts staging.
+    Containment is scoped to the *declared skill directory* (resolved), not
+    merely the repository: staging a minimal loop bundle, a directory symlink
+    pointing at an unrelated in-repo location (e.g. the source root with its
+    gitignored ``.env``) must not pull those files into the bundle. A symlink
+    whose target resolves under the skill root is dereference-copied like any
+    other entry; anything else aborts staging.
+
+    Cycle detection is ancestry-local (only a directory that reappears in its
+    own ancestor chain stops that branch), so two allowed aliases of the same
+    directory each materialize their contents.
 
     Raises:
-        SourcePathError: If any staged entry resolves outside the source tree.
+        SourcePathError: If any staged entry resolves outside the skill root.
         OSError: If an entry cannot be copied (e.g. a dangling symlink).
     """
-    seen_dirs: set[Path] = set()
-    for dirpath, dirnames, filenames in os.walk(src_dir, followlinks=True):
-        current = Path(dirpath)
+    _assert_source_contained(config, src_dir)
+    root = src_dir.resolve()
+
+    def guard(candidate: Path) -> None:
+        try:
+            assert_under(root, candidate, label="skill asset")
+        except ValueError as exc:
+            raise SourcePathError(str(exc)) from exc
+
+    def copy_dir(current: Path, dest_dir: Path, ancestors: tuple[Path, ...]) -> None:
         real = current.resolve()
-        if real in seen_dirs:  # symlink-cycle guard
-            dirnames[:] = []
-            continue
-        seen_dirs.add(real)
-        _assert_source_contained(config, current)
-        dest_dir = (dest / current.relative_to(src_dir)).resolve()
+        if real in ancestors:  # true symlink cycle along this branch: stop here
+            return
+        guard(current)
         _assert_under(workdir, dest_dir)
         dest_dir.mkdir(parents=True, exist_ok=True)
-        for name in sorted(filenames):
-            src_file = current / name
-            _assert_source_contained(config, src_file)
-            dest_file = (dest_dir / name).resolve()
-            _assert_under(workdir, dest_file)
-            shutil.copy2(src_file, dest_file)
+        for entry in sorted(current.iterdir()):
+            if entry.is_dir():
+                copy_dir(entry, (dest_dir / entry.name).resolve(), ancestors + (real,))
+            else:
+                guard(entry)
+                dest_file = (dest_dir / entry.name).resolve()
+                _assert_under(workdir, dest_file)
+                shutil.copy2(entry, dest_file)
+
+    copy_dir(src_dir, dest, ())
 
 
 def _apply_local_shadowing(workdir: Path) -> None:
@@ -166,11 +178,41 @@ def _stage_content_config(
     return staged
 
 
+def _stage_extra_assets(
+    config: LoopcraftConfig, declared_assets: list[str], workdir: Path
+) -> list[Path]:
+    """Stage extra content-referenced assets verbatim (no local shadowing).
+
+    These are exact source-relative paths referenced by the loop's effective
+    content config (e.g. the X following snapshot, itself often a ``*.local.*``
+    file). They are staged after the shadowing pass so each keeps the exact
+    name the config refers to.
+
+    Raises:
+        StagingError: If a declared asset is not a regular file.
+        SourcePathError: If an asset escapes the source tree.
+    """
+    staged: list[Path] = []
+    for declared in declared_assets:
+        rel = PurePosixPath(safe_source_relpath(declared))
+        src = config.resolve_source_path(declared)
+        if not src.is_file():
+            raise StagingError(f"content asset not found: {declared}")
+        _assert_source_contained(config, src)
+        dest = (workdir / rel).resolve()
+        _assert_under(workdir, dest)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src, dest)
+        staged.append(dest)
+    return staged
+
+
 def stage_loop_assets(
     config: LoopcraftConfig,
     manifest: LoopManifest,
     workdir: Path,
     environ: dict[str, str] | None = None,
+    extra_assets: list[str] | None = None,
 ) -> list[Path]:
     """Copy a minimal source bundle for a loop into its isolated run directory.
 
@@ -236,4 +278,5 @@ def stage_loop_assets(
 
     _apply_local_shadowing(workdir)
     _apply_env_overrides(workdir, environ)
+    staged += _stage_extra_assets(config, extra_assets or [], workdir)
     return staged

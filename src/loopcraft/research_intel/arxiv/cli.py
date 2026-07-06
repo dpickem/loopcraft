@@ -9,7 +9,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from loopcraft.cli_output import emit, fail as _fail
-from loopcraft.config import RUN_DATE_ENV, RUN_ID_ENV, LoopcraftConfig
+from loopcraft.config import LoopcraftConfig, resolve_run_stamps
 from loopcraft.research_intel.arxiv.client import ArxivApiError, ArxivClient
 from loopcraft.research_intel.arxiv.config import ArxivIntelConfig, OutputPaths
 from loopcraft.research_intel.arxiv.digest import render_digest
@@ -57,6 +57,12 @@ def run(
         config = ArxivIntelConfig.load(Path(config_path))
     except Exception as exc:  # noqa: BLE001 — CLI boundary: emit envelope, not traceback
         return _fail("run", 2, f"invalid or unreadable content config {config_path}: {exc}", as_json=as_json)
+    # Validate inherited control-plane protocol values before any work: a
+    # malformed run id/date must be a structured failure, not a traversal.
+    try:
+        run_stamp, date_stamp = resolve_run_stamps(loopcraft, datetime.now(UTC))
+    except ValueError as exc:
+        return _fail("run", 2, str(exc), as_json=as_json)
     # Output locations are fixed in code (mirroring the manifest contract), never
     # read from the content config.
     store = ArxivStore(loopcraft, OutputPaths())
@@ -94,11 +100,6 @@ def run(
         indent=2,
         ensure_ascii=False,
     )
-    # Control-plane runs hand down the run id and resolved run date so the
-    # written filenames match the manifest's {{run_id}}/{{date}} outputs even
-    # across UTC midnight; the clock is only a standalone-run fallback.
-    run_stamp = loopcraft.env_value(RUN_ID_ENV) or now.strftime("%Y%m%dT%H%M%SZ")
-    date_stamp = loopcraft.env_value(RUN_DATE_ENV) or now.strftime("%Y-%m-%d")
     markdown_path, json_path = store.write_digest(
         markdown=markdown,
         payload=payload,

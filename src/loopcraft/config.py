@@ -9,7 +9,9 @@ loop I/O can never escape its tree.
 from __future__ import annotations
 
 import os
+import re
 import tomllib
+from datetime import date, datetime
 from enum import StrEnum
 from pathlib import Path, PurePosixPath
 
@@ -57,6 +59,60 @@ RUN_ID_ENV = "LOOPCRAFT_RUN_ID"
 #: outputs with the same UTC date the manifest ``{{date}}`` outputs resolved
 #: to — a run crossing 00:00 UTC must not write the next day's filename.
 RUN_DATE_ENV = "LOOPCRAFT_RUN_DATE"
+
+#: Canonical control-plane run-id shape (see ``Store.new_run_id``).
+_RUN_ID_STAMP_RE = re.compile(r"^\d{8}T\d{6}Z-[0-9a-f]{8}$")
+#: ISO calendar-date shape for the handed-down run date.
+_RUN_DATE_STAMP_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def validate_run_id_stamp(value: str) -> str:
+    """Validate a ``LOOPCRAFT_RUN_ID`` protocol value.
+
+    Direct CLIs inherit arbitrary caller environments, so the handed-down run
+    id must match the canonical control-plane format — one safe filename
+    component — before it is used to name ledger files.
+
+    Raises:
+        ValueError: If the value is not a canonical control-plane run id.
+    """
+    if not _RUN_ID_STAMP_RE.fullmatch(value):
+        raise ValueError(
+            f"invalid {RUN_ID_ENV} value {value!r} (expected <YYYYMMDDTHHMMSSZ>-<hex8>)"
+        )
+    return value
+
+
+def validate_run_date_stamp(value: str) -> str:
+    """Validate a ``LOOPCRAFT_RUN_DATE`` protocol value as a real ISO date.
+
+    Raises:
+        ValueError: If the value is not a valid ``YYYY-MM-DD`` calendar date.
+    """
+    if not _RUN_DATE_STAMP_RE.fullmatch(value):
+        raise ValueError(f"invalid {RUN_DATE_ENV} value {value!r} (expected YYYY-MM-DD)")
+    try:
+        date.fromisoformat(value)
+    except ValueError as exc:
+        raise ValueError(f"invalid {RUN_DATE_ENV} value {value!r}: {exc}") from exc
+    return value
+
+
+def resolve_run_stamps(config: LoopcraftConfig, now: datetime) -> tuple[str, str]:
+    """Return validated ``(run_stamp, date_stamp)`` for a loop workflow.
+
+    Uses the control plane's handed-down ``LOOPCRAFT_RUN_ID`` /
+    ``LOOPCRAFT_RUN_DATE`` when set (validated as protocol values), falling back
+    to ``now`` only for standalone direct-CLI runs.
+
+    Raises:
+        ValueError: If an inherited protocol value is malformed.
+    """
+    run_id = config.env_value(RUN_ID_ENV)
+    run_date = config.env_value(RUN_DATE_ENV)
+    run_stamp = validate_run_id_stamp(run_id) if run_id else now.strftime("%Y%m%dT%H%M%SZ")
+    date_stamp = validate_run_date_stamp(run_date) if run_date else now.strftime("%Y-%m-%d")
+    return run_stamp, date_stamp
 
 #: Prefixes that mark a declared path as a ledger/state file the store owns.
 #: Anything else (``linear:...``, ``s3://...``) is a non-file target the store

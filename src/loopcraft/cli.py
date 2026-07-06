@@ -24,6 +24,7 @@ from loopcraft.manifest import LoopManifest, ManifestError, load_all, loop_id_pr
 from loopcraft.paths import assert_under
 from loopcraft.runners import RunContext, get_runner
 from loopcraft.runners.base import STATUS_DONE, PreflightReport
+from loopcraft.runners.capabilities import content_assets
 from loopcraft.store import RunRecord, Store
 from loopcraft.worktree import StagingError, stage_loop_assets
 
@@ -272,7 +273,11 @@ def _run_execute(
         try:
             worktree = _worktree_dir(config, manifest.id, run_id)
             worktree.mkdir(parents=True, exist_ok=True)
-            stage_loop_assets(config, manifest, worktree)
+            # Extra assets referenced by the effective content config (e.g. the
+            # X following snapshot) are part of the staged bundle too.
+            stage_loop_assets(
+                config, manifest, worktree, extra_assets=content_assets(manifest, config)
+            )
         except (StagingError, ValueError, OSError) as exc:
             return _record_run_failure(
                 store,

@@ -54,6 +54,21 @@ def safe_relpath(
     return "/".join(parts)
 
 
+def contained_child(root: Path, name: str, *, label: str) -> Path:
+    """Compose ``root / name`` and assert the child stays under ``root``.
+
+    Defense in depth for filename components derived from runtime values (run
+    ids, date stamps): a traversal or absolute component must not escape the
+    already-resolved parent directory.
+
+    Raises:
+        ValueError: If the composed child escapes ``root``.
+    """
+    child = root / name
+    assert_under(root, child, label=label)
+    return child
+
+
 def assert_under(root: Path, candidate: Path, *, label: str) -> None:
     """Assert that ``candidate`` is inside ``root``, resolving symlinks.
 

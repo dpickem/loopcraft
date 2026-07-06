@@ -306,6 +306,92 @@ def test_stage_rejects_symlinked_local_config_escaping_source(tmp_path: Path) ->
         stage_loop_assets(config, manifest, tmp_path / "wt", environ={})
 
 
+def test_stage_rejects_skill_symlink_to_unrelated_repo_dir(tmp_path: Path) -> None:
+    """Finding 1 (review 08): a skill cannot pull unrelated in-repo files.
+
+    A directory symlink from the skill to the source root would stage every
+    reachable repo file — including gitignored secrets like `.env` — so staged
+    entries must resolve under the declared skill directory, not just the repo.
+    """
+    source = _source_tree(tmp_path)
+    (source / ".env").write_text("SECRET_TOKEN=leaked\n", encoding="utf-8")
+    (source / "skills" / "slack-triage" / "all-source").symlink_to(source, target_is_directory=True)
+
+    config = LoopcraftConfig(source_path=source, memory_path=tmp_path / "mem")
+    manifest = LoopManifest.from_dict(
+        {
+            "id": "slack-triage",
+            "name": "Slack triage",
+            "logic": {"skill": "skills/slack-triage/SKILL.md"},
+            "cadence": {"type": "cron", "at": "0 9 * * *"},
+        }
+    )
+    workdir = tmp_path / "wt"
+    with pytest.raises(SourcePathError, match="escapes"):
+        stage_loop_assets(config, manifest, workdir, environ={})
+    staged_secrets = list(workdir.rglob(".env")) if workdir.exists() else []
+    assert staged_secrets == []
+
+
+def test_stage_materializes_in_skill_directory_aliases_independently(tmp_path: Path) -> None:
+    """Finding 1 (review 08): cycle detection is ancestry-local, not global.
+
+    Two allowed aliases of the same in-skill directory must each stage their
+    contents; a global visited-set would silently drop whichever came second.
+    """
+    source = _source_tree(tmp_path)
+    skill_dir = source / "skills" / "slack-triage"
+    (skill_dir / "data").mkdir()
+    (skill_dir / "data" / "file.txt").write_text("payload", encoding="utf-8")
+    (skill_dir / "data-alias").symlink_to(skill_dir / "data", target_is_directory=True)
+
+    config = LoopcraftConfig(source_path=source, memory_path=tmp_path / "mem")
+    manifest = LoopManifest.from_dict(
+        {
+            "id": "slack-triage",
+            "name": "Slack triage",
+            "logic": {"skill": "skills/slack-triage/SKILL.md"},
+            "cadence": {"type": "cron", "at": "0 9 * * *"},
+        }
+    )
+    workdir = tmp_path / "wt"
+    stage_loop_assets(config, manifest, workdir, environ={})
+    staged_root = workdir / "skills" / "slack-triage"
+    assert (staged_root / "data" / "file.txt").read_text(encoding="utf-8") == "payload"
+    assert (staged_root / "data-alias" / "file.txt").read_text(encoding="utf-8") == "payload"
+
+
+def test_stage_extra_assets_stages_verbatim_and_requires_existence(tmp_path: Path) -> None:
+    """Finding 4 (review 08): content-referenced assets stage under their exact name."""
+    source = _source_tree(tmp_path)
+    (source / "config").mkdir()
+    (source / "config" / "x_intel.yaml").write_text("ranking: {top_posts: 5}\n", encoding="utf-8")
+    (source / "config" / "x_following_snapshot.local.json").write_text(
+        '{"users": [{"username": "alice"}]}\n', encoding="utf-8"
+    )
+    config = LoopcraftConfig(source_path=source, memory_path=tmp_path / "mem")
+    manifest = _content_config_manifest(source, "config/x_intel.yaml")
+    workdir = tmp_path / "wt"
+
+    stage_loop_assets(
+        config,
+        manifest,
+        workdir,
+        environ={},
+        extra_assets=["config/x_following_snapshot.local.json"],
+    )
+    # Staged verbatim: the *.local.* name the config refers to survives the
+    # shadowing pass instead of being renamed onto a public sibling.
+    staged = workdir / "config" / "x_following_snapshot.local.json"
+    assert staged.is_file()
+    assert "alice" in staged.read_text(encoding="utf-8")
+
+    with pytest.raises(StagingError, match="content asset not found"):
+        stage_loop_assets(
+            config, manifest, tmp_path / "wt2", environ={}, extra_assets=["config/ghost.json"]
+        )
+
+
 def test_stage_allows_symlink_resolving_inside_source(tmp_path: Path) -> None:
     """An in-tree symlink whose target stays under the source root is allowed."""
     source = _source_tree(tmp_path)

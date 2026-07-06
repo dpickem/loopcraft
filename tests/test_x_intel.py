@@ -332,6 +332,104 @@ def test_x_persist_source_state_initializes_empty_file(tmp_path) -> None:
     assert path.read_text(encoding="utf-8").strip() == "{}"
 
 
+def test_x_run_rejects_traversal_run_stamp_env(tmp_path, monkeypatch, capsys) -> None:
+    """Finding 2 (review 08): inherited protocol env values are validated.
+
+    A traversal LOOPCRAFT_RUN_ID must produce a structured failure before any
+    work, never a ledger write outside the memory tree.
+    """
+    import json
+
+    monkeypatch.setenv("LOOPCRAFT_RUN_ID", "../../../../../escaped-run")
+    monkeypatch.delenv("LOOPCRAFT_RUN_DATE", raising=False)
+    runner = XIntelRunner.__new__(XIntelRunner)
+    runner.loopcraft = LoopcraftConfig(source_path=tmp_path / "src", memory_path=tmp_path / "mem")
+
+    rc = runner.run(dry_run=False, as_json=True)
+    payload = json.loads(capsys.readouterr().out)
+    assert rc == 2
+    assert payload["ok"] is False
+    assert "invalid LOOPCRAFT_RUN_ID" in payload["data"]["error"]
+    assert not (tmp_path / "mem").exists() or not list((tmp_path / "mem").rglob("escaped-run*"))
+
+
+def test_x_store_write_digest_contains_stamps(tmp_path) -> None:
+    """Finding 2 (review 08): defense in depth — composed stamp paths stay contained."""
+    import pytest
+
+    config = LoopcraftConfig(source_path=tmp_path / "src", memory_path=tmp_path / "mem")
+    store = IntelStore(config, OutputPaths())
+    with pytest.raises(ValueError, match="escapes"):
+        store.write_digest(
+            markdown="m",
+            payload="{}",
+            run_stamp="../../../../../escaped-run",
+            date_stamp="2026-01-01",
+        )
+    assert not list((tmp_path).glob("escaped-run*"))
+
+
+def test_x_config_rejects_unsafe_following_snapshot_paths() -> None:
+    """Finding 4 (review 08): the snapshot path must be safe source-relative."""
+    import pytest
+
+    for bad in ("/tmp/outside.json", "../outside.json"):
+        with pytest.raises(ValueError):
+            IntelConfig.from_dict({"sources": {"following_snapshot": bad}})
+
+
+def test_load_following_snapshot_handles_is_strict(tmp_path) -> None:
+    """Finding 4 (review 08): a fetch-source snapshot is strictly validated."""
+    import pytest
+
+    from loopcraft.research_intel.x.follow_discovery import load_following_snapshot_handles
+
+    missing = tmp_path / "ghost.json"
+    with pytest.raises(ValueError, match="not found"):
+        load_following_snapshot_handles(missing)
+
+    malformed = tmp_path / "malformed.json"
+    malformed.write_text("{not json", encoding="utf-8")
+    with pytest.raises(ValueError, match="not readable JSON"):
+        load_following_snapshot_handles(malformed)
+
+    wrong_shape = tmp_path / "wrong.json"
+    wrong_shape.write_text('["a", "b"]', encoding="utf-8")
+    with pytest.raises(ValueError, match="unexpected shape"):
+        load_following_snapshot_handles(wrong_shape)
+
+    valid = tmp_path / "valid.json"
+    valid.write_text('{"users": [{"username": "alice"}, {"id": "2"}]}', encoding="utf-8")
+    assert load_following_snapshot_handles(valid) == ["alice"]
+
+
+def test_x_run_reports_missing_snapshot_as_named_source_error(tmp_path, monkeypatch, capsys) -> None:
+    """Finding 4 (review 08): a configured missing snapshot cannot fail open.
+
+    The run must surface a named source error (nonzero exit), not silently drop
+    the configured source and report a successful empty digest.
+    """
+    import json
+
+    monkeypatch.delenv("LOOPCRAFT_RUN_ID", raising=False)
+    monkeypatch.delenv("LOOPCRAFT_RUN_DATE", raising=False)
+    monkeypatch.chdir(tmp_path)  # snapshot resolves relative to the run cwd
+
+    runner = XIntelRunner.__new__(XIntelRunner)
+    runner.loopcraft = LoopcraftConfig(source_path=tmp_path / "src", memory_path=tmp_path / "mem")
+    runner.config = IntelConfig.from_dict(
+        {"sources": {"following_snapshot": "config/ghost.local.json"}}
+    )
+    runner.store = IntelStore(runner.loopcraft, OutputPaths())
+    runner._client = lambda **kwargs: object()
+
+    rc = runner.run(dry_run=False, as_json=True)
+    payload = json.loads(capsys.readouterr().out)
+    assert rc == 1
+    assert payload["ok"] is False
+    assert any("snapshot source" in error for error in payload["data"]["errors"])
+
+
 def test_x_cli_reports_invalid_config_as_json_envelope(tmp_path, monkeypatch, capsys) -> None:
     """Finding 4 (review 07): a malformed config yields the JSON envelope, not a traceback."""
     import json

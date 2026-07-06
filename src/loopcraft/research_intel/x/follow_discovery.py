@@ -136,6 +136,35 @@ def discover_candidates(
     return [_candidate_to_dict(candidate) for candidate in ranked[:top_n]]
 
 
+def load_following_snapshot_handles(path: Path) -> list[str]:
+    """Return usernames from a following snapshot, strictly validated.
+
+    Unlike :func:`followed_handles_from_snapshot` (a tolerant filter input for
+    follow discovery), a snapshot used as a *fetch source* is a declared
+    dependency of the run: a missing, unreadable, malformed, or wrong-shape
+    file is an error, never an empty source.
+
+    Raises:
+        ValueError: If the file is not a regular file, is not valid JSON, or is
+            not an object with a ``users`` list.
+    """
+    if not path.is_file():
+        raise ValueError(f"following snapshot not found: {path}")
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError(f"following snapshot is not readable JSON: {path}: {exc}") from exc
+    if not isinstance(raw, dict) or not isinstance(raw.get("users"), list):
+        raise ValueError(
+            f"following snapshot has unexpected shape (expected an object with a 'users' list): {path}"
+        )
+    return [
+        str(user["username"])
+        for user in raw["users"]
+        if isinstance(user, dict) and user.get("username")
+    ]
+
+
 def followed_handles_from_snapshot(path: Path | None) -> set[str]:
     """Return the set of already-followed handles from a following snapshot."""
     if not path or not path.exists():

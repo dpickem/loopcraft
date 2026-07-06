@@ -8,6 +8,7 @@ from typing import Any, Iterable
 
 from loopcraft.config import LoopcraftConfig, is_state_path
 from loopcraft.jsonl import read_jsonl, write_jsonl
+from loopcraft.paths import contained_child
 from loopcraft.research_intel.x.config import OutputPaths
 
 
@@ -58,13 +59,15 @@ class IntelStore:
         latest_json = self.resolve(self.output.latest_json)
         for path in (digest_dir, history_dir, latest_markdown.parent, latest_json.parent):
             path.mkdir(parents=True, exist_ok=True)
-        markdown_path = digest_dir / f"{date_stamp}.md"
-        json_path = digest_dir / f"{date_stamp}.json"
+        # Defense in depth: the stamps come from runtime values (CLI-validated
+        # env protocol), so re-assert each composed path stays in its directory.
+        markdown_path = contained_child(digest_dir, f"{date_stamp}.md", label="digest output")
+        json_path = contained_child(digest_dir, f"{date_stamp}.json", label="digest output")
         writes = {
             markdown_path: markdown,
             json_path: payload,
-            history_dir / f"{run_stamp}.md": markdown,
-            history_dir / f"{run_stamp}.json": payload,
+            contained_child(history_dir, f"{run_stamp}.md", label="history output"): markdown,
+            contained_child(history_dir, f"{run_stamp}.json", label="history output"): payload,
             latest_markdown: markdown,
             latest_json: payload,
         }

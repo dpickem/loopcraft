@@ -25,8 +25,12 @@ budget:
 depends_on:
   apis: [x]
   tools: []
+  # The x-api auth probe owns the credential requirement: either
+  # X_API_BEARER_TOKEN or X_API_OAUTH2_ACCESS_TOKEN satisfies it, matching
+  # XApiTokens.token(). Pinning one exact env var here would reject hosts the
+  # runtime explicitly supports.
   auth: [x-api]
-  env: [X_API_BEARER_TOKEN]
+  env: []
   loops: []
 
 content:

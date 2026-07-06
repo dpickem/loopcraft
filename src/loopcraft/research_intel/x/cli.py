@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from loopcraft.cli_output import emit, fail as _fail
-from loopcraft.config import RUN_DATE_ENV, RUN_ID_ENV, LoopcraftConfig
+from loopcraft.config import LoopcraftConfig, resolve_run_stamps
 from loopcraft.env import load_dotenv
 from loopcraft.research_intel.x.client import XApiClient, XApiError
 from loopcraft.research_intel.x.config import IntelConfig, OutputPaths, XApiTokens
@@ -23,6 +23,7 @@ from loopcraft.research_intel.x.digest import render_digest
 from loopcraft.research_intel.x.follow_discovery import (
     discover_candidates,
     followed_handles_from_snapshot,
+    load_following_snapshot_handles,
     render_follow_candidates,
 )
 from loopcraft.research_intel.x.ranking import rank_posts
@@ -76,6 +77,13 @@ class XIntelRunner:
 
     def run(self, *, dry_run: bool = False, as_json: bool = False) -> int:
         """Fetch, rank, and write a daily X digest; return a process exit code."""
+        # Validate inherited control-plane protocol values before any work: a
+        # malformed run id/date must be a structured failure, not a traversal.
+        try:
+            run_stamp, date_stamp = resolve_run_stamps(self.loopcraft, datetime.now(UTC))
+        except ValueError as exc:
+            return _fail("run", 2, str(exc), as_json=as_json)
+
         try:
             client = self._client()
         except MissingTokenError as exc:
@@ -105,11 +113,6 @@ class XIntelRunner:
             indent=2,
             ensure_ascii=False,
         )
-        # Control-plane runs hand down the run id and resolved run date so the
-        # written filenames match the manifest's {{run_id}}/{{date}} outputs even
-        # across UTC midnight; the clock is only a standalone-run fallback.
-        run_stamp = self.loopcraft.env_value(RUN_ID_ENV) or now.strftime("%Y%m%dT%H%M%SZ")
-        date_stamp = self.loopcraft.env_value(RUN_DATE_ENV) or now.strftime("%Y-%m-%d")
         markdown_path, json_path = self.store.write_digest(
             markdown=markdown,
             payload=payload,
@@ -254,12 +257,21 @@ class XIntelRunner:
         )
 
     def _fetch_from_snapshot(self, client: XApiClient, *, dry_run: bool) -> list[dict[str, Any]]:
-        """Fetch posts from the handles in the following snapshot, if any."""
+        """Fetch posts from the handles in the following snapshot, if any.
+
+        A configured snapshot is a declared source: a missing or malformed file
+        becomes a named source error through the per-source isolation, never a
+        silently empty (yet "successful") source.
+        """
         snapshot = self.config.sources.following_snapshot
         if not snapshot:
             return []
+        try:
+            handles = load_following_snapshot_handles(Path(snapshot))
+        except ValueError as exc:
+            raise XApiError(f"snapshot source: {exc}") from exc
         return self._fetch_author_batches(
-            client, _snapshot_handles(snapshot), source_prefix="snapshot", dry_run=dry_run
+            client, handles, source_prefix="snapshot", dry_run=dry_run
         )
 
     def _fetch_author_batches(
@@ -336,14 +348,6 @@ def snapshot_following(
     data = {"snapshot_path": str(output), "following_count": len(followed_users)}
     lines = [f"FOLLOWING_SNAPSHOT={output}", f"FOLLOWING_COUNT={len(followed_users)}"]
     return emit("snapshot-following", as_json=as_json, ok=True, rc=0, data=data, lines=lines)
-
-
-def _snapshot_handles(path: Path) -> list[str]:
-    """Return the usernames recorded in a following-snapshot file."""
-    if not path.exists():
-        return []
-    raw = json.loads(path.read_text(encoding="utf-8"))
-    return [user["username"] for user in raw.get("users", []) if user.get("username")]
 
 
 def _build_parser() -> argparse.ArgumentParser:
