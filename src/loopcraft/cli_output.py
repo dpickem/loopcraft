@@ -12,6 +12,20 @@ import json
 import sys
 from typing import Any
 
+from pydantic import BaseModel, Field
+
+
+class CommandOutcome(BaseModel):
+    """One structured command outcome ready for emission.
+
+    Bundles the exit code, JSON payload, and human-readable lines a command
+    handler produces, replacing loose ``(rc, data, lines)`` tuples.
+    """
+
+    rc: int
+    data: dict[str, Any] = Field(default_factory=dict)
+    lines: list[str] = Field(default_factory=list)
+
 
 def emit(
     command: str,

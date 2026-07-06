@@ -19,26 +19,69 @@ from loopcraft.settings import asset_env_var, local_sibling_path, split_env_list
 #: Marker that identifies a private override file: ``channels.local.txt``.
 _LOCAL_MARKER = ".local."
 
+#: Scratch area (under the memory tree) for per-run worktrees.
+_WORKTREES_SUBPATH = ("var", "worktrees")
+
 
 class StagingError(RuntimeError):
     """Raised when a loop's declared runtime asset cannot be staged."""
 
 
 def _assert_under(root: Path, candidate: Path) -> None:
-    """Guard that ``candidate`` stays inside ``root`` (no traversal escape)."""
+    """Guard that ``candidate`` stays inside the run worktree.
+
+    A label-currying convenience over :func:`loopcraft.paths.assert_under` (the
+    shared containment primitive) so every staging call site reports the same
+    ``run worktree`` boundary.
+    """
     assert_under(root, candidate, label="run worktree")
 
 
-def _assert_source_contained(config: LoopcraftConfig, candidate: Path) -> None:
-    """Guard that a source entry (symlinks resolved) stays under the source root.
+def worktrees_root(config: LoopcraftConfig) -> Path:
+    """Root of the per-run worktree scratch area in the memory tree."""
+    return config.memory_path.joinpath(*_WORKTREES_SUBPATH)
+
+
+def worktree_dir(config: LoopcraftConfig, loop_id: str, run_id: str) -> Path:
+    """Return the per-run worktree directory for a loop.
+
+    The result is verified to remain under the worktree root, so manifest data
+    can never choose an arbitrary staging directory (id validation upstream makes
+    this unreachable; the guard is defense in depth).
 
     Raises:
-        SourcePathError: If the resolved entry escapes the source tree.
+        ValueError: If ``loop_id``/``run_id`` would escape the worktree root.
     """
-    try:
-        assert_under(config.source_path, candidate, label="source asset")
-    except ValueError as exc:
-        raise SourcePathError(str(exc)) from exc
+    root = worktrees_root(config)
+    path = root.joinpath(loop_id, run_id)
+    assert_under(root, path, label="run worktree")
+    return path
+
+
+def prune_loop_worktrees(config: LoopcraftConfig, loop_id: str, *, keep_last: int) -> list[Path]:
+    """Keep only the newest N per-run worktree directories for one loop.
+
+    The worktree area is scratch/debug state under ``<memory>/var/worktrees``;
+    durable run records and outputs live in ``ledger/``. Pruning therefore never
+    removes canonical loop state. ``keep_last`` is clamped by config to 0..100.
+
+    Raises:
+        ValueError: If ``loop_id`` would make the prune target escape the
+            worktree root (defense in depth; ids are validated upstream).
+    """
+    root = worktrees_root(config)
+    loop_dir = root / loop_id
+    assert_under(root, loop_dir, label="worktree prune target")
+    if not loop_dir.exists():
+        return []
+
+    children = [p for p in loop_dir.iterdir() if p.is_dir()]
+    children.sort(key=lambda p: (p.stat().st_mtime_ns, p.name), reverse=True)
+    removed: list[Path] = []
+    for path in children[keep_last:]:
+        shutil.rmtree(path)
+        removed.append(path)
+    return removed
 
 
 def _copytree_contained(config: LoopcraftConfig, src_dir: Path, dest: Path, workdir: Path) -> None:
@@ -59,16 +102,28 @@ def _copytree_contained(config: LoopcraftConfig, src_dir: Path, dest: Path, work
         SourcePathError: If any staged entry resolves outside the skill root.
         OSError: If an entry cannot be copied (e.g. a dangling symlink).
     """
-    _assert_source_contained(config, src_dir)
+    config.assert_source_contained(src_dir)
     root = src_dir.resolve()
 
     def guard(candidate: Path) -> None:
+        """Require ``candidate`` (symlinks resolved) to stay under the skill root.
+
+        Raises:
+            SourcePathError: If the resolved entry escapes the skill directory.
+        """
         try:
             assert_under(root, candidate, label="skill asset")
         except ValueError as exc:
             raise SourcePathError(str(exc)) from exc
 
     def copy_dir(current: Path, dest_dir: Path, ancestors: tuple[Path, ...]) -> None:
+        """Recursively copy one contained directory level into the worktree.
+
+        Args:
+            current: Source directory being copied (validated by ``guard``).
+            dest_dir: Destination directory inside the run worktree.
+            ancestors: Resolved directories on this branch, for cycle detection.
+        """
         real = current.resolve()
         if real in ancestors:  # true symlink cycle along this branch: stop here
             return
@@ -105,9 +160,12 @@ def _apply_local_shadowing(workdir: Path) -> None:
 def _apply_env_overrides(workdir: Path, environ: dict[str, str]) -> None:
     """Override staged skill list assets (``skills/**/*.txt``) from the environment.
 
-    For each ``.txt`` asset, the env var derived by :func:`asset_env_var` (if set)
-    replaces the file contents with the resolved list — the highest-precedence
-    source in the public/private split.
+    Skills use two file kinds by convention: ``.md`` for prose (SKILL/verify
+    text) and ``.txt`` for line-list assets (e.g.
+    ``skills/slack-triage/channels.txt``). Only the list assets are
+    env-overridable: for each ``.txt`` asset, the env var derived by
+    :func:`asset_env_var` (if set) replaces the file contents with the resolved
+    list — the highest-precedence source in the public/private split.
     """
     skills_root = workdir / "skills"
     if not skills_root.is_dir():
@@ -169,7 +227,7 @@ def _stage_content_config(
     local_src = local_sibling_path(src)
     if local_src.is_file():
         # A symlinked local override must resolve under the source root too.
-        _assert_source_contained(config, local_src)
+        config.assert_source_contained(local_src)
         dest_local = (workdir / rel.parent / local_src.name).resolve()
         _assert_under(workdir, dest_local)
         dest_local.parent.mkdir(parents=True, exist_ok=True)
@@ -198,7 +256,7 @@ def _stage_extra_assets(
         src = config.resolve_source_path(declared)
         if not src.is_file():
             raise StagingError(f"content asset not found: {declared}")
-        _assert_source_contained(config, src)
+        config.assert_source_contained(src)
         dest = (workdir / rel).resolve()
         _assert_under(workdir, dest)
         dest.parent.mkdir(parents=True, exist_ok=True)
@@ -267,7 +325,7 @@ def stage_loop_assets(
             staged.append(dest)
 
     if manifest.source_path and manifest.source_path.is_file():
-        _assert_source_contained(config, manifest.source_path)
+        config.assert_source_contained(manifest.source_path)
         dest = (workdir / "loops" / manifest.source_path.name).resolve()
         _assert_under(workdir, dest)
         dest.parent.mkdir(parents=True, exist_ok=True)

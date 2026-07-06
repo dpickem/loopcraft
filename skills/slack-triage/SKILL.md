@@ -5,17 +5,7 @@ description: >-
   DMs, group DMs, and a configured list of high-signal channels — into a single
   digest grouped by theme, led by a high-level topic overview. Observe-only:
   never send a message.
-readonly: true
-tools: [nv-tools.slack]
 ---
-
-<!--
-Runtime authority: the loop manifest (loops/slack-triage.yaml) is the source of
-truth for tier (observe => read-only) and declared tools; the frontmatter above
-only lets this skill be discovered/used standalone. Goal/stop conditions live in
-the colocated verify.md referenced by the manifest, not in this frontmatter.
--->
-
 
 # Slack triage & summarizer
 

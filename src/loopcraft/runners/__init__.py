@@ -7,13 +7,11 @@ from loopcraft.runners.base import (
     RunContext,
     Runner,
     RunResult,
-    STATUS_DONE,
-    STATUS_FAILED,
-    STATUS_NEEDS_APPROVAL,
-    STATUS_STALLED,
+    RunStatus,
 )
 from loopcraft.runners.codex import CodexRunner
 
+#: Registry of vendor name -> runner adapter class (extended by register_runner).
 _RUNNERS: dict[str, type[Runner]] = {
     "codex": CodexRunner,
 }
@@ -47,8 +45,5 @@ __all__ = [
     "CodexRunner",
     "get_runner",
     "register_runner",
-    "STATUS_DONE",
-    "STATUS_FAILED",
-    "STATUS_NEEDS_APPROVAL",
-    "STATUS_STALLED",
+    "RunStatus",
 ]

@@ -34,6 +34,27 @@ class RunRecord(BaseModel):
     I/O contract at run time, while ``outputs`` lists only files the run actually
     produced or refreshed — empty when execution never started, so a failed run
     can never look like a producer to downstream readers.
+
+    Attributes:
+        run_id: Sortable run identifier (``<UTC timestamp>-<short uuid>``).
+        loop: Id of the loop that ran.
+        vendor: Runtime vendor that executed (or would have executed) the run.
+        model: Vendor model id, when the manifest pinned one.
+        status: Normalized run status (``done``/``failed``/``stalled``/
+            ``needs_approval``).
+        started_at: ISO-8601 UTC timestamp when the run began.
+        ended_at: ISO-8601 UTC timestamp when the run finished, if it did.
+        duration_s: Wall-clock duration in seconds.
+        exit_code: Vendor subprocess exit code, when a process ran.
+        tokens: Total tokens consumed, when the adapter reports it.
+        cost_usd: Estimated cost in USD, when the adapter reports it.
+        iterations: Agent iterations/turns, when the adapter reports it.
+        inputs: The manifest's declared inputs (the contract, not consumption).
+        outputs: Files actually produced/refreshed by this run (provenance).
+        declared_outputs: The manifest's declared outputs (template form).
+        artifacts: Captured artifact paths (populated by later milestones).
+        log_path: Path to the run log on disk, if one was written.
+        problems: Human-readable problems recorded for the run.
     """
 
     run_id: str
@@ -162,6 +183,7 @@ class Store:
         return path
 
 
+#: RunRecord field names accepted when reading (possibly older) ledger records.
 _RUN_FIELDS = tuple(RunRecord.model_fields.keys())
 
 

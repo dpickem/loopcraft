@@ -210,11 +210,21 @@ serialization. Avoid ad hoc `dict[str, Any]` return types for public APIs.
 
 ### 9. Closed Vocabularies and Constants
 
-For stable vocabularies such as vendors, loci, tiers, cadence types, and run
-statuses, use `Enum` / `StrEnum` rather than sets of magic strings. Put repeated
-constants (field names, default filenames, thresholds, score weights, retry
-limits, query fragments) at module scope or in a user-editable config structure.
-Do not scatter magic values through function bodies.
+For stable vocabularies such as vendors, loci, tiers, cadence types, run
+statuses, and process exit codes, use `Enum` / `StrEnum` / `IntEnum` rather than
+sets of magic strings or bare numbers (CLI exit codes come from
+`loopcraft.config.ExitCode`). Put repeated constants (field names, default
+filenames, thresholds, score weights, retry limits, query fragments) at module
+scope or in a user-editable config structure. Do not scatter magic values
+through function bodies.
+
+Annotate every module-level constant with a one-line `#:` comment explaining
+what it is (multi-line when the constant genuinely needs more context):
+
+```python
+#: Seconds before an X API HTTP request is abandoned.
+_REQUEST_TIMEOUT_S = 30
+```
 
 ### 10. Retries
 
@@ -248,6 +258,22 @@ PYTHONPATH=src python -m loopcraft.research_intel.arxiv.cli run --config config/
 Do not add a checked-in shell script when a `make` target or `python -m` entry
 point will do. If a shell wrapper is truly necessary, document why in the PR and
 keep it small, quoted, and tested where practical.
+
+### 14. File Organization
+
+Organize each module top to bottom in this order:
+
+1. Module docstring, then imports.
+2. Global variables/constants, each with a `#:` one-line explanation
+   (multi-line if necessary).
+3. Custom exceptions.
+4. Enums.
+5. Private functions (single-underscore helpers).
+6. Public functions and classes.
+
+A global that derives from an enum (e.g. a tuple built from enum values) may
+follow the enum definitions; note why in its comment. Keep related sections
+visually separated so a reader can predict where a definition lives.
 
 ## Adding a New Loop
 

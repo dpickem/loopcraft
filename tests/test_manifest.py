@@ -85,7 +85,7 @@ def test_load_all_reports_filename_id_mismatch(tmp_path: Path) -> None:
         "logic: {skill: skills/demo/SKILL.md}\n",
         encoding="utf-8",
     )
-    _, problems = load_all(loops)
+    problems = load_all(loops).problems
     assert any("does not match filename stem" in p for p in problems)
 
 
@@ -117,7 +117,9 @@ def test_load_all_rejects_symlinked_manifest_escaping_loops_dir(tmp_path: Path) 
     )
     (loops / "evil.yaml").symlink_to(outside / "evil.yaml")
 
-    manifests, problems = load_all(loops)
+    catalog = load_all(loops)
+
+    manifests, problems = catalog.manifests, catalog.problems
     assert not any(m.id == "evil" for m in manifests)
     assert any("escapes" in p for p in problems)
 
@@ -129,7 +131,7 @@ def test_load_all_reports_output_claimed_by_multiple_loops(tmp_path: Path) -> No
     _write_loop(loops, "loop-a", ["state/shared/out.md"])
     _write_loop(loops, "loop-b", ["state/shared/out.md"])
 
-    _, problems = load_all(loops)
+    problems = load_all(loops).problems
     assert any(
         "declared by multiple loops" in p and "loop-a" in p and "loop-b" in p
         for p in problems
@@ -144,7 +146,7 @@ def test_load_all_reports_normalized_duplicate_outputs(tmp_path: Path) -> None:
     # Same ledger file spelled differently; normalizes to the same path.
     _write_loop(loops, "loop-b", ["state/shared/./out.md"])
 
-    _, problems = load_all(loops)
+    problems = load_all(loops).problems
     assert any("declared by multiple loops" in p for p in problems)
 
 
@@ -154,7 +156,7 @@ def test_load_all_reports_duplicate_output_within_one_manifest(tmp_path: Path) -
     loops.mkdir()
     _write_loop(loops, "loop-a", ["state/shared/out.md", "state/shared/out.md"])
 
-    _, problems = load_all(loops)
+    problems = load_all(loops).problems
     assert any("declared more than once" in p for p in problems)
     # A within-manifest duplicate alone is not also a cross-loop collision.
     assert not any("declared by multiple loops" in p for p in problems)
@@ -167,7 +169,7 @@ def test_distinct_outputs_produce_no_duplicate_problems(tmp_path: Path) -> None:
     _write_loop(loops, "loop-a", ["state/a/out.md"])
     _write_loop(loops, "loop-b", ["state/b/out.md"])
 
-    _, problems = load_all(loops)
+    problems = load_all(loops).problems
     assert problems == []
 
 
@@ -210,7 +212,8 @@ def test_no_cycle_for_linear_chain() -> None:
 
 def test_repo_slack_triage_manifest_is_valid() -> None:
     """All shipped manifests load cleanly and include the expected ids."""
-    manifests, problems = load_all(REPO_ROOT / "loops")
+    catalog = load_all(REPO_ROOT / "loops")
+    manifests, problems = catalog.manifests, catalog.problems
     assert problems == []
     assert any(m.id == "slack-triage" for m in manifests)
     assert any(m.id == "arxiv-intel" for m in manifests)
@@ -219,7 +222,7 @@ def test_repo_slack_triage_manifest_is_valid() -> None:
 
 def test_slack_triage_declares_seen_cursor() -> None:
     """Finding 1: the seen.json cursor must be an explicit input and output."""
-    manifests, _ = load_all(REPO_ROOT / "loops")
+    manifests = load_all(REPO_ROOT / "loops").manifests
     slack = next(m for m in manifests if m.id == "slack-triage")
     assert "state/slack/seen.json" in slack.inputs
     assert "state/slack/seen.json" in slack.outputs
@@ -229,7 +232,7 @@ def test_slack_triage_declares_seen_cursor() -> None:
 
 def test_research_intel_manifests_archive_latest_outputs() -> None:
     """The arXiv/X manifests reference content configs and archive history."""
-    manifests, _ = load_all(REPO_ROOT / "loops")
+    manifests = load_all(REPO_ROOT / "loops").manifests
     arxiv = next(m for m in manifests if m.id == "arxiv-intel")
     x_intel = next(m for m in manifests if m.id == "x-intel")
     assert arxiv.content.config == "config/arxiv_intel.yaml"
@@ -316,7 +319,7 @@ def test_x_manifest_lets_auth_probe_own_credential_choice() -> None:
     X_API_OAUTH2_ACCESS_TOKEN, so the manifest delegates the requirement to the
     auth bundle instead of contradicting them with an exact env declaration.
     """
-    manifests, _ = load_all(REPO_ROOT / "loops")
+    manifests = load_all(REPO_ROOT / "loops").manifests
     x_intel = next(m for m in manifests if m.id == "x-intel")
     assert x_intel.depends_on.env == []
     assert "x-api" in x_intel.depends_on.auth

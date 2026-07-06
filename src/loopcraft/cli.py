@@ -14,22 +14,38 @@ import sys
 import time
 import traceback
 from datetime import UTC, datetime
+from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
-from loopcraft.cli_output import emit as _emit
-from loopcraft.config import RUN_DATE_ENV, RUN_ID_ENV, LoopcraftConfig
+from loopcraft.cli_output import CommandOutcome, emit as _emit
+from loopcraft.config import (
+    ACTIVE_LOOP_ENV,
+    RUN_DATE_ENV,
+    RUN_ID_ENV,
+    ExitCode,
+    LoopcraftConfig,
+)
 from loopcraft.env import load_dotenv
-from loopcraft.manifest import LoopManifest, ManifestError, load_all, loop_id_problem
-from loopcraft.paths import assert_under
+from loopcraft.manifest import LoopManifest, ManifestError, find_manifest, load_all
 from loopcraft.runners import RunContext, get_runner
-from loopcraft.runners.base import STATUS_DONE, PreflightReport
+from loopcraft.runners.base import PreflightReport, RunStatus
 from loopcraft.runners.capabilities import content_assets
 from loopcraft.store import RunRecord, Store
-from loopcraft.worktree import StagingError, stage_loop_assets
+from loopcraft.worktree import (
+    StagingError,
+    prune_loop_worktrees,
+    stage_loop_assets,
+    worktree_dir,
+)
 
-#: Scratch area (under the memory tree) for per-run worktrees.
-_WORKTREES_SUBPATH = ("var", "worktrees")
+
+class FailurePhase(StrEnum):
+    """Closed vocabulary of pre/mid-execution phases a run can fail in."""
+
+    PREFLIGHT = "preflight"
+    STAGING = "staging"
+    EXECUTION = "execution"
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -83,43 +99,10 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_logs(config, args.loop, as_json=as_json)
     if args.command == "deps":
         return _cmd_deps_check(config, loop_id=args.loop, as_json=as_json)
-    return 2
+    return ExitCode.INVALID
 
 
-def _find_manifest(config: LoopcraftConfig, loop_id: str) -> LoopManifest | None:
-    """Return the manifest for ``loop_id`` from the loops directory, if present.
-
-    The loop selector is an id, not a file path: it must match the canonical
-    loop-id vocabulary before any path is constructed, the resolved manifest must
-    stay directly under ``loops/``, and its ``id`` field must equal the filename
-    stem it was looked up by.
-
-    Raises:
-        ManifestError: If the selector is not a canonical loop id, the manifest
-            cannot be parsed/validated, or its id differs from the filename stem.
-    """
-    problem = loop_id_problem(loop_id)
-    if problem is not None:
-        raise ManifestError(f"invalid loop id {loop_id!r}: {problem}")
-    for ext in (".yaml", ".yml"):
-        path = config.loops_dir / f"{loop_id}{ext}"
-        try:
-            assert_under(config.loops_dir, path, label="loop manifest path")
-        except ValueError as exc:
-            raise ManifestError(str(exc)) from exc
-        if path.exists():
-            manifest = LoopManifest.load(path)
-            if manifest.id != loop_id:
-                raise ManifestError(
-                    f"{path.name}: manifest id {manifest.id!r} does not match filename stem {loop_id!r}"
-                )
-            return manifest
-    return None
-
-
-def _lookup_loop(
-    config: LoopcraftConfig, loop_id: str
-) -> tuple[LoopManifest | None, tuple[int, dict[str, Any], list[str]] | None]:
+def _lookup_loop(config: LoopcraftConfig, loop_id: str) -> LoopManifest | CommandOutcome:
     """Resolve and fully validate one loop by id for run/preflight commands.
 
     Shared by ``run`` and ``deps check --loop`` so both apply the identical
@@ -127,24 +110,32 @@ def _lookup_loop(
     would reject can never be reported as ready by the dependency check.
 
     Returns:
-        ``(manifest, None)`` on success, or ``(None, (rc, data, lines))``
-        describing the structured failure to emit.
+        The manifest on success, or a :class:`CommandOutcome` describing the
+        structured failure to emit.
     """
     try:
-        manifest = _find_manifest(config, loop_id)
+        manifest = find_manifest(config.loops_dir, loop_id)
     except ManifestError as exc:
-        return None, (2, {"loop": loop_id, "error": str(exc)}, [f"error: {exc}"])
+        return CommandOutcome(
+            rc=ExitCode.INVALID,
+            data={"loop": loop_id, "error": str(exc)},
+            lines=[f"error: {exc}"],
+        )
     if manifest is None:
         message = f"loop '{loop_id}' not found in {config.loops_dir}"
-        return None, (2, {"loop": loop_id, "error": message}, [f"error: {message}"])
+        return CommandOutcome(
+            rc=ExitCode.INVALID,
+            data={"loop": loop_id, "error": message},
+            lines=[f"error: {message}"],
+        )
     problems = manifest.validate()
     if problems:
-        return None, (
-            2,
-            {"loop": loop_id, "invalid_manifest": problems},
-            [f"invalid manifest: {problem}" for problem in problems],
+        return CommandOutcome(
+            rc=ExitCode.INVALID,
+            data={"loop": loop_id, "invalid_manifest": problems},
+            lines=[f"invalid manifest: {problem}" for problem in problems],
         )
-    return manifest, None
+    return manifest
 
 
 def _cmd_run(
@@ -156,10 +147,31 @@ def _cmd_run(
     as_json: bool,
 ) -> int:
     """Run one loop headless (or preflight it via ``--dry-run``)."""
-    manifest, failure = _lookup_loop(config, loop_id)
-    if manifest is None:
-        rc, data, lines = failure
-        return _emit("run", as_json=as_json, ok=False, rc=rc, data=data, lines=lines)
+    # Programmatic anti-recursion guard: the control plane marks the loop it is
+    # executing via ACTIVE_LOOP_ENV, so a skill that (incorrectly) re-enters
+    # `loopctl run` for its own loop is refused instead of recursing.
+    active_loop = config.env_value(ACTIVE_LOOP_ENV)
+    if active_loop == loop_id:
+        message = (
+            f"recursion guard: loop '{loop_id}' is already executing this loop "
+            f"({ACTIVE_LOOP_ENV} is set); use the loop's direct CLI instead of "
+            "re-entering the control plane"
+        )
+        return _emit(
+            "run",
+            as_json=as_json,
+            ok=False,
+            rc=ExitCode.INVALID,
+            data={"loop": loop_id, "error": message},
+            lines=[f"error: {message}"],
+        )
+
+    lookup = _lookup_loop(config, loop_id)
+    if isinstance(lookup, CommandOutcome):
+        return _emit(
+            "run", as_json=as_json, ok=False, rc=lookup.rc, data=lookup.data, lines=lookup.lines
+        )
+    manifest = lookup
 
     effective_vendor = vendor or manifest.effective_vendor(config.default_vendor)
     try:
@@ -169,7 +181,7 @@ def _cmd_run(
             "run",
             as_json=as_json,
             ok=False,
-            rc=2,
+            rc=ExitCode.INVALID,
             data={"loop": loop_id, "error": str(exc)},
             lines=[f"error: {exc}"],
         )
@@ -228,7 +240,7 @@ def _run_dry_run(
         f"preflight: {'OK' if preflight.ok else 'PROBLEMS'}",
         *[f"  - {problem}" for problem in preflight.problems],
     ]
-    return _emit("run", as_json=as_json, ok=preflight.ok, rc=0 if preflight.ok else 1, data=data, lines=lines)
+    return _emit("run", as_json=as_json, ok=preflight.ok, rc=ExitCode.OK if preflight.ok else ExitCode.FAILURE, data=data, lines=lines)
 
 
 def _run_execute(
@@ -259,7 +271,7 @@ def _run_execute(
             run_id,
             started,
             start_perf,
-            phase="preflight",
+            phase=FailurePhase.PREFLIGHT,
             as_json=as_json,
         )
 
@@ -271,7 +283,7 @@ def _run_execute(
     worktree: Path | None = None
     try:
         try:
-            worktree = _worktree_dir(config, manifest.id, run_id)
+            worktree = worktree_dir(config, manifest.id, run_id)
             worktree.mkdir(parents=True, exist_ok=True)
             # Extra assets referenced by the effective content config (e.g. the
             # X following snapshot) are part of the staged bundle too.
@@ -287,7 +299,7 @@ def _run_execute(
                 run_id,
                 started,
                 start_perf,
-                phase="staging",
+                phase=FailurePhase.STAGING,
                 as_json=as_json,
             )
         ctx = RunContext(
@@ -298,8 +310,13 @@ def _run_execute(
             # Hand the control-plane run id and resolved run date to any direct
             # CLI the loop invokes so its run-scoped history archives and dated
             # digests match the manifest's {{run_id}}/{{date}} outputs — even
-            # when the run crosses 00:00 UTC.
-            env={RUN_ID_ENV: run_id, RUN_DATE_ENV: started.date().isoformat()},
+            # when the run crosses 00:00 UTC. ACTIVE_LOOP_ENV marks this loop as
+            # executing so a nested `loopctl run <same-loop>` is refused.
+            env={
+                RUN_ID_ENV: run_id,
+                RUN_DATE_ENV: started.date().isoformat(),
+                ACTIVE_LOOP_ENV: manifest.id,
+            },
         )
 
         try:
@@ -315,7 +332,7 @@ def _run_execute(
                 run_id,
                 started,
                 start_perf,
-                phase="execution",
+                phase=FailurePhase.EXECUTION,
                 log_path=str(ctx.log_path),
                 as_json=as_json,
             )
@@ -344,11 +361,11 @@ def _run_execute(
     finally:
         if worktree is not None:
             try:
-                _prune_loop_worktrees(config, manifest.id, keep_last=config.worktree_keep_last)
+                prune_loop_worktrees(config, manifest.id, keep_last=config.worktree_keep_last)
             except OSError as exc:
                 print(f"warning: worktree pruning failed: {exc}", file=sys.stderr)
 
-    ok = result.status == STATUS_DONE
+    ok = result.status == RunStatus.DONE
     data = {
         "loop": manifest.id,
         "status": result.status,
@@ -364,7 +381,7 @@ def _run_execute(
         f"run record: {record_path}",
         *[f"output: {produced}" for produced in result.outputs],
     ]
-    rc = _emit("run", as_json=as_json, ok=ok, rc=0 if ok else 1, data=data, lines=lines)
+    rc = _emit("run", as_json=as_json, ok=ok, rc=ExitCode.OK if ok else ExitCode.FAILURE, data=data, lines=lines)
     if not as_json:
         for problem in result.problems:
             print(f"  ! {problem}", file=sys.stderr)
@@ -380,7 +397,7 @@ def _record_run_failure(
     started: datetime,
     start_perf: float,
     *,
-    phase: str,
+    phase: FailurePhase,
     as_json: bool,
     log_path: str | None = None,
 ) -> int:
@@ -391,7 +408,7 @@ def _record_run_failure(
     ``declared_outputs`` so a failed run never claims false provenance.
 
     Args:
-        phase: Which phase failed (``preflight``, ``staging``, or ``execution``).
+        phase: Which :class:`FailurePhase` the run failed in.
         log_path: Optional log written for the failure (e.g. a traceback).
     """
     record = RunRecord(
@@ -399,7 +416,7 @@ def _record_run_failure(
         loop=manifest.id,
         vendor=effective_vendor,
         model=manifest.runtime.model,
-        status="failed",
+        status=RunStatus.FAILED,
         started_at=started.isoformat(),
         ended_at=datetime.now(UTC).isoformat(),
         duration_s=round(time.perf_counter() - start_perf, 3),
@@ -412,7 +429,7 @@ def _record_run_failure(
     path = store.record_run(record)
     data = {
         "loop": manifest.id,
-        "status": "failed",
+        "status": RunStatus.FAILED,
         "phase": phase,
         "problems": problems,
         "log": log_path,
@@ -423,61 +440,15 @@ def _record_run_failure(
         for problem in problems:
             print(f"  - {problem}", file=sys.stderr)
         print(f"run record: {path}", file=sys.stderr)
-    return _emit("run", as_json=as_json, ok=False, rc=1, data=data, lines=[])
-
-
-def _worktrees_root(config: LoopcraftConfig) -> Path:
-    """Root of the per-run worktree scratch area in the memory tree."""
-    return config.memory_path.joinpath(*_WORKTREES_SUBPATH)
-
-
-def _worktree_dir(config: LoopcraftConfig, loop_id: str, run_id: str) -> Path:
-    """Return the per-run worktree directory for a loop.
-
-    The result is verified to remain under the worktree root, so manifest data
-    can never choose an arbitrary staging directory (id validation upstream makes
-    this unreachable; the guard is defense in depth).
-
-    Raises:
-        ValueError: If ``loop_id``/``run_id`` would escape the worktree root.
-    """
-    root = _worktrees_root(config)
-    path = root.joinpath(loop_id, run_id)
-    assert_under(root, path, label="run worktree")
-    return path
-
-
-def _prune_loop_worktrees(config: LoopcraftConfig, loop_id: str, *, keep_last: int) -> list[Path]:
-    """Keep only the newest N per-run worktree directories for one loop.
-
-    The worktree area is scratch/debug state under ``<memory>/var/worktrees``;
-    durable run records and outputs live in ``ledger/``. Pruning therefore never
-    removes canonical loop state. ``keep_last`` is clamped by config to 0..100.
-
-    Raises:
-        ValueError: If ``loop_id`` would make the prune target escape the
-            worktree root (defense in depth; ids are validated upstream).
-    """
-    root = _worktrees_root(config)
-    loop_dir = root / loop_id
-    assert_under(root, loop_dir, label="worktree prune target")
-    if not loop_dir.exists():
-        return []
-
-    children = [p for p in loop_dir.iterdir() if p.is_dir()]
-    children.sort(key=lambda p: (p.stat().st_mtime_ns, p.name), reverse=True)
-    removed: list[Path] = []
-    for path in children[keep_last:]:
-        shutil.rmtree(path)
-        removed.append(path)
-    return removed
+    return _emit("run", as_json=as_json, ok=False, rc=ExitCode.FAILURE, data=data, lines=[])
 
 
 def _cmd_validate(config: LoopcraftConfig, loops_dir: str | None, *, as_json: bool) -> int:
     """Validate every manifest in the loops directory."""
     target = Path(loops_dir) if loops_dir else config.loops_dir
-    manifests, problems = load_all(target)
-    ok = not problems
+    catalog = load_all(target)
+    manifests, problems = catalog.manifests, catalog.problems
+    ok = catalog.ok
     data = {
         "loops_dir": str(target),
         "validated": len(manifests),
@@ -487,7 +458,7 @@ def _cmd_validate(config: LoopcraftConfig, loops_dir: str | None, *, as_json: bo
     lines = [f"validated {len(manifests)} manifest(s) in {target}"]
     if ok:
         lines.append("all manifests valid")
-    rc = _emit("validate", as_json=as_json, ok=ok, rc=0 if ok else 1, data=data, lines=lines)
+    rc = _emit("validate", as_json=as_json, ok=ok, rc=ExitCode.OK if ok else ExitCode.FAILURE, data=data, lines=lines)
     if not as_json and problems:
         for problem in problems:
             print(f"  FAIL {problem}", file=sys.stderr)
@@ -497,8 +468,9 @@ def _cmd_validate(config: LoopcraftConfig, loops_dir: str | None, *, as_json: bo
 def _cmd_apply(config: LoopcraftConfig, loops_dir: str | None, *, as_json: bool) -> int:
     """Validate manifests; scheduler deployment lands in M2."""
     target = Path(loops_dir) if loops_dir else config.loops_dir
-    manifests, problems = load_all(target)
-    ok = not problems
+    catalog = load_all(target)
+    manifests, problems = catalog.manifests, catalog.problems
+    ok = catalog.ok
     note = "scheduler deployment (systemd units) lands in M2; M1 validates only."
     data = {
         "loops_dir": str(target),
@@ -511,7 +483,7 @@ def _cmd_apply(config: LoopcraftConfig, loops_dir: str | None, *, as_json: bool)
     if ok:
         lines.append("all manifests valid")
         lines.append(f"note: {note}")
-    rc = _emit("apply", as_json=as_json, ok=ok, rc=0 if ok else 1, data=data, lines=lines)
+    rc = _emit("apply", as_json=as_json, ok=ok, rc=ExitCode.OK if ok else ExitCode.FAILURE, data=data, lines=lines)
     if not as_json and problems:
         for problem in problems:
             print(f"  FAIL {problem}", file=sys.stderr)
@@ -526,8 +498,9 @@ def _cmd_list(config: LoopcraftConfig, *, as_json: bool) -> int:
     reported and the exit code is nonzero so a broken manifest can never
     silently vanish from the fleet view.
     """
-    manifests, problems = load_all(config.loops_dir)
-    ok = not problems
+    catalog = load_all(config.loops_dir)
+    manifests, problems = catalog.manifests, catalog.problems
+    ok = catalog.ok
     loops = [
         {
             "id": m.id,
@@ -548,7 +521,7 @@ def _cmd_list(config: LoopcraftConfig, *, as_json: bool) -> int:
         "list",
         as_json=as_json,
         ok=ok,
-        rc=0 if ok else 1,
+        rc=ExitCode.OK if ok else ExitCode.FAILURE,
         data={"loops": loops, "problems": problems},
         lines=lines,
     )
@@ -566,8 +539,9 @@ def _cmd_status(config: LoopcraftConfig, *, as_json: bool) -> int:
     is nonzero — the fleet view must stay trustworthy exactly when configuration
     is broken.
     """
-    manifests, problems = load_all(config.loops_dir)
-    ok = not problems
+    catalog = load_all(config.loops_dir)
+    manifests, problems = catalog.manifests, catalog.problems
+    ok = catalog.ok
     store = Store(config)
     loops: list[dict[str, Any]] = []
     lines: list[str] = []
@@ -588,7 +562,7 @@ def _cmd_status(config: LoopcraftConfig, *, as_json: bool) -> int:
         "status",
         as_json=as_json,
         ok=ok,
-        rc=0 if ok else 1,
+        rc=ExitCode.OK if ok else ExitCode.FAILURE,
         data={"loops": loops, "problems": problems},
         lines=lines,
     )
@@ -607,7 +581,7 @@ def _cmd_logs(config: LoopcraftConfig, loop_id: str, *, as_json: bool) -> int:
             "logs",
             as_json=as_json,
             ok=False,
-            rc=1,
+            rc=ExitCode.FAILURE,
             data={"loop": loop_id, "error": "no runs recorded"},
             lines=[f"no runs recorded for '{loop_id}'"],
         )
@@ -616,7 +590,7 @@ def _cmd_logs(config: LoopcraftConfig, loop_id: str, *, as_json: bool) -> int:
             "logs",
             as_json=as_json,
             ok=False,
-            rc=1,
+            rc=ExitCode.FAILURE,
             data={"loop": loop_id, "run_id": latest.run_id, "error": "no log on disk"},
             lines=[f"run {latest.run_id} has no log on disk"],
         )
@@ -625,7 +599,7 @@ def _cmd_logs(config: LoopcraftConfig, loop_id: str, *, as_json: bool) -> int:
         "logs",
         as_json=as_json,
         ok=True,
-        rc=0,
+        rc=ExitCode.OK,
         data={"loop": loop_id, "run_id": latest.run_id, "log_path": latest.log_path, "log": log_text},
         lines=[log_text],
     )
@@ -652,19 +626,19 @@ def _cmd_deps_check(config: LoopcraftConfig, *, loop_id: str | None = None, as_j
     the check reflects exactly that loop's declared runtime and dependencies.
     """
     if loop_id:
-        rc, preflight_data, preflight_lines = _preflight_loop(config, loop_id)
+        outcome = _preflight_loop(config, loop_id)
         return _emit(
             "deps.check",
             as_json=as_json,
-            ok=rc == 0,
-            rc=rc,
-            data={"loop": loop_id, "preflight": preflight_data},
-            lines=[line.lstrip("\n") for line in preflight_lines],
+            ok=outcome.rc == ExitCode.OK,
+            rc=outcome.rc,
+            data={"loop": loop_id, "preflight": outcome.data},
+            lines=[line.lstrip("\n") for line in outcome.lines],
         )
 
     required, missing = _probe_dependency_table(config.dependencies)
     optional, optional_missing = _probe_dependency_table(config.optional_dependencies)
-    rc = 1 if missing else 0
+    rc = ExitCode.FAILURE if missing else ExitCode.OK
 
     lines = [f"[{'ok ' if dep['found'] else 'MISSING'}] {dep['name']}" for dep in required]
     lines += [
@@ -678,31 +652,38 @@ def _cmd_deps_check(config: LoopcraftConfig, *, loop_id: str | None = None, as_j
         "optional_dependencies": optional,
         "optional_missing": optional_missing,
     }
-    return _emit("deps.check", as_json=as_json, ok=rc == 0, rc=rc, data=data, lines=lines)
+    return _emit("deps.check", as_json=as_json, ok=rc == ExitCode.OK, rc=rc, data=data, lines=lines)
 
 
-def _preflight_loop(config: LoopcraftConfig, loop_id: str) -> tuple[int, dict[str, Any], list[str]]:
-    """Run a loop's adapter preflight; return (exit code, data, text lines).
+def _preflight_loop(config: LoopcraftConfig, loop_id: str) -> CommandOutcome:
+    """Run a loop's adapter preflight; return a structured command outcome.
 
     Uses the same lookup-and-validate sequence as ``run``, so a manifest that
     ``run`` would reject (schema or semantic validation) reports the identical
     structured failure here instead of an adapter ``OK``.
     """
-    manifest, failure = _lookup_loop(config, loop_id)
-    if manifest is None:
-        return failure
+    lookup = _lookup_loop(config, loop_id)
+    if isinstance(lookup, CommandOutcome):
+        return lookup
+    manifest = lookup
     vendor = manifest.effective_vendor(config.default_vendor)
     try:
         runner = get_runner(vendor)
     except ValueError as exc:
-        return 2, {"loop": loop_id, "error": str(exc)}, [f"error: {exc}"]
+        return CommandOutcome(
+            rc=ExitCode.INVALID,
+            data={"loop": loop_id, "error": str(exc)},
+            lines=[f"error: {exc}"],
+        )
     report = _safe_preflight(runner, manifest, config, vendor)
     lines = [
         f"\npreflight {loop_id} ({vendor}): {'OK' if report.ok else 'PROBLEMS'}",
         *[f"  - {problem}" for problem in report.problems],
     ]
     data = {"loop": loop_id, "vendor": vendor, "ok": report.ok, "problems": report.problems}
-    return (0 if report.ok else 1), data, lines
+    return CommandOutcome(
+        rc=ExitCode.OK if report.ok else ExitCode.FAILURE, data=data, lines=lines
+    )
 
 
 if __name__ == "__main__":

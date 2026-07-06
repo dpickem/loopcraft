@@ -11,6 +11,7 @@ from __future__ import annotations
 import os
 import subprocess
 from abc import ABC, abstractmethod
+from enum import StrEnum
 from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -19,10 +20,14 @@ from loopcraft.config import LoopcraftConfig, SourcePathError
 from loopcraft.manifest import LoopManifest
 from loopcraft.runners.capabilities import check_declared_capabilities
 
-STATUS_DONE = "done"
-STATUS_STALLED = "stalled"
-STATUS_FAILED = "failed"
-STATUS_NEEDS_APPROVAL = "needs_approval"
+
+class RunStatus(StrEnum):
+    """Closed vocabulary of normalized run statuses across all runners."""
+
+    DONE = "done"
+    STALLED = "stalled"
+    FAILED = "failed"
+    NEEDS_APPROVAL = "needs_approval"
 
 
 class _RunnerModel(BaseModel):
@@ -157,7 +162,7 @@ class BaseRunner(ABC):
         except FileNotFoundError:
             ctx.log_path.write_text(prompt, encoding="utf-8")
             return RunResult(
-                status=STATUS_FAILED,
+                status=RunStatus.FAILED,
                 exit_code=127,
                 log_path=ctx.log_path,
                 problems=[f"{self.vendor} command not found on PATH"],
@@ -177,7 +182,7 @@ class BaseRunner(ABC):
             )
             ctx.log_path.write_text(log, encoding="utf-8")
             return RunResult(
-                status=STATUS_STALLED,
+                status=RunStatus.STALLED,
                 exit_code=None,
                 log_path=ctx.log_path,
                 problems=[
@@ -209,9 +214,9 @@ class BaseRunner(ABC):
             problems = [f"declared output not produced: {p}" for p in missing]
             problems += [f"declared output not refreshed this run: {p}" for p in stale]
         status = (
-            STATUS_DONE
+            RunStatus.DONE
             if completed.returncode == 0 and not missing and not stale
-            else STATUS_FAILED
+            else RunStatus.FAILED
         )
 
         return RunResult(

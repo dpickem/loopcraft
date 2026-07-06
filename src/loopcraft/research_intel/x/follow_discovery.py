@@ -36,28 +36,37 @@ _EVIDENCE_WEIGHT = {
     EvidenceKind.LINKED: 30,
 }
 
-#: A candidate also inherits a fraction of the source post's score, capped.
+#: A candidate inherits source-post score divided by this factor.
 _SOURCE_SCORE_DIVISOR = 10
+#: Cap on the inherited source-post score bonus.
 _SOURCE_SCORE_BONUS_CAP = 12
 
-#: Profile (bio/name/metrics) scoring weights and caps.
+#: Cap on profile bio/name keyword-weight contributions.
 _PROFILE_KEYWORD_WEIGHT_CAP = 20
+#: Bonus when a profile matches configured discovery-context terms.
 _PROFILE_DISCOVERY_CONTEXT_BONUS = 10
+#: Followers represented by one score point.
 _PROFILE_FOLLOWERS_PER_POINT = 25_000
+#: Cap on the follower-count score bonus.
 _PROFILE_FOLLOWERS_BONUS_CAP = 20
+#: Bonus for a verified profile.
 _PROFILE_VERIFIED_BONUS = 5
 
 #: A candidate with at least this much evidence is kept even without a profile.
 _MIN_EVIDENCE_FOR_RELEVANCE = 2
 
-#: Rendering limits for the follow-candidate markdown.
+#: Maximum evidence lines rendered per candidate in the markdown output.
 _MAX_EVIDENCE_RENDERED = 3
+#: Maximum profile-bio characters rendered per candidate.
 _MAX_BIO_CHARS = 240
+#: Maximum characters rendered per evidence excerpt.
 _MAX_EVIDENCE_TEXT_CHARS = 280
 
 #: X URL path prefixes that are not user handles.
 _NON_HANDLE_PATH_HEADS = {"i", "intent", "share", "search", "home", "hashtag"}
+#: Hostnames treated as X/Twitter links when mining handles from URLs.
 _X_HOSTS = {"x.com", "www.x.com", "twitter.com", "www.twitter.com"}
+#: Valid X handle shape (lowercased before matching).
 _HANDLE_RE = re.compile(r"^[a-z0-9_]{1,15}$")
 
 

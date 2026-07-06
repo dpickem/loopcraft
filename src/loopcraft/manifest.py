@@ -26,7 +26,9 @@ from loopcraft.config import (
 )
 from loopcraft.paths import assert_under
 
+#: Seconds per supported duration unit in ``budget.max_runtime`` strings.
 _DURATION_UNITS = {"s": 1, "m": 60, "h": 3600}
+#: Accepted duration shape: an integer followed by one of s/m/h.
 _DURATION_RE = re.compile(r"^\s*(\d+)\s*([smh])\s*$", re.IGNORECASE)
 
 #: Canonical loop-id vocabulary: lowercase alphanumeric components separated by
@@ -34,6 +36,10 @@ _DURATION_RE = re.compile(r"^\s*(\d+)\s*([smh])\s*$", re.IGNORECASE)
 #: its per-loop worktree directory, so it must be exactly one safe path segment —
 #: never an absolute path, ``..`` traversal, or anything with separators.
 LOOP_ID_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+
+
+class ManifestError(Exception):
+    """Raised when a manifest cannot be parsed or fails validation."""
 
 
 def loop_id_problem(loop_id: str) -> str | None:
@@ -106,10 +112,6 @@ def parse_duration(value: str | None) -> int | None:
         raise ValueError(f"invalid duration: {value!r} (use forms like 30s, 10m, 1h)")
     amount, unit = match.groups()
     return int(amount) * _DURATION_UNITS[unit.lower()]
-
-
-class ManifestError(Exception):
-    """Raised when a manifest cannot be parsed or fails validation."""
 
 
 class _ManifestModel(BaseModel):
@@ -349,20 +351,97 @@ class LoopManifest(_ManifestModel):
         return self.validation_report().messages()
 
 
-def load_all(loops_dir: Path | str) -> tuple[list[LoopManifest], list[str]]:
-    """Load every ``*.yaml`` manifest in a directory.
+class ManifestEntry(_ManifestModel):
+    """One loaded manifest paired with its own validation issues."""
 
-    Returns ``(manifests, problems)`` where ``problems`` aggregates per-manifest
-    validation errors, filename/id mismatches, duplicate ids, duplicate/multi-
-    producer outputs, unknown upstream loops, and dependency cycles across the
-    ``inputs``/``outputs`` + ``depends_on.loops`` graph.
+    manifest: LoopManifest
+    issues: list[ValidationIssue] = Field(default_factory=list)
+
+
+class ManifestCatalog(_ManifestModel):
+    """Structured result of loading a loops directory.
+
+    Issues stay attached to the manifest they belong to (``entries``); problems
+    that have no single loadable manifest — unreadable or escaping files,
+    duplicate ids, output collisions, unknown upstream loops, dependency
+    cycles — live in ``fleet_issues``.
+    """
+
+    entries: list[ManifestEntry] = Field(default_factory=list)
+    fleet_issues: list[ValidationIssue] = Field(default_factory=list)
+
+    @property
+    def manifests(self) -> list[LoopManifest]:
+        """Every successfully loaded manifest, in filename order."""
+        return [entry.manifest for entry in self.entries]
+
+    @property
+    def problems(self) -> list[str]:
+        """All issues rendered as messages, per-manifest ones prefixed by loop id."""
+        rendered = [
+            f"{entry.manifest.id}: {issue.render()}"
+            for entry in self.entries
+            for issue in entry.issues
+        ]
+        return rendered + [issue.render() for issue in self.fleet_issues]
+
+    @property
+    def ok(self) -> bool:
+        """Whether no manifest or fleet issue was found."""
+        return not self.problems
+
+
+def find_manifest(loops_dir: Path | str, loop_id: str) -> LoopManifest | None:
+    """Return the manifest for ``loop_id`` from the loops directory, if present.
+
+    The loop selector is an id, not a file path: it must match the canonical
+    loop-id vocabulary before any path is constructed, the resolved manifest must
+    stay directly under ``loops_dir``, and its ``id`` field must equal the
+    filename stem it was looked up by.
+
+    Raises:
+        ManifestError: If the selector is not a canonical loop id, the manifest
+            cannot be parsed/validated, or its id differs from the filename stem.
     """
     loops_dir = Path(loops_dir)
-    manifests: list[LoopManifest] = []
+    problem = loop_id_problem(loop_id)
+    if problem is not None:
+        raise ManifestError(f"invalid loop id {loop_id!r}: {problem}")
+    for ext in (".yaml", ".yml"):
+        path = loops_dir / f"{loop_id}{ext}"
+        try:
+            assert_under(loops_dir, path, label="loop manifest path")
+        except ValueError as exc:
+            raise ManifestError(str(exc)) from exc
+        if path.exists():
+            manifest = LoopManifest.load(path)
+            if manifest.id != loop_id:
+                raise ManifestError(
+                    f"{path.name}: manifest id {manifest.id!r} does not match filename stem {loop_id!r}"
+                )
+            return manifest
+    return None
+
+
+def load_all(loops_dir: Path | str) -> ManifestCatalog:
+    """Load every ``*.yaml`` manifest in a directory into a structured catalog.
+
+    Per-manifest issues (schema/custom validation, filename/id mismatch) are
+    attached to their :class:`ManifestEntry`; unreadable/escaping files and
+    cross-manifest problems (duplicate ids, duplicate/multi-producer outputs,
+    unknown upstream loops, and dependency cycles across the
+    ``inputs``/``outputs`` + ``depends_on.loops`` graph) are ``fleet_issues``.
+    """
+    loops_dir = Path(loops_dir)
+    entries: list[ManifestEntry] = []
     issues: list[ValidationIssue] = []
 
     if not loops_dir.exists():
-        return manifests, [f"loops directory not found: {loops_dir}"]
+        return ManifestCatalog(
+            fleet_issues=[
+                ValidationIssue(scope="", message=f"loops directory not found: {loops_dir}")
+            ]
+        )
 
     for path in sorted([*loops_dir.glob("*.yaml"), *loops_dir.glob("*.yml")]):
         try:
@@ -377,20 +456,20 @@ def load_all(loops_dir: Path | str) -> tuple[list[LoopManifest], list[str]]:
         except ManifestError as exc:
             issues.append(ValidationIssue(scope=path.name, message=str(exc)))
             continue
+        entry_issues = list(manifest.validation_report().issues)
         if manifest.id != path.stem:
             # The id doubles as the lookup key for `loopctl run <id>`, which
             # resolves to the filename stem; a mismatch would advertise one id
             # while running another.
-            issues.append(
+            entry_issues.append(
                 ValidationIssue(
                     scope=path.name,
                     message=f"manifest id {manifest.id!r} does not match filename stem {path.stem!r}",
                 )
             )
-        for problem in manifest.validate():
-            issues.append(ValidationIssue(scope=path.name, message=problem))
-        manifests.append(manifest)
+        entries.append(ManifestEntry(manifest=manifest, issues=entry_issues))
 
+    manifests = [entry.manifest for entry in entries]
     seen_ids: set[str] = set()
     for manifest in manifests:
         if manifest.id in seen_ids:
@@ -438,7 +517,7 @@ def load_all(loops_dir: Path | str) -> tuple[list[LoopManifest], list[str]]:
                 )
 
     issues.extend(_detect_cycles(manifests).issues)
-    return manifests, [issue.render() for issue in issues]
+    return ManifestCatalog(entries=entries, fleet_issues=issues)
 
 
 def _detect_cycles(manifests: list[LoopManifest]) -> ValidationReport:

@@ -10,7 +10,8 @@ import pytest
 from loopcraft import cli
 from loopcraft.config import LoopcraftConfig
 from loopcraft.runners import register_runner
-from loopcraft.runners.base import PreflightReport, RunResult, STATUS_DONE
+from loopcraft import worktree
+from loopcraft.runners.base import PreflightReport, RunResult, RunStatus
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -33,7 +34,7 @@ class StubRunner:
             produced.append(str(path))
         ctx.log_path.parent.mkdir(parents=True, exist_ok=True)
         ctx.log_path.write_text("stub run", encoding="utf-8")
-        return RunResult(status=STATUS_DONE, exit_code=0, log_path=ctx.log_path, outputs=produced)
+        return RunResult(status=RunStatus.DONE, exit_code=0, log_path=ctx.log_path, outputs=produced)
 
 
 def _env(monkeypatch, tmp_path: Path) -> None:
@@ -178,6 +179,56 @@ def test_unknown_loop_returns_error(monkeypatch, tmp_path: Path) -> None:
     assert rc == 2
 
 
+def test_run_refuses_recursive_same_loop_invocation(monkeypatch, tmp_path: Path, capsys) -> None:
+    """PR review: a loop re-entering `loopctl run` for itself is refused.
+
+    The control plane marks the executing loop via LOOPCRAFT_ACTIVE_LOOP; the
+    guard is programmatic, not just skill wording.
+    """
+    _env(monkeypatch, tmp_path)
+    register_runner("stub", StubRunner)
+    monkeypatch.setenv("LOOPCRAFT_ACTIVE_LOOP", "slack-triage")
+
+    rc = cli.main(["--json", "run", "slack-triage", "--vendor", "stub"])
+    payload = json.loads(capsys.readouterr().out)
+    assert rc == 2
+    assert payload["ok"] is False
+    assert "recursion guard" in payload["data"]["error"]
+    # No run record: the recursive attempt never starts.
+    assert not (tmp_path / "mem" / "ledger" / "runs").exists()
+
+
+def test_run_allows_nested_run_of_a_different_loop(monkeypatch, tmp_path: Path) -> None:
+    """The recursion guard only blocks re-entry into the *same* loop."""
+    _env(monkeypatch, tmp_path)
+    register_runner("stub", StubRunner)
+    monkeypatch.setenv("LOOPCRAFT_ACTIVE_LOOP", "some-other-loop")
+
+    rc = cli.main(["run", "slack-triage", "--vendor", "stub"])
+    assert rc == 0
+
+
+def test_active_loop_env_is_handed_to_the_run(monkeypatch, tmp_path: Path) -> None:
+    """The control plane marks the executing loop in the child environment."""
+    _env(monkeypatch, tmp_path)
+    seen_env: dict[str, str] = {}
+
+    class EnvCapturingRunner(StubRunner):
+        """Stub that records the env handed to the run context."""
+
+        vendor = "envcap"
+
+        def run(self, loop, ctx):  # noqa: ANN001
+            """Capture ctx.env, then behave like the stub runner."""
+            seen_env.update(ctx.env)
+            return super().run(loop, ctx)
+
+    register_runner("envcap", EnvCapturingRunner)
+    rc = cli.main(["run", "slack-triage", "--vendor", "envcap"])
+    assert rc == 0
+    assert seen_env["LOOPCRAFT_ACTIVE_LOOP"] == "slack-triage"
+
+
 @pytest.mark.parametrize(
     "bad_id",
     ["../outside", "/etc/passwd", "demo/../../x", "state/../escape", "Demo", "a b"],
@@ -213,12 +264,12 @@ def test_worktree_dir_and_prune_reject_escaping_ids(tmp_path: Path) -> None:
     config = LoopcraftConfig(source_path=tmp_path / "s", memory_path=tmp_path / "m")
     for bad_id in ("/tmp/loopcraft-escaped", "../../escape"):
         with pytest.raises(ValueError, match="escapes"):
-            cli._worktree_dir(config, bad_id, "run-id")
+            worktree.worktree_dir(config, bad_id, "run-id")
         with pytest.raises(ValueError, match="escapes"):
-            cli._prune_loop_worktrees(config, bad_id, keep_last=1)
+            worktree.prune_loop_worktrees(config, bad_id, keep_last=1)
     # An absolute run id must not escape either.
     with pytest.raises(ValueError, match="escapes"):
-        cli._worktree_dir(config, "demo", "/tmp/loopcraft-escaped")
+        worktree.worktree_dir(config, "demo", "/tmp/loopcraft-escaped")
 
 
 def test_worktree_dir_and_prune_reject_symlinked_loop_dir(tmp_path: Path) -> None:
@@ -226,14 +277,14 @@ def test_worktree_dir_and_prune_reject_symlinked_loop_dir(tmp_path: Path) -> Non
     config = LoopcraftConfig(source_path=tmp_path / "s", memory_path=tmp_path / "m")
     outside = tmp_path / "outside"
     outside.mkdir()
-    root = cli._worktrees_root(config)
+    root = worktree.worktrees_root(config)
     root.mkdir(parents=True)
     (root / "demo").symlink_to(outside, target_is_directory=True)
 
     with pytest.raises(ValueError, match="escapes"):
-        cli._worktree_dir(config, "demo", "run-id")
+        worktree.worktree_dir(config, "demo", "run-id")
     with pytest.raises(ValueError, match="escapes"):
-        cli._prune_loop_worktrees(config, "demo", keep_last=0)
+        worktree.prune_loop_worktrees(config, "demo", keep_last=0)
 
 
 def test_run_reports_malformed_yaml_as_structured_error(monkeypatch, tmp_path: Path, capsys) -> None:

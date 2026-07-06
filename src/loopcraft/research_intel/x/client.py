@@ -10,14 +10,23 @@ from urllib.request import Request, urlopen
 
 from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
 
-_USER_AGENT = "loopcraft-x-intel/0.1"
+from loopcraft.config import HTTP_USER_AGENT
+
+#: Seconds before an X API HTTP request is abandoned.
 _REQUEST_TIMEOUT_S = 30
+#: Maximum tenacity attempts per X API request.
 _MAX_RETRY_ATTEMPTS = 3
+#: X API lower bound for ``max_results`` on recent-search requests.
 _MIN_POSTS_PER_SEARCH = 10
+#: X API lower bound for ``max_results`` on list-timeline requests.
 _MIN_POSTS_PER_LIST = 5
+#: X API upper bound for posts returned by one request.
 _MAX_POSTS_PER_REQUEST = 100
+#: X API upper bound for followed accounts returned by one request.
 _MAX_FOLLOWING_PER_REQUEST = 1000
+#: X API upper bound for usernames per bulk user lookup.
 _MAX_USERS_PER_LOOKUP = 100
+#: Maximum error-body characters included in raised messages.
 _ERROR_BODY_LIMIT = 500
 
 
@@ -166,7 +175,7 @@ class XApiClient:
             url,
             headers={
                 "Authorization": f"Bearer {self.bearer_token}",
-                "User-Agent": _USER_AGENT,
+                "User-Agent": HTTP_USER_AGENT,
             },
         )
         try:

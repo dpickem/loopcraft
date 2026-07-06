@@ -13,7 +13,9 @@ description: Summarize arXiv paper intelligence digests for ML, AI, foundation/f
    `PYTHONPATH=src python -m loopcraft.research_intel.arxiv.cli run --config config/arxiv_intel.yaml`.
    You are executing inside a headless loop run, so do not re-enter the control
    plane for this loop (no `loopctl run` / `make run` of arxiv-intel) — that
-   recurses. If network access or arXiv API errors occur, report that first.
+   recurses. (The control plane also enforces this programmatically: it sets
+   `LOOPCRAFT_ACTIVE_LOOP` for the run and refuses re-entry into the same
+   loop while it is set.) If network access or arXiv API errors occur, report that first.
 3. Read `state/research/arxiv/latest.md` and `latest.json` from the loopcraft memory ledger (or the emitted direct-CLI paths). Prefer JSON for exact fields and Markdown for human-readable ordering.
 4. Summarize the 5-10 most interesting papers, focusing on:
    - Foundation/frontier models and LLM systems

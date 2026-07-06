@@ -11,17 +11,24 @@ from urllib.request import Request, urlopen
 
 from tenacity import retry, retry_if_exception, stop_after_attempt, wait_fixed
 
+from loopcraft.config import HTTP_USER_AGENT
 from loopcraft.research_intel.arxiv.config import ArxivIntelConfig
 
-
+#: XML namespace prefix for Atom feed elements in arXiv responses.
 ATOM_NS = "{http://www.w3.org/2005/Atom}"
+#: XML namespace prefix for arXiv-specific feed extensions.
 ARXIV_NS = "{http://arxiv.org/schemas/atom}"
-_USER_AGENT = "loopcraft-arxiv-intel/0.1"
+#: Seconds before an arXiv HTTP request is abandoned.
 _REQUEST_TIMEOUT_S = 30
+#: Maximum tenacity attempts per arXiv request.
 _MAX_RETRY_ATTEMPTS = 3
+#: Fixed wait between arXiv retry attempts, in seconds.
 _RETRY_WAIT_S = 3
+#: Hard cap on ``max_results`` accepted by the arXiv export API.
 _MAX_RESULTS_UPPER_BOUND = 2000
+#: Fallback search query when the content config declares no categories/terms.
 _DEFAULT_SEARCH_QUERY = "cat:cs.AI"
+#: Maximum error-body characters included in raised messages.
 _ERROR_BODY_LIMIT = 500
 
 
@@ -65,7 +72,7 @@ class ArxivClient:
             ArxivApiError: On an HTTP status error or network failure.
         """
         url = f"{self.base_url}?{urlencode(params)}"
-        request = Request(url, headers={"User-Agent": _USER_AGENT})
+        request = Request(url, headers={"User-Agent": HTTP_USER_AGENT})
         try:
             return _read_response(request)
         except HTTPError as exc:

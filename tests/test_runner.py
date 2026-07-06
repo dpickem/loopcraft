@@ -13,9 +13,7 @@ from loopcraft.runners import codex as codex_module
 from loopcraft.runners import base as runner_base_module
 from loopcraft.runners.base import (
     RunContext,
-    STATUS_DONE,
-    STATUS_FAILED,
-    STATUS_STALLED,
+    RunStatus,
 )
 from loopcraft.runners.codex import CodexRunner
 
@@ -87,7 +85,7 @@ def test_run_writes_log_and_reports_done(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(runner_base_module.subprocess, "run", fake_run)
     result = CodexRunner().run(manifest, ctx)
 
-    assert result.status == STATUS_DONE
+    assert result.status == RunStatus.DONE
     assert result.exit_code == 0
     assert str(output) in result.outputs
     assert ctx.log_path.exists()
@@ -117,7 +115,7 @@ def test_run_flags_stale_unrefreshed_output(tmp_path: Path, monkeypatch) -> None
     monkeypatch.setattr(runner_base_module.subprocess, "run", fake_run)
     result = CodexRunner().run(manifest, ctx)
 
-    assert result.status == STATUS_FAILED
+    assert result.status == RunStatus.FAILED
     assert any("not refreshed this run" in p for p in result.problems)
     assert str(output) not in result.outputs
 
@@ -142,7 +140,7 @@ def test_run_flags_missing_output(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(runner_base_module.subprocess, "run", fake_run)
     result = CodexRunner().run(manifest, ctx)
 
-    assert result.status == STATUS_FAILED
+    assert result.status == RunStatus.FAILED
     assert any("not produced" in p for p in result.problems)
 
 
@@ -166,7 +164,7 @@ def test_run_handles_missing_codex_binary(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(runner_base_module.subprocess, "run", boom)
     result = CodexRunner().run(manifest, ctx)
 
-    assert result.status == STATUS_FAILED
+    assert result.status == RunStatus.FAILED
     assert result.exit_code == 127
 
 
@@ -291,7 +289,7 @@ def test_run_timeout_returns_stalled(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(runner_base_module.subprocess, "run", fake_timeout)
     result = CodexRunner().run(manifest, ctx)
 
-    assert result.status == STATUS_STALLED
+    assert result.status == RunStatus.STALLED
     assert result.exit_code is None
     assert any("max_runtime" in p for p in result.problems)
     assert ctx.log_path.exists()

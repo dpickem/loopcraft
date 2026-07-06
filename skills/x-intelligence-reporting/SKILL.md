@@ -13,7 +13,9 @@ description: Summarize X/Twitter intelligence digests for ML, AI, frontier/found
    `PYTHONPATH=src python -m loopcraft.research_intel.x.cli run --config config/x_intel.yaml`.
    You are executing inside a headless loop run, so do not re-enter the control
    plane for this loop (no `loopctl run` / `make run` of x-intel) — that
-   recurses. If network access or X API credentials fail, report that first.
+   recurses. (The control plane also enforces this programmatically: it sets
+   `LOOPCRAFT_ACTIVE_LOOP` for the run and refuses re-entry into the same
+   loop while it is set.) If network access or X API credentials fail, report that first.
 3. Read `state/research/x/latest.md` and `latest.json` from the loopcraft memory ledger (or the emitted direct-CLI paths). Prefer JSON for exact fields and Markdown for human-readable ordering.
 4. When useful, run `PYTHONPATH=src python -m loopcraft.research_intel.x.cli discover-follows --config config/x_intel.yaml` and read the emitted follow-candidate Markdown/JSON paths.
 5. When summarizing, include both the X post permalink and any external links from `entities.urls[*].expanded_url` or Markdown `External links:` lines.

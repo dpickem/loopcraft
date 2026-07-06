@@ -12,15 +12,71 @@ import os
 import re
 import tomllib
 from datetime import date, datetime
-from enum import StrEnum
+from enum import IntEnum, StrEnum
 from pathlib import Path, PurePosixPath
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from loopcraft.paths import assert_under, safe_relpath
 
+# --- globals -------------------------------------------------------------------
+
+#: Filename of the control-plane config at the source tree root.
 CONFIG_FILENAME = "loopcraft.toml"
+#: Filename of the Python project config holding the binary-dependency tables.
 PYPROJECT_FILENAME = "pyproject.toml"
+
+#: Loop-facing state paths are declared with this prefix (e.g. ``state/slack/x.md``)
+#: and resolve into the ledger directory of the memory tree.
+STATE_PREFIX = "state"
+#: Filename of the derived run-history database in the memory tree.
+DB_FILENAME = "loopcraft.db"
+#: Default number of per-loop run worktrees kept by pruning.
+DEFAULT_WORKTREE_KEEP_LAST = 100
+#: Upper clamp for the worktree retention setting.
+MAX_WORKTREE_KEEP_LAST = 100
+
+#: Default runtime vendor when neither env nor toml overrides it.
+DEFAULT_VENDOR = "codex"
+#: Default execution host label.
+DEFAULT_HOST = "vm"
+#: Default memory-tree root (expanded at load time).
+DEFAULT_MEMORY_PATH = "~/workspace/loopcraft_memory"
+
+#: User agent sent by loopcraft HTTP clients (arXiv, X).
+HTTP_USER_AGENT = "loopcraft/0.1"
+
+#: Env var the control plane sets so a loop's direct CLI names its run-scoped
+#: history archives with the same run id the manifest ``{{run_id}}`` outputs use.
+RUN_ID_ENV = "LOOPCRAFT_RUN_ID"
+
+#: Env var the control plane sets so a loop's direct CLI stamps its dated
+#: outputs with the same UTC date the manifest ``{{date}}`` outputs resolved
+#: to — a run crossing 00:00 UTC must not write the next day's filename.
+RUN_DATE_ENV = "LOOPCRAFT_RUN_DATE"
+
+#: Env var the control plane sets to the id of the loop currently executing.
+#: ``loopctl run`` refuses to re-enter the same loop when it is set, so a skill
+#: that (incorrectly) invokes the control plane for its own loop cannot recurse.
+ACTIVE_LOOP_ENV = "LOOPCRAFT_ACTIVE_LOOP"
+
+#: Canonical control-plane run-id shape (see ``Store.new_run_id``).
+_RUN_ID_STAMP_RE = re.compile(r"^\d{8}T\d{6}Z-[0-9a-f]{8}$")
+#: ISO calendar-date shape for the handed-down run date.
+_RUN_DATE_STAMP_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+# --- exceptions ------------------------------------------------------------------
+
+
+class StatePathError(ValueError):
+    """Raised when a declared state path would escape the ledger tree."""
+
+
+class SourcePathError(ValueError):
+    """Raised when a declared source-relative path would escape the source tree."""
+
+
+# --- enums -----------------------------------------------------------------------
 
 
 class SourceDir(StrEnum):
@@ -39,31 +95,64 @@ class MemoryDir(StrEnum):
     RUNS = "runs"
 
 
-# Loop-facing state paths are declared with this prefix (e.g. ``state/slack/x.md``)
-# and resolve into the ledger directory of the memory tree.
-STATE_PREFIX = "state"
-DB_FILENAME = "loopcraft.db"
-DEFAULT_WORKTREE_KEEP_LAST = 100
-MAX_WORKTREE_KEEP_LAST = 100
+class ExitCode(IntEnum):
+    """Closed vocabulary of process exit codes across all loopcraft CLIs.
 
-#: Global defaults for control-plane settings (overridable via env/toml).
-DEFAULT_VENDOR = "codex"
-DEFAULT_HOST = "vm"
-DEFAULT_MEMORY_PATH = "~/workspace/loopcraft_memory"
+    Every command returns one of these named values instead of a bare integer:
 
-#: Env var the control plane sets so a loop's direct CLI names its run-scoped
-#: history archives with the same run id the manifest ``{{run_id}}`` outputs use.
-RUN_ID_ENV = "LOOPCRAFT_RUN_ID"
+    - ``OK``: the command succeeded.
+    - ``FAILURE``: the command ran but the operation failed (failed run,
+      failed preflight/check, degraded fleet view, missing log).
+    - ``INVALID``: the request itself was unusable (unknown loop, invalid
+      manifest/config, bad protocol value, unknown vendor, usage errors).
+    """
 
-#: Env var the control plane sets so a loop's direct CLI stamps its dated
-#: outputs with the same UTC date the manifest ``{{date}}`` outputs resolved
-#: to — a run crossing 00:00 UTC must not write the next day's filename.
-RUN_DATE_ENV = "LOOPCRAFT_RUN_DATE"
+    OK = 0
+    FAILURE = 1
+    INVALID = 2
 
-#: Canonical control-plane run-id shape (see ``Store.new_run_id``).
-_RUN_ID_STAMP_RE = re.compile(r"^\d{8}T\d{6}Z-[0-9a-f]{8}$")
-#: ISO calendar-date shape for the handed-down run date.
-_RUN_DATE_STAMP_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+#: Prefixes that mark a declared path as a ledger/state file the store owns.
+#: Anything else (``linear:...``, ``s3://...``) is a non-file target the store
+#: does not resolve, so it is exempt from state-path validation. (Derived from
+#: the enum above, so it lives directly after the enum definitions.)
+_STATE_PATH_PREFIXES = (STATE_PREFIX, MemoryDir.LEDGER.value)
+
+# --- private functions -------------------------------------------------------------
+
+
+def _find_source_root() -> Path:
+    """Walk upward from CWD looking for a ``loopcraft.toml``; fall back to CWD."""
+    here = Path.cwd().resolve()
+    for candidate in [here, *here.parents]:
+        if (candidate / CONFIG_FILENAME).exists():
+            return candidate
+    return here
+
+
+def _load_project_dependencies(source: Path, table: str) -> dict[str, str]:
+    """Load an external Loopcraft binary-dependency table from pyproject.toml.
+
+    Args:
+        source: Source tree root containing ``pyproject.toml``.
+        table: Sub-table name under ``[tool.loopcraft]`` (``dependencies`` for
+            required M1 binaries or ``optional-dependencies`` for future runtimes).
+
+    Returns:
+        A mapping of dependency name to the binary probed on PATH (empty when the
+        file or table is absent).
+    """
+    pyproject_file = source / PYPROJECT_FILENAME
+    if not pyproject_file.exists():
+        return {}
+    raw = tomllib.loads(pyproject_file.read_text(encoding="utf-8"))
+    declared = raw.get("tool", {}).get("loopcraft", {}).get(table, {})
+    if isinstance(declared, dict):
+        return {str(k): str(v) for k, v in declared.items()}
+    return {}
+
+
+# --- public functions ---------------------------------------------------------------
 
 
 def validate_run_id_stamp(value: str) -> str:
@@ -113,19 +202,6 @@ def resolve_run_stamps(config: LoopcraftConfig, now: datetime) -> tuple[str, str
     run_stamp = validate_run_id_stamp(run_id) if run_id else now.strftime("%Y%m%dT%H%M%SZ")
     date_stamp = validate_run_date_stamp(run_date) if run_date else now.strftime("%Y-%m-%d")
     return run_stamp, date_stamp
-
-#: Prefixes that mark a declared path as a ledger/state file the store owns.
-#: Anything else (``linear:...``, ``s3://...``) is a non-file target the store
-#: does not resolve, so it is exempt from state-path validation.
-_STATE_PATH_PREFIXES = (STATE_PREFIX, MemoryDir.LEDGER.value)
-
-
-class StatePathError(ValueError):
-    """Raised when a declared state path would escape the ledger tree."""
-
-
-class SourcePathError(ValueError):
-    """Raised when a declared source-relative path would escape the source tree."""
 
 
 def safe_source_relpath(declared: str) -> str:
@@ -277,6 +353,21 @@ class LoopcraftConfig(BaseModel):
             raise SourcePathError(str(exc)) from exc
         return resolved
 
+    def assert_source_contained(self, candidate: Path, *, label: str = "source asset") -> None:
+        """Guard that ``candidate`` (symlinks resolved) stays under the source root.
+
+        Args:
+            candidate: Path to check.
+            label: Human-readable label used in the error message.
+
+        Raises:
+            SourcePathError: If the resolved candidate escapes the source tree.
+        """
+        try:
+            assert_under(self.source_path, candidate, label=label)
+        except ValueError as exc:
+            raise SourcePathError(str(exc)) from exc
+
     def env_value(self, name: str) -> str | None:
         """Return one environment value through the central config object."""
         return os.environ.get(name)
@@ -341,34 +432,3 @@ class LoopcraftConfig(BaseModel):
             ),
             extra=extra,
         )
-
-
-def _find_source_root() -> Path:
-    """Walk upward from CWD looking for a ``loopcraft.toml``; fall back to CWD."""
-    here = Path.cwd().resolve()
-    for candidate in [here, *here.parents]:
-        if (candidate / CONFIG_FILENAME).exists():
-            return candidate
-    return here
-
-
-def _load_project_dependencies(source: Path, table: str) -> dict[str, str]:
-    """Load an external Loopcraft binary-dependency table from pyproject.toml.
-
-    Args:
-        source: Source tree root containing ``pyproject.toml``.
-        table: Sub-table name under ``[tool.loopcraft]`` (``dependencies`` for
-            required M1 binaries or ``optional-dependencies`` for future runtimes).
-
-    Returns:
-        A mapping of dependency name to the binary probed on PATH (empty when the
-        file or table is absent).
-    """
-    pyproject_file = source / PYPROJECT_FILENAME
-    if not pyproject_file.exists():
-        return {}
-    raw = tomllib.loads(pyproject_file.read_text(encoding="utf-8"))
-    declared = raw.get("tool", {}).get("loopcraft", {}).get(table, {})
-    if isinstance(declared, dict):
-        return {str(k): str(v) for k, v in declared.items()}
-    return {}
