@@ -23,7 +23,7 @@ Before editing or submitting code, verify every item below:
 - Do not commit generated files (`__pycache__/`, `.pytest_cache/`, `var/`,
   memory-tree state, local config, or credentials).
 - Do not add checked-in shell scripts for routine workflows. Prefer `make`
-  targets that call `loopctl` or `python -m ...` directly.
+  targets that call `uv run loopctl` or another `uv run` entry point directly.
 - Run the affected tests before calling work done. For broad changes, run
   `make test`.
 
@@ -31,12 +31,13 @@ Before editing or submitting code, verify every item below:
 
 ```bash
 cd ~/workspace/loopcraft
-python -m pip install -e .
+uv sync
 make test
 ```
 
 The project uses:
 
+- **uv** for Python/toolchain selection, dependency locking, and command execution
 - **Python 3.11+** (see `requires-python` in `pyproject.toml`)
 - **setuptools** for packaging
 - **argparse** for the current `loopctl` CLI
@@ -82,8 +83,8 @@ make check       # deps check + manifest dry-run apply
 For focused work, run the smallest useful test first:
 
 ```bash
-PYTHONPATH=src python -m pytest tests/test_manifest.py -q
-PYTHONPATH=src python -m pytest tests/test_cli.py -q
+uv run pytest tests/test_manifest.py -q
+uv run pytest tests/test_cli.py -q
 ```
 
 Run `make test` before handing off broad changes.
@@ -252,10 +253,10 @@ Routine workflows should be exposed through `make` targets or Python modules:
 
 ```bash
 make daily-arxiv-intel
-PYTHONPATH=src python -m loopcraft.research_intel.arxiv.cli run --config config/arxiv_intel.yaml
+uv run loopcraft-arxiv-intel run --config config/arxiv_intel.yaml
 ```
 
-Do not add a checked-in shell script when a `make` target or `python -m` entry
+Do not add a checked-in shell script when a `make` target or `uv run` entry
 point will do. If a shell wrapper is truly necessary, document why in the PR and
 keep it small, quoted, and tested where practical.
 

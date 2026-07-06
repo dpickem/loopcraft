@@ -1,10 +1,12 @@
-PYTHON ?= python
+UV ?= uv
+UV_RUN := $(UV) run
 CODEX_HOME ?= $(HOME)/.codex
 CODEX_SKILLS_DIR ?= $(CODEX_HOME)/skills
 CODEX_SKILLS := x-intelligence-reporting arxiv-intelligence-reporting
 
-# loopctl is the real interface; these targets are thin, self-documenting wrappers.
-LOOPCTL := PYTHONPATH=src $(PYTHON) -m loopcraft.cli
+# uv owns the project environment; loopctl remains the real interface and these
+# targets are thin, self-documenting wrappers around its installed entry point.
+LOOPCTL := $(UV_RUN) loopctl
 
 .PHONY: help test compile validate-skills install-codex install-codex-skills \
 	snapshot-following daily-x-intel discover-follows daily-arxiv-intel \
@@ -41,15 +43,15 @@ deps:           ## probe required runtimes/tools on PATH
 
 # --- tests / build ------------------------------------------------------------
 test:           ## run the loopcraft unit tests
-	PYTHONPATH=src $(PYTHON) -m pytest -q
+	$(UV_RUN) pytest -q
 
 compile:        ## byte-compile sources + tests
-	PYTHONPATH=src $(PYTHON) -m compileall -q src tests
+	$(UV_RUN) python -m compileall -q src tests
 
 # --- Codex skills -------------------------------------------------------------
 validate-skills:
 	@for skill in $(CODEX_SKILLS); do \
-		$(PYTHON) $(CODEX_HOME)/skills/.system/skill-creator/scripts/quick_validate.py skills/$$skill; \
+		$(UV_RUN) python $(CODEX_HOME)/skills/.system/skill-creator/scripts/quick_validate.py skills/$$skill; \
 	done
 
 install-codex: install-codex-skills
@@ -60,7 +62,7 @@ install-codex-skills:
 		echo "Installing $$skill into $(CODEX_SKILLS_DIR)/$$skill"; \
 		mkdir -p $(CODEX_SKILLS_DIR)/$$skill; \
 		cp -R skills/$$skill/. $(CODEX_SKILLS_DIR)/$$skill/; \
-		$(PYTHON) $(CODEX_HOME)/skills/.system/skill-creator/scripts/quick_validate.py $(CODEX_SKILLS_DIR)/$$skill; \
+		$(UV_RUN) python $(CODEX_HOME)/skills/.system/skill-creator/scripts/quick_validate.py $(CODEX_SKILLS_DIR)/$$skill; \
 	done
 
 # --- intelligence loops / direct CLI entry points -----------------------------
@@ -68,13 +70,13 @@ ARXIV_CONFIG ?= $(if $(wildcard config/arxiv_intel.local.yaml),config/arxiv_inte
 X_CONFIG ?= $(if $(wildcard config/x_intel.local.yaml),config/x_intel.local.yaml,config/x_intel.yaml)
 
 snapshot-following:
-	PYTHONPATH=src $(PYTHON) -m loopcraft.research_intel.x.cli snapshot-following
+	$(UV_RUN) loopcraft-x-intel snapshot-following
 
 daily-x-intel:  ## fetch + rank a daily X digest into the memory ledger
-	PYTHONPATH=src $(PYTHON) -m loopcraft.research_intel.x.cli run --config $(X_CONFIG)
+	$(UV_RUN) loopcraft-x-intel run --config $(X_CONFIG)
 
 discover-follows:
-	PYTHONPATH=src $(PYTHON) -m loopcraft.research_intel.x.cli discover-follows --config $(X_CONFIG)
+	$(UV_RUN) loopcraft-x-intel discover-follows --config $(X_CONFIG)
 
 daily-arxiv-intel:  ## fetch + rank a daily arXiv digest into the memory ledger
-	PYTHONPATH=src $(PYTHON) -m loopcraft.research_intel.arxiv.cli run --config $(ARXIV_CONFIG)
+	$(UV_RUN) loopcraft-arxiv-intel run --config $(ARXIV_CONFIG)

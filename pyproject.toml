@@ -17,6 +17,11 @@ dependencies = [
   "tenacity>=8.0",
 ]
 
+[dependency-groups]
+dev = [
+  "pytest>=8.0",
+]
+
 [project.scripts]
 loopctl = "loopcraft.cli:main"
 loopcraft-x-intel = "loopcraft.research_intel.x.cli:main"
