@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import os
 import re
+import shutil
 import tomllib
 from datetime import date, datetime
 from enum import IntEnum, StrEnum
@@ -17,7 +18,9 @@ from pathlib import Path, PurePosixPath
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from loopcraft.env import load_dotenv as _load_dotenv_file, parse_env_file
 from loopcraft.paths import assert_under, safe_relpath
+from loopcraft.settings import local_override_path
 
 # --- globals -------------------------------------------------------------------
 
@@ -42,6 +45,39 @@ DEFAULT_VENDOR = "codex"
 DEFAULT_HOST = "vm"
 #: Default memory-tree root (expanded at load time).
 DEFAULT_MEMORY_PATH = "~/workspace/loopcraft_memory"
+
+#: Command the rendered systemd service invokes to run one loop. Kept as a bare
+#: name by default (resolved on the unit's PATH); set an absolute path in
+#: ``[scheduler].loopctl_bin`` for a hardened host.
+DEFAULT_LOOPCTL_BIN = "loopctl"
+#: Project uv-managed ``loopctl`` location under the source tree. When present
+#: and ``[scheduler].loopctl_bin`` is unset, config load defaults the scheduled
+#: command to this absolute path so a clean ``uv sync`` checkout renders units
+#: (e.g. ``make check``) without extra config.
+_VENV_LOOPCTL_SUBPATH = (".venv", "bin", "loopctl")
+#: Filename prefix for every rendered systemd unit (``loop-<id>.timer`` etc.),
+#: so the whole fleet is greppable and ``systemctl`` completion groups it.
+DEFAULT_UNIT_PREFIX = "loop-"
+#: Subpath (under the memory tree) where ``loopctl apply`` renders units before
+#: install, so generated files never land in either git tree.
+SYSTEMD_STAGE_SUBPATH = ("var", "systemd")
+#: systemd's compiled-in default PATH for a service with no explicit ``PATH=``.
+#: Scheduled preflight resolves runtime/tool binaries against this (unless
+#: ``[scheduler].path`` overrides it), and the rendered unit sets exactly the
+#: same value, so ``apply`` validates the PATH the service actually runs with.
+SYSTEMD_DEFAULT_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
+#: Safe systemd unit filename prefix: letters, digits, ``_``, ``.``, ``-`` only.
+#: A prefix with path separators, ``..``, whitespace, or glob metacharacters
+#: could make a rendered unit filename escape the staging / unit directory.
+_UNIT_PREFIX_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
+
+#: Operator environment variables a *scheduled* live probe is allowed to inherit.
+#: A systemd service only sees a minimal base env plus its own Environment=/
+#: EnvironmentFile= lines, so a scheduled probe starts from this allowlist rather
+#: than the operator's full environment (proxies, cert paths, etc. must be in the
+#: EnvironmentFile to affect a probe, matching what the deployed service sees).
+_SCHEDULED_ENV_ALLOWLIST = ("HOME", "USER", "LOGNAME", "LANG", "LC_ALL", "TERM")
 
 #: User agent sent by loopcraft HTTP clients (arXiv, X).
 HTTP_USER_AGENT = "loopcraft/0.1"
@@ -93,6 +129,19 @@ class MemoryDir(StrEnum):
     LEDGER = "ledger"
     ARTIFACTS = "artifacts"
     RUNS = "runs"
+
+
+class SystemdScope(StrEnum):
+    """Which systemd manager owns the rendered units.
+
+    - ``system``: system-wide units under ``/etc/systemd/system`` managed by
+      ``systemctl`` (root). The design default for the always-on VM.
+    - ``user``: per-user units under ``~/.config/systemd/user`` managed by
+      ``systemctl --user`` (no root needed; requires a login/lingering session).
+    """
+
+    SYSTEM = "system"
+    USER = "user"
 
 
 class ExitCode(IntEnum):
@@ -150,6 +199,31 @@ def _load_project_dependencies(source: Path, table: str) -> dict[str, str]:
     if isinstance(declared, dict):
         return {str(k): str(v) for k, v in declared.items()}
     return {}
+
+
+def _abs_path_list_problems(value: str, *, field: str) -> list[str]:
+    """Validate a ``PATH``-style string as absolute, non-empty components.
+
+    A relative or empty (``""`` = current directory) component resolves
+    differently depending on the process cwd, so ``apply`` (run anywhere) and the
+    systemd service (run from ``WorkingDirectory``) would search different
+    directories. Requiring absolute components keeps the two aligned.
+
+    Returns:
+        A list of problem strings (empty when every component is absolute and
+        free of ``..``). ``~`` is expanded before the checks.
+    """
+    problems: list[str] = []
+    for entry in value.split(os.pathsep):
+        if entry == "":
+            problems.append(f"{field} has an empty component (means current dir): {value!r}")
+            continue
+        expanded = os.path.expanduser(entry)
+        if not os.path.isabs(expanded):
+            problems.append(f"{field} entry is not an absolute directory: {entry!r}")
+        elif ".." in Path(expanded).parts:
+            problems.append(f"{field} entry contains '..': {entry!r}")
+    return problems
 
 
 # --- public functions ---------------------------------------------------------------
@@ -255,11 +329,79 @@ def safe_state_relpath(declared: str) -> str:
         raise StatePathError(str(exc)) from exc
 
 
+class SchedulerConfig(BaseModel):
+    """Host-specific settings for rendering + installing systemd units (M2).
+
+    Loaded from the ``[scheduler]`` table of ``loopcraft.toml``. Everything here
+    is a per-host operational choice (which manager owns the units, which user
+    runs them, where secrets live) — it never affects loop semantics, so it is
+    kept out of the manifests.
+
+    Attributes:
+        loopctl_bin: The command the rendered service runs (``ExecStart``).
+        unit_prefix: Filename prefix for every rendered unit.
+        scope: Which systemd manager (``system`` or ``user``) owns the units.
+        user: Optional ``User=`` for system-scope services (ignored for user
+            scope, where the units already run as the invoking user).
+        environment_file: Optional ``EnvironmentFile=`` path holding the host's
+            secrets. Per the security model this lives outside *both* git trees.
+        path: Optional ``PATH`` the scheduled service runs with. When set it is
+            rendered as ``Environment=PATH=`` and ``apply`` resolves runtime/tool
+            binaries against it; when unset, systemd's default service PATH is
+            used for both.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    loopctl_bin: str = DEFAULT_LOOPCTL_BIN
+    unit_prefix: str = DEFAULT_UNIT_PREFIX
+    scope: SystemdScope = SystemdScope.SYSTEM
+    user: str | None = None
+    environment_file: str | None = None
+    path: str | None = None
+
+    def problems(self) -> list[str]:
+        """Return structural (root-independent) scheduler config problems.
+
+        Covers the render-affecting fields — ``unit_prefix`` (must be a safe
+        filename prefix so a rendered unit cannot escape its directory) and
+        ``path`` (must be absolute components). ``environment_file`` placement is
+        validated separately in :func:`loopcraft.deploy.environment_file_health`
+        because it needs the source/memory roots.
+        """
+        out: list[str] = []
+        if not _UNIT_PREFIX_RE.fullmatch(self.unit_prefix):
+            out.append(
+                "scheduler.unit_prefix must be a safe filename prefix "
+                f"(letters, digits, '_', '.', '-'): {self.unit_prefix!r}"
+            )
+        if self.path is not None:
+            out += _abs_path_list_problems(self.path, field="scheduler.path")
+        return out
+
+
 class LoopcraftConfig(BaseModel):
     """Resolved control-plane configuration.
 
     Connects the source tree (manifests, skills, code) to the memory tree
     (ledger + artifacts + run-history DB).
+
+    Attributes:
+        source_path: Absolute root of the source tree (loops/, skills/, code).
+        memory_path: Absolute root of the memory tree (ledger/, artifacts/, DB).
+        default_vendor: Runtime vendor used when a loop does not pin one.
+        host: Execution host label (informational; e.g. ``vm``).
+        worktree_keep_last: Number of per-loop run worktrees retained by pruning.
+        dependencies: Required binary name -> probe target (from pyproject).
+        optional_dependencies: Optional/future-runtime binary probes (never fail
+            ``deps check``).
+        artifact_store: Optional external artifact-store URI (e.g. ``s3://...``).
+        scheduler: Host-specific systemd rendering/install settings
+            (see :class:`SchedulerConfig`).
+        scheduled_env: When True, ``env_value``/``which`` resolve against the
+            scheduled service environment (set only on the copy handed to
+            ``apply``/``auth`` preflight; see :meth:`for_scheduled_preflight`).
+        extra: Any unrecognized top-level ``loopcraft.toml`` keys, preserved.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -272,6 +414,12 @@ class LoopcraftConfig(BaseModel):
     dependencies: dict[str, str] = Field(default_factory=dict)
     optional_dependencies: dict[str, str] = Field(default_factory=dict)
     artifact_store: str | None = None
+    scheduler: SchedulerConfig = Field(default_factory=SchedulerConfig)
+    #: When True, ``env_value`` resolves against the scheduled service's
+    #: ``EnvironmentFile`` instead of the operator's process env. Set only on the
+    #: copy handed to ``apply``/``auth`` preflight (see ``for_scheduled_preflight``),
+    #: so a direct ``loopctl run`` keeps reading the live process environment.
+    scheduled_env: bool = False
     extra: dict[str, object] = Field(default_factory=dict)
 
     # --- source-tree locations ---------------------------------------------
@@ -310,6 +458,16 @@ class LoopcraftConfig(BaseModel):
     def db_path(self) -> Path:
         """Path to the derived run-history database in the memory tree."""
         return self.memory_path / DB_FILENAME
+
+    @property
+    def systemd_stage_dir(self) -> Path:
+        """Directory (under the memory tree) where units are rendered pre-install.
+
+        Rendered units are generated files, so they are staged under the memory
+        tree's ``var/`` scratch area rather than either git tree; ``loopctl
+        apply --install`` copies them into the real systemd unit directory.
+        """
+        return self.memory_path.joinpath(*SYSTEMD_STAGE_SUBPATH)
 
     def resolve_state_path(self, declared: str) -> Path:
         """Map a loop-declared output path to a concrete file in the ledger.
@@ -353,6 +511,25 @@ class LoopcraftConfig(BaseModel):
             raise SourcePathError(str(exc)) from exc
         return resolved
 
+    def resolve_content_config(self, declared: str) -> Path:
+        """Resolve a content-config path to the contained effective file.
+
+        Validates ``declared`` as a source-relative path, prefers a gitignored
+        ``*.local.*`` sibling, and asserts the effective file (symlinks resolved)
+        stays under the source tree. This gives the direct research CLIs the same
+        source-boundary and ``.local`` containment the control-plane preflight and
+        worktree staging already enforce, so a ``--config`` (or its ``.local``
+        override) cannot read outside the source tree.
+
+        Raises:
+            SourcePathError: If ``declared`` is unsafe or the effective file
+                escapes the source tree.
+        """
+        public = self.resolve_source_path(declared)
+        effective = local_override_path(public)
+        self.assert_source_contained(effective, label="content config")
+        return effective
+
     def assert_source_contained(self, candidate: Path, *, label: str = "source asset") -> None:
         """Guard that ``candidate`` (symlinks resolved) stays under the source root.
 
@@ -368,9 +545,120 @@ class LoopcraftConfig(BaseModel):
         except ValueError as exc:
             raise SourcePathError(str(exc)) from exc
 
+    def load_dotenv(self) -> None:
+        """Load the source tree's ``.env`` into the process environment.
+
+        Loads ``<source_path>/.env`` (only for variables not already set), so
+        credentials/config overrides stay tied to ``LOOPCRAFT_SOURCE`` rather
+        than whatever directory a command happened to be invoked from. A no-op
+        when the file is absent.
+        """
+        _load_dotenv_file(self.source_path / ".env")
+
     def env_value(self, name: str) -> str | None:
-        """Return one environment value through the central config object."""
+        """Return one environment value through the central config object.
+
+        In the default (direct) mode this reads the live process environment
+        (which includes any ``.env`` loaded at the CLI boundary). On a config
+        marked for scheduled preflight (:meth:`for_scheduled_preflight`) it
+        resolves against the scheduled service's ``EnvironmentFile`` instead, so
+        ``apply``/``auth`` validate exactly what the systemd unit will see rather
+        than the operator's shell.
+        """
+        if self.scheduled_env:
+            return self.scheduled_env_value(name)
         return os.environ.get(name)
+
+    def scheduled_env_value(self, name: str) -> str | None:
+        """Return the value a scheduled systemd service would see for ``name``.
+
+        The authority is ``scheduler.environment_file`` — a service does not
+        inherit the operator's process env or ``.env``. Returns None when no
+        environment file is configured or the key is absent.
+        """
+        env_file = self.scheduler.environment_file
+        if not env_file:
+            return None
+        return parse_env_file(Path(env_file).expanduser()).get(name)
+
+    def for_scheduled_preflight(self) -> LoopcraftConfig:
+        """Return a copy whose ``env_value``/``which`` resolve against the
+        scheduled service environment.
+
+        Used by ``apply``/``auth`` so credential *and* binary probes reflect the
+        deployed service's ``EnvironmentFile`` and ``PATH`` rather than the
+        interactive shell.
+        """
+        return self.model_copy(update={"scheduled_env": True})
+
+    @property
+    def scheduled_path(self) -> str:
+        """PATH a scheduled systemd service will use for binary lookup.
+
+        ``scheduler.path`` when set, else systemd's default service PATH, with
+        ``~`` expanded per component. The rendered unit sets exactly this as
+        ``Environment=PATH=`` and scheduled preflight resolves runtime/tool
+        binaries against it, so ``apply`` validates the same PATH the service
+        runs with.
+        """
+        raw = self.scheduler.path or SYSTEMD_DEFAULT_PATH
+        return os.pathsep.join(os.path.expanduser(entry) for entry in raw.split(os.pathsep))
+
+    @property
+    def rendered_environment_file(self) -> str | None:
+        """The ``EnvironmentFile=`` value to render (``~``-expanded absolute).
+
+        Returns None when no environment file is configured. Rendering the
+        expanded path (not the raw string) keeps the unit's ``EnvironmentFile=``
+        aligned with what ``apply`` validated.
+        """
+        env_file = self.scheduler.environment_file
+        return str(Path(env_file).expanduser()) if env_file else None
+
+    def which(self, binary: str) -> str | None:
+        """Resolve a binary on PATH, honoring scheduled vs direct mode.
+
+        Direct mode uses the operator's PATH; a config marked for scheduled
+        preflight (:meth:`for_scheduled_preflight`) resolves against the
+        scheduled service PATH (see :attr:`scheduled_path`), so ``apply`` cannot
+        pass on a runtime/tool binary the systemd service would not find.
+        """
+        if self.scheduled_env:
+            return shutil.which(binary, path=self.scheduled_path)
+        return shutil.which(binary)
+
+    def probe_env(self) -> dict[str, str] | None:
+        """Environment for a *live* capability probe subprocess (or None).
+
+        Direct mode returns None (the probe inherits the operator process env).
+        Scheduled mode builds a **minimal** environment that mirrors what the
+        systemd service will see, rather than inheriting the operator's full
+        environment: a small base allowlist (``HOME``/``USER``/locale/...), the
+        scheduled ``PATH``, ``LOOPCRAFT_SOURCE``/``LOOPCRAFT_MEMORY``, and the
+        scheduled ``EnvironmentFile`` values. This prevents an operator-only
+        variable (e.g. ``HTTPS_PROXY``, ``SSL_CERT_FILE``) from making a probe
+        pass when the deployed service would not have it.
+        """
+        if not self.scheduled_env:
+            return None
+        env = {
+            name: os.environ[name]
+            for name in _SCHEDULED_ENV_ALLOWLIST
+            if name in os.environ
+        }
+        # Overlay the EnvironmentFile first, then re-assert the loopcraft-managed
+        # keys so they win. PATH in particular must equal the validated
+        # ``scheduled_path`` (the same value ``which()`` checks and the rendered
+        # unit sets), so an EnvironmentFile PATH cannot make the probe execute on
+        # a different PATH than binary validation used.
+        if self.scheduler.environment_file:
+            path = Path(self.scheduler.environment_file).expanduser()
+            if path.is_file():
+                env.update(parse_env_file(path))
+        env["PATH"] = self.scheduled_path
+        env["LOOPCRAFT_SOURCE"] = str(self.source_path)
+        env["LOOPCRAFT_MEMORY"] = str(self.memory_path)
+        return env
 
     @classmethod
     def load(cls, source_path: Path | str | None = None) -> LoopcraftConfig:
@@ -409,12 +697,26 @@ class LoopcraftConfig(BaseModel):
         dependencies = _load_project_dependencies(source, "dependencies")
         optional_dependencies = _load_project_dependencies(source, "optional-dependencies")
 
+        scheduler_raw = raw.get("scheduler", {})
+        scheduler_dict = dict(scheduler_raw) if isinstance(scheduler_raw, dict) else {}
+        # Default the scheduled command to the project's uv-managed loopctl when
+        # the operator has not pinned one, so a clean `uv sync` checkout renders
+        # units (make check) without hidden local config. Deploy/install stay
+        # strict: a real host overrides this with an absolute command or a
+        # validated [scheduler].path.
+        if "loopctl_bin" not in scheduler_dict:
+            venv_loopctl = source.joinpath(*_VENV_LOOPCTL_SUBPATH)
+            if venv_loopctl.is_file():
+                scheduler_dict["loopctl_bin"] = str(venv_loopctl)
+        scheduler = SchedulerConfig.model_validate(scheduler_dict)
+
         known = {
             "default_vendor",
             "host",
             "memory_path",
             "artifact_store",
             "worktree_keep_last",
+            "scheduler",
         }
         extra = {k: v for k, v in raw.items() if k not in known}
 
@@ -430,5 +732,6 @@ class LoopcraftConfig(BaseModel):
             artifact_store=(
                 str(raw["artifact_store"]) if raw.get("artifact_store") else None
             ),
+            scheduler=scheduler,
             extra=extra,
         )

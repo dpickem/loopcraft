@@ -76,9 +76,21 @@ class IntelStore:
         return markdown_path, json_path
 
     def follow_candidates_dir(self, output_dir: str | None) -> Path:
-        """Return the resolved follow-candidate output directory."""
+        """Return the resolved follow-candidate output directory.
+
+        A caller-supplied ``--output-dir`` must be a ``state/...`` ledger path so
+        durable loop output cannot be written outside the memory tree.
+
+        Raises:
+            ValueError: If ``output_dir`` is not a ``state/...`` path or escapes
+                the ledger.
+        """
         if output_dir:
-            return self.resolve(Path(output_dir))
+            if not is_state_path(output_dir):
+                raise ValueError(
+                    f"--output-dir must be a 'state/...' ledger path: {output_dir!r}"
+                )
+            return self.loopcraft.resolve_state_path(output_dir)
         return self.resolve(self.output.follow_candidates_dir)
 
     def latest_digest_json(self) -> Path:
@@ -99,8 +111,10 @@ class IntelStore:
         """Write dated follow-candidate markdown/JSON and return their paths."""
         out_dir = self.follow_candidates_dir(output_dir)
         out_dir.mkdir(parents=True, exist_ok=True)
-        markdown_path = out_dir / f"{date_stamp}.md"
-        json_path = out_dir / f"{date_stamp}.json"
+        # Defense in depth around the date-stamped filename, matching the digest
+        # writers (consistent even if date_stamp ever becomes configurable).
+        markdown_path = contained_child(out_dir, f"{date_stamp}.md", label="follow candidates output")
+        json_path = contained_child(out_dir, f"{date_stamp}.json", label="follow candidates output")
         markdown_path.write_text(markdown, encoding="utf-8")
         json_path.write_text(payload, encoding="utf-8")
         return markdown_path, json_path

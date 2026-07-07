@@ -10,18 +10,27 @@ LOOPCTL := $(UV_RUN) loopctl
 
 .PHONY: help test compile validate-skills install-codex install-codex-skills \
 	snapshot-following daily-x-intel discover-follows daily-arxiv-intel \
-	run apply validate status logs list check deps
+	run apply remove validate status logs list fleet check deps init auth
 
 help:           ## list available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
 		| awk 'BEGIN {FS = ":.*?## "}; {printf "  %-22s %s\n", $$1, $$2}'
 
-# --- loopcraft control plane (M1) ---------------------------------------------
+# --- loopcraft control plane --------------------------------------------------
 run:            ## run one loop now:  make run LOOP=slack-triage
 	$(LOOPCTL) run $(LOOP)
 
-apply:          ## validate + (re)deploy all manifests in loops/ (deploy lands in M2)
+init:           ## bootstrap the memory tree + check the source tree (M2)
+	$(LOOPCTL) init
+
+auth:           ## report credential status + guidance for the fleet's deps (M2)
+	$(LOOPCTL) auth
+
+apply:          ## validate the fleet + render systemd units into <memory>/var/systemd (M2)
 	$(LOOPCTL) apply ./loops
+
+remove:         ## undeploy one loop (inverse of apply):  make remove LOOP=slack-triage
+	$(LOOPCTL) remove $(LOOP)
 
 validate:       ## validate all manifests without deploying
 	$(LOOPCTL) validate ./loops
@@ -35,8 +44,11 @@ logs:           ## tail a loop's last run:  make logs LOOP=slack-triage
 list:           ## list known loops
 	$(LOOPCTL) list
 
-check:          ## verify deps + manifests without deploying
-	$(LOOPCTL) deps check && $(LOOPCTL) apply ./loops --dry-run
+fleet:          ## show all loops in a formatted table (schedule, last run, install state)
+	$(LOOPCTL) fleet
+
+check:          ## verify deps + manifests + unit rendering without deploying
+	$(LOOPCTL) deps check && $(LOOPCTL) apply ./loops --dry-run --skip-preflight
 
 deps:           ## probe required runtimes/tools on PATH
 	$(LOOPCTL) deps check

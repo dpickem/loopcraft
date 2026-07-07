@@ -28,6 +28,7 @@ environment.
 
 ```bash
 make list                       # show known loops
+make fleet                      # all loops in a table (schedule, last run, install state)
 make validate                   # validate every manifest in loops/
 make check                      # probe runtimes/tools + dry-run validate
 make run LOOP=slack-triage      # run one loop now, headless
@@ -35,6 +36,10 @@ make run LOOP=arxiv-intel       # run daily arXiv intelligence through loopctl
 make run LOOP=x-intel           # run daily X intelligence through loopctl
 make status                     # last run per loop
 make logs LOOP=slack-triage     # tail the last run's log
+make init                       # bootstrap the memory tree (M2)
+make auth                       # credential status + guidance (M2)
+make apply                      # validate the fleet + render systemd units (M2)
+make remove LOOP=slack-triage   # undeploy one loop (inverse of apply) (M2)
 make test                       # unit tests
 ```
 
@@ -55,16 +60,99 @@ Override the memory location at runtime with `LOOPCRAFT_MEMORY`.
 > (`claude`, `cursor-agent`) are reported but never fail the check, so a
 > Codex-only M1 setup stays green. Use `loopctl deps check --loop <id>` to check
 > just one loop's declared runtime and dependencies. Claude/Cursor adapters, the
-> scheduler, harvester, and UI arrive in later milestones (M2+).
+> harvester, and UI arrive in later milestones (M3+).
 
-### M2 Tasks
+## Scheduling & deployment (M2)
 
-- Add scheduler/auth/apply: bootstrap the host, validate auth/env/tool
-  dependencies, and render the loop manifests into deployable timers/services.
-- Reorganize core control-plane plumbing into `loopcraft/control/` once the M2
-  scheduler/auth/apply boundary lands. Keep this separate from research-loop
-  cleanup so the control-plane refactor follows the new scheduler shape instead
-  of pre-optimizing M1 modules.
+M2 turns one-shot `loopctl run` into a scheduled, unattended fleet on the
+always-on host. Three commands stand it up:
+
+> **Platform limitation:** M2 deployment is Linux/systemd-only. `loopctl apply`
+> renders `.service`, `.timer`, and `.path` units and `--install` uses
+> `systemctl`. macOS uses `launchd`, which is not implemented yet; on macOS use
+> `loopctl run <loop>` manually or run deployment on a Linux host/VM.
+
+```bash
+loopctl init          # bootstrap the memory tree (ledger/runs/artifacts + git)
+loopctl auth          # report credential status + guidance for every declared dep
+loopctl apply ./loops # validate the fleet, then render systemd units
+```
+
+- **`loopctl init`** creates the memory-tree directories (`ledger/`,
+  `ledger/runs/`, `artifacts/`, `var/systemd/`), `git init`s the memory tree
+  (skip with `--no-git`), and confirms the source tree is usable. It is
+  idempotent and never writes to the source repo.
+- **`loopctl auth`** aggregates the `depends_on.auth`, `apis`, and `env`
+  declared across all loops, probes each once (read-only), and reports which are
+  satisfied on this host and how to fix the rest. This is the guided credential
+  check the design runs before `apply`.
+- **`loopctl apply`** runs the full pre-deploy check first — manifest schema,
+  the cross-loop dependency DAG (duplicate ids, multi-producer outputs, unknown
+  upstream loops, cycles), the scheduled environment (see below), and each
+  loop's adapter preflight (tools/auth/env) — so **an unmet dependency is
+  reported at `apply`, not at 3am**. It then renders each loop's `cadence` into
+  systemd units under `<memory>/var/systemd/`:
+  - a `cron` cadence renders a `.timer` + `.service` pair (`OnCalendar=` from the
+    cron expression, `Persistent=true` so a trigger missed while the VM was down
+    is caught up);
+  - an `on-artifact` cadence renders a `.path` + `.service` pair that wakes the
+    loop when an upstream ledger output changes;
+  - `event` cadence has no unattended representation yet (it lands in M8).
+
+### Trigger Options
+
+Loop manifests choose their trigger with `cadence.type`:
+
+- `cron`: rendered by `loopctl apply` as a systemd `.timer` + `.service`.
+  `cadence.at` is a 5-field cron expression, translated to `OnCalendar=...`.
+  Timers include `Persistent=true`, so a missed run is caught up once when the
+  host comes back.
+- `on-artifact`: rendered as a systemd `.path` + `.service`. Loopcraft watches
+  declared ledger `state/...` inputs with `PathModified=...`; inputs that the
+  same loop also writes are ignored so cursor files do not self-trigger.
+- `event`: accepted in manifests for the future reactive/webhook model, but not
+  deployable by M2. `apply` reports it as a render problem until M8.
+
+The rendered `ExecStart` uses the **absolute** path of `scheduler.loopctl_bin`
+(resolved on PATH when a bare name), since a systemd unit does not inherit your
+shell PATH; `apply` fails if it cannot be resolved. For the same reason the
+rendered unit sets `Environment=PATH=` to the **scheduled PATH**
+(`scheduler.path`, or systemd's default when unset), and `apply` preflight
+resolves runtime/tool binaries (`codex`, `nv-tools`, declared tools) against
+that exact PATH — so a binary that only lives on your shell PATH does not make
+`apply` pass. Default `apply` is **side-effect-free unless the plan is fully
+clean** — a plan blocked by an unmet dependency writes nothing (pass
+`--render-invalid` to render diagnostic units anyway), so `fleet` never shows
+`staged` for a rejected loop.
+
+Flags: `--dry-run` (validate + plan, write nothing), `--skip-preflight`
+(structural + DAG checks only), `--render-invalid` (render even when checks
+fail), `--out DIR` (render elsewhere), and `--install` (transactionally copy
+units into the systemd unit directory and `enable --now` their triggers, with
+rollback on failure — only when every check passed; requires `systemctl`).
+- **`loopctl remove <loop>` / `loopctl remove --all`** is the inverse of
+  `apply`: it disables a loop's timer/path trigger (`systemctl disable --now`)
+  and deletes both its installed units (from the systemd unit dir) and its
+  staged units (from `<memory>/var/systemd/`). It works from the files on disk,
+  so a loop can be undeployed even after its manifest changed or was removed;
+  `--dry-run` shows what would be removed.
+
+`scheduler.environment_file` is the authority for a scheduled service's
+credentials — a systemd unit does not see your `.env` or shell. So `apply` and
+`auth` validate credentials against that file, not the operator's process
+environment: **`apply` preflight and `auth` resolve declared env vars and auth
+bundles (e.g. `x-api`'s token) from the environment file only**, and the file
+must exist, live outside **both** git trees, and contain every env var the loops
+declare. A token that lives only in your shell/`.env` therefore does *not* make
+`apply` pass (the deployed service wouldn't have it), and a token that lives only
+in the environment file *does*. Direct `loopctl run` is unchanged: it executes
+in your current process, so its preflight uses the live environment (including
+`.env`).
+
+Per-host deployment settings (unit scope, service `User=`, the out-of-tree
+secrets `EnvironmentFile=`, the `loopctl` path) live in the `[scheduler]` table
+of `loopcraft.toml`. Secrets stay outside **both** git trees; manifests
+reference credential names, never values.
 
 ### Runtime Models
 
@@ -101,6 +189,8 @@ src/loopcraft/
   cli.py          # loopctl
   config.py       # loopcraft.toml + path resolution
   manifest.py     # LoopManifest schema, validator, dependency DAG check
+  scheduler.py    # cron -> systemd OnCalendar + timer/service/path unit rendering
+  deploy.py       # fleet pre-deploy validation, unit planning, install (apply)
   store.py        # the single sanctioned persistence path (ledger + run records)
   runners/        # the portability seam: base protocol + codex adapter
   research_intel/arxiv/    # arXiv intelligence loop implementation

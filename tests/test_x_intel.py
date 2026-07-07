@@ -55,6 +55,103 @@ def test_score_post_weights_frontier_lab_and_keywords() -> None:
     assert "loopcraft" in scored["score_reasons"]
 
 
+def _ledger_config(tmp_path: Path) -> LoopcraftConfig:
+    """A config with a temp source + memory tree for store/CLI path tests."""
+    source = tmp_path / "src"
+    (source / "config").mkdir(parents=True)
+    return LoopcraftConfig(source_path=source, memory_path=tmp_path / "mem")
+
+
+def test_follow_candidates_dir_rejects_non_state_output(tmp_path: Path) -> None:
+    """--output-dir outside the ledger is rejected (review 05, finding 6)."""
+    import pytest
+
+    store = IntelStore(_ledger_config(tmp_path), OutputPaths())
+    with pytest.raises(ValueError, match="state"):
+        store.follow_candidates_dir("/tmp/anywhere")
+    with pytest.raises(ValueError):
+        store.follow_candidates_dir("../escape")
+    resolved = store.follow_candidates_dir("state/research/x/custom")
+    assert (tmp_path / "mem" / "ledger" / "research" / "x" / "custom") == resolved
+
+
+def test_write_follow_candidates_contains_date_stamp(tmp_path: Path) -> None:
+    """A traversing date stamp cannot escape the output dir (review 05, finding 21)."""
+    import pytest
+
+    store = IntelStore(_ledger_config(tmp_path), OutputPaths())
+    with pytest.raises(ValueError, match="escapes"):
+        store.write_follow_candidates(
+            markdown="m", payload="{}", date_stamp="../../../escape", output_dir=None
+        )
+
+
+def test_x_run_rejects_absolute_config(tmp_path: Path, monkeypatch, capsys) -> None:
+    """The direct X CLI rejects an absolute --config (review 05, finding 16)."""
+    import json
+
+    from loopcraft.research_intel.x import cli as x_cli
+
+    monkeypatch.setenv("LOOPCRAFT_SOURCE", str(tmp_path / "src"))
+    monkeypatch.setenv("LOOPCRAFT_MEMORY", str(tmp_path / "mem"))
+    (tmp_path / "src").mkdir(parents=True)
+    rc = x_cli.main(["--json", "run", "--config", "/etc/passwd"])
+    payload = json.loads(capsys.readouterr().out)
+    assert rc == 2
+    assert "invalid or unreadable content config" in payload["data"]["error"]
+
+
+def test_x_snapshot_following_rejects_absolute_output(tmp_path: Path, monkeypatch, capsys) -> None:
+    """snapshot-following --output must be source-relative (review 05, finding 15)."""
+    import json
+
+    from loopcraft.research_intel.x import cli as x_cli
+
+    monkeypatch.setenv("LOOPCRAFT_SOURCE", str(tmp_path / "src"))
+    monkeypatch.setenv("LOOPCRAFT_MEMORY", str(tmp_path / "mem"))
+    (tmp_path / "src").mkdir(parents=True)
+    rc = x_cli.main(["--json", "snapshot-following", "--output", "/tmp/snap.json"])
+    payload = json.loads(capsys.readouterr().out)
+    assert rc == 2
+    assert "absolute source path is not allowed" in payload["data"]["error"]
+    assert not Path("/tmp/snap.json").exists()
+
+
+def test_x_discover_follows_rejects_absolute_digest(tmp_path: Path, monkeypatch, capsys) -> None:
+    """discover-follows --digest-json must be a ledger path (review 05, finding 14)."""
+    import json
+
+    from loopcraft.research_intel.x import cli as x_cli
+
+    source = tmp_path / "src"
+    (source / "config").mkdir(parents=True)
+    (source / "config" / "x_intel.yaml").write_text("ranking: {}\n", encoding="utf-8")
+    monkeypatch.setenv("LOOPCRAFT_SOURCE", str(source))
+    monkeypatch.setenv("LOOPCRAFT_MEMORY", str(tmp_path / "mem"))
+    monkeypatch.setenv("X_API_BEARER_TOKEN", "dummy-token")  # pass the client check
+    rc = x_cli.main(["--json", "discover-follows", "--digest-json", "/etc/hosts"])
+    payload = json.loads(capsys.readouterr().out)
+    assert rc == 2
+    assert "error" in payload["data"]
+
+
+def test_resolved_snapshot_uses_source_tree(tmp_path: Path, monkeypatch) -> None:
+    """The following snapshot resolves under the source tree, not the cwd (finding 18)."""
+    from loopcraft.research_intel.x.cli import XIntelRunner
+
+    source = tmp_path / "src"
+    (source / "config").mkdir(parents=True)
+    (source / "config" / "x_intel.yaml").write_text(
+        "sources:\n  following_snapshot: config/snap.local.json\n", encoding="utf-8"
+    )
+    monkeypatch.setenv("LOOPCRAFT_SOURCE", str(source))
+    monkeypatch.setenv("LOOPCRAFT_MEMORY", str(tmp_path / "mem"))
+    monkeypatch.chdir(tmp_path)  # cwd deliberately differs from the source root
+
+    runner = XIntelRunner("config/x_intel.yaml")
+    assert runner._resolved_snapshot() == source / "config" / "snap.local.json"
+
+
 def test_rank_posts_dedupes_by_id() -> None:
     """rank_posts collapses duplicate ids and ranks by score."""
     posts = [

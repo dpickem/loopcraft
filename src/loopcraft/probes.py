@@ -18,12 +18,19 @@ from pathlib import PurePath
 PROBE_ALLOWED_BINARIES = frozenset({"nv-tools"})
 
 
-def run_probe(cmd: list[str], *, timeout_s: int) -> int | None:
+def run_probe(cmd: list[str], *, timeout_s: int, env: dict[str, str] | None = None) -> int | None:
     """Run a bounded probe command from the probe allowlist.
 
+    The allowlist is checked against ``cmd[0]``'s basename, so an absolute path
+    to an allowlisted binary (e.g. a scheduled-PATH-resolved ``nv-tools``) is
+    accepted — the caller should pass the resolved executable so the probe
+    executes the same binary it validated.
+
     Args:
-        cmd: Command argument vector; ``cmd[0]`` must be an allowlisted binary.
+        cmd: Command argument vector; ``cmd[0]``'s basename must be allowlisted.
         timeout_s: Maximum seconds to wait.
+        env: Optional environment for the probe process (e.g. the scheduled
+            service PATH). When None, the current process environment is used.
 
     Returns:
         Process exit code, or None if the binary is missing or the probe timed
@@ -44,6 +51,7 @@ def run_probe(cmd: list[str], *, timeout_s: int) -> int | None:
             text=True,
             check=False,
             timeout=timeout_s,
+            env=env,
         )
     except (FileNotFoundError, subprocess.TimeoutExpired):
         return None

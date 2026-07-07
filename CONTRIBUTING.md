@@ -58,6 +58,8 @@ src/loopcraft/
   cli.py                    # loopctl entry point
   config.py                 # loopcraft.toml loading + source/memory paths
   manifest.py               # LoopManifest schema, validation, DAG checks
+  scheduler.py              # cron -> systemd unit rendering (timer/service/path)
+  deploy.py                 # fleet pre-deploy validation + unit planning/install
   store.py                  # Ledger writes + durable run records
   runners/                  # Runtime adapter interface + vendor adapters
   research_intel/arxiv/     # arXiv research-intelligence loop implementation

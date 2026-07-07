@@ -1188,12 +1188,14 @@ memory_path    = "~/workspace/loopcraft_memory"   # ledger/ + artifacts/ + loopc
     <pre><code>loopctl add slack-triage      # scaffold a new manifest + skill from a template
 loopctl run eod-work-summary  # run one loop now (ad hoc), stream its output
 loopctl status                # fleet status in the terminal
+loopctl fleet                 # all loops in one table: schedule, last run, install state
 loopctl logs paper-discovery  # tail a loop's last run
 loopctl reindex               # rebuild loopcraft.db from logs + ledger (DB is derived)
 loopctl vendor set claude     # flip the global default runtime (portability!)
 loopctl promote slack-triage  # graduate a tier (observe->propose->act) once earned
 loopctl demote  slack-triage  # drop a tier manually (auto-demotion also happens)
-loopctl apply ./loops         # re-deploy after any change</code></pre>
+loopctl apply ./loops         # re-deploy after any change
+loopctl remove slack-triage   # undeploy one loop (disable + delete its units)</code></pre>
     <h3>Repo layout &mdash; logic and memory are separate trees</h3>
     <pre><code>~/workspace/loopcraft/         # SOURCE (logic): reviewed, deployable, shareable
   loopctl/                     # the CLI + scheduler + adapters + harvester + tool proxy
@@ -1483,7 +1485,7 @@ check:        ## verify deps + manifests without deploying
       <summary>M2 &mdash; Scheduler + auth + apply (deploy L1 + L2)</summary>
       <p>Turn one-shot runs into a scheduled, unattended fleet on the VM.</p>
       <ul>
-        <li><strong>Build:</strong> <code>loopctl init</code> (bootstrap host, source + memory trees), <code>loopctl auth</code> (guided creds), <code>loopctl apply</code> (render systemd timer/service units, register event/artifact triggers); pre-deploy dependency validation (auth/env/tools/upstream loops + DAG cycle check).</li>
+        <li><strong>Build:</strong> <code>loopctl init</code> (bootstrap host, source + memory trees), <code>loopctl auth</code> (guided creds), <code>loopctl apply</code> (render systemd timer/service units, register event/artifact triggers); pre-deploy dependency validation (auth/env/tools/upstream loops + DAG cycle check). Plus <code>loopctl remove &lt;loop&gt;</code>/<code>--all</code> &mdash; the inverse of <code>apply</code> that disables the trigger and deletes a loop&rsquo;s installed + staged units &mdash; and <code>loopctl fleet</code>, a terminal table of every loop with its trigger, last run, and install state (<code>installed</code>/<code>staged</code>/<code>no</code>), the read-only precursor to the M4 web fleet board.</li>
         <li><strong>Deploy:</strong> L1 (slack-triage) + L2 (paper-discovery), both pure observe, on cadence. Includes the L2 prototype migration off per-tool SQLite onto the unified store.</li>
         <li><strong>Depends on:</strong> M1.</li>
         <li><strong>Exit criteria:</strong> L1 + L2 fire on schedule with the laptop closed; an unmet dependency is reported at <code>apply</code>, not at runtime.</li>

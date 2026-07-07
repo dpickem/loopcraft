@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -534,6 +535,55 @@ def test_dry_run_surfaces_invalid_content_config(monkeypatch, tmp_path: Path, ca
         "content config invalid" in problem
         for problem in payload["data"]["preflight"]["problems"]
     )
+
+
+def test_logs_refuses_external_log_path(monkeypatch, tmp_path: Path, capsys) -> None:
+    """Review 05 (finding 20): a run record whose log_path is outside the log
+    root is refused instead of read."""
+    _env(monkeypatch, tmp_path)
+    runs_dir = tmp_path / "mem" / "ledger" / "runs"
+    runs_dir.mkdir(parents=True)
+    external = tmp_path / "secret.txt"
+    external.write_text("top secret", encoding="utf-8")
+    (runs_dir / "slack-triage__x.json").write_text(
+        json.dumps(
+            {
+                "run_id": "20260101T000000Z-deadbeef",
+                "loop": "slack-triage",
+                "vendor": "codex",
+                "status": "done",
+                "started_at": "2026-01-01T00:00:00+00:00",
+                "log_path": str(external),
+            }
+        ),
+        encoding="utf-8",
+    )
+    rc = cli.main(["--json", "logs", "slack-triage"])
+    payload = json.loads(capsys.readouterr().out)
+    assert rc == 2
+    assert "outside allowed root" in payload["data"]["error"]
+    assert "top secret" not in json.dumps(payload)
+
+
+def test_dotenv_loaded_from_source_root(monkeypatch, tmp_path: Path) -> None:
+    """Review 05 (finding 19): .env is loaded from the source tree, not cwd."""
+    source = tmp_path / "src"
+    (source / "loops").mkdir(parents=True)
+    (source / "skills" / "demo").mkdir(parents=True)
+    (source / "skills" / "demo" / "SKILL.md").write_text("body", encoding="utf-8")
+    (source / "loops" / "demo.yaml").write_text(
+        "id: demo\nname: Demo\ncadence: {type: cron, at: '0 9 * * *'}\n"
+        "logic: {skill: skills/demo/SKILL.md}\n",
+        encoding="utf-8",
+    )
+    (source / ".env").write_text("LOOPCRAFT_TEST_MARKER=from-source-env\n", encoding="utf-8")
+    monkeypatch.setenv("LOOPCRAFT_SOURCE", str(source))
+    monkeypatch.setenv("LOOPCRAFT_MEMORY", str(tmp_path / "mem"))
+    monkeypatch.delenv("LOOPCRAFT_TEST_MARKER", raising=False)
+    monkeypatch.chdir(tmp_path)  # cwd is NOT the source root
+
+    assert cli.main(["list"]) == 0
+    assert os.environ.get("LOOPCRAFT_TEST_MARKER") == "from-source-env"
 
 
 def test_status_survives_corrupt_run_record(monkeypatch, tmp_path: Path, capsys) -> None:

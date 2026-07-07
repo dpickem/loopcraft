@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 
-from loopcraft.cli_output import emit
+from loopcraft.cli_output import emit, render_table
 
 
 def test_emit_text_mode_prints_lines(capsys) -> None:
@@ -26,3 +26,22 @@ def test_emit_json_mode_emits_consistent_envelope(capsys) -> None:
         "exit_code": 1,
         "data": {"missing": ["git"]},
     }
+
+
+def test_render_table_aligns_columns() -> None:
+    """render_table sizes columns to the widest cell and box-draws the grid."""
+    lines = render_table(["LOOP", "TIER"], [["slack-triage", "observe"], ["x", "act"]])
+    # Header + both rows padded to the widest cell in each column.
+    assert "│ LOOP         │ TIER    │" in lines
+    assert "│ slack-triage │ observe │" in lines
+    assert "│ x            │ act     │" in lines
+    # Borders open and close the table.
+    assert lines[0].startswith("┌") and lines[0].endswith("┐")
+    assert lines[-1].startswith("└") and lines[-1].endswith("┘")
+
+
+def test_render_table_with_no_rows_is_header_only() -> None:
+    """A table with no data rows still renders its header between borders."""
+    lines = render_table(["A", "B"], [])
+    assert len(lines) == 4  # top, header, separator, bottom
+    assert "│ A │ B │" in lines
