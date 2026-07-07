@@ -319,6 +319,28 @@ def test_apply_blocks_when_tool_missing_on_scheduled_path(monkeypatch, tmp_path:
     assert not (tmp_path / "mem" / "var" / "systemd").exists()
 
 
+def test_apply_out_into_source_is_refused(monkeypatch, tmp_path: Path, capsys) -> None:
+    """apply --out inside the source tree is refused by default (finding 11)."""
+    monkeypatch.setattr(deploy, "get_runner", lambda vendor: _OkRunner())
+    source = _demo_source(monkeypatch, tmp_path, _CRON_MANIFEST)
+    out = source / "generated"
+    rc = cli.main(["--json", "apply", "--out", str(out)])
+    payload = json.loads(capsys.readouterr().out)
+    assert rc == 2
+    assert "inside the source tree" in payload["data"]["error"]
+    assert not out.exists()
+
+
+def test_apply_out_into_source_allowed_with_flag(monkeypatch, tmp_path: Path, capsys) -> None:
+    """--allow-source-output permits writing generated units into source."""
+    monkeypatch.setattr(deploy, "get_runner", lambda vendor: _OkRunner())
+    source = _demo_source(monkeypatch, tmp_path, _CRON_MANIFEST)
+    out = source / "generated"
+    rc = cli.main(["--json", "apply", "--out", str(out), "--allow-source-output"])
+    assert rc == 0
+    assert (out / "loop-demo.timer").exists()
+
+
 def test_apply_structural_problem_writes_nothing(monkeypatch, tmp_path: Path, capsys) -> None:
     """A structural manifest problem blocks rendering entirely."""
     _demo_source(

@@ -145,9 +145,25 @@ def test_service_renders_configured_path(tmp_path) -> None:
 def test_render_service_uses_explicit_loopctl_command(tmp_path) -> None:
     """A resolved absolute command flows into ExecStart (finding 1)."""
     config = _config(tmp_path)
-    units = render_loop_units(config, _cron_manifest(), loopctl_command="/opt/venv/bin/loopctl")
+    units = render_loop_units(config, _cron_manifest(), loopctl_command=["/opt/venv/bin/loopctl"])
     service = next(u for u in units.units if u.kind == UnitKind.SERVICE)
     assert "ExecStart=/opt/venv/bin/loopctl run demo" in service.content
+
+
+def test_exec_start_quotes_arguments_with_spaces(tmp_path) -> None:
+    """A command/path with spaces is double-quoted in ExecStart (finding 10)."""
+    config = _config(tmp_path)
+    units = render_loop_units(config, _cron_manifest(), loopctl_command=["/opt/my dir/loopctl"])
+    service = next(u for u in units.units if u.kind == UnitKind.SERVICE)
+    assert 'ExecStart="/opt/my dir/loopctl" run demo' in service.content
+
+
+def test_exec_start_preserves_multiword_command(tmp_path) -> None:
+    """A multi-word loopctl_bin renders as separate argv tokens (finding 10)."""
+    config = _config(tmp_path)
+    units = render_loop_units(config, _cron_manifest(), loopctl_command=["/usr/bin/uv", "run", "loopctl"])
+    service = next(u for u in units.units if u.kind == UnitKind.SERVICE)
+    assert "ExecStart=/usr/bin/uv run loopctl run demo" in service.content
 
 
 def test_render_on_artifact_loop_units(tmp_path) -> None:

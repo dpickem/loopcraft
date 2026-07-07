@@ -12,6 +12,7 @@ effects and easy to test.
 
 from __future__ import annotations
 
+import os
 import shlex
 import shutil
 import subprocess
@@ -22,14 +23,12 @@ from pydantic import BaseModel, Field
 from loopcraft.config import LoopcraftConfig, SystemdScope
 from loopcraft.env import parse_env_file
 from loopcraft.manifest import LoopManifest, load_all
-from loopcraft.paths import assert_under
 from loopcraft.runners import get_runner
 from loopcraft.scheduler import LoopUnits, SchedulerError, UnitKind, render_loop_units
 
-#: Systemd unit directory per scope, relative to the manager's root.
+#: Systemd unit directory for system scope. User scope is resolved at install
+#: time from the XDG config location (see ``systemd_unit_dir``).
 _SYSTEM_UNIT_DIR = Path("/etc/systemd/system")
-#: User-scope units live under the user's XDG config; resolved at install time.
-_USER_UNIT_SUBPATH = (".config", "systemd", "user")
 
 #: Seconds allowed for a single ``systemctl`` invocation during install.
 _SYSTEMCTL_TIMEOUT_S = 30
@@ -125,19 +124,23 @@ def preflight_loop(config: LoopcraftConfig, manifest: LoopManifest) -> LoopPrefl
     return LoopPreflight(loop=manifest.id, vendor=vendor, ok=report.ok, problems=report.problems)
 
 
-def resolve_loopctl_command(config: LoopcraftConfig) -> tuple[str | None, str | None]:
-    """Resolve ``scheduler.loopctl_bin`` to an absolute service command.
+def resolve_loopctl_command(config: LoopcraftConfig) -> tuple[list[str] | None, str | None]:
+    """Resolve ``scheduler.loopctl_bin`` to an absolute, executable service argv.
 
     A systemd unit does not inherit the operator's interactive shell PATH, so
     the rendered ``ExecStart`` must name an absolute executable. This splits the
-    configured command (supporting a multi-word prefix like ``uv run loopctl``),
-    resolves its first token to an absolute path (via PATH when not already
-    absolute), and returns the reassembled command.
+    configured command (supporting a multi-word prefix like ``uv run loopctl``)
+    and resolves its first token:
+
+    - an absolute path must be a regular executable file;
+    - a bare name is resolved against the **scheduled** PATH (``scheduler.path``),
+      not the operator PATH, so ``apply`` cannot resolve a binary the deployed
+      service would not find.
 
     Returns:
-        A ``(command, problem)`` pair: the resolved absolute command with a
-        None problem on success, or ``(None, problem)`` when the executable
-        cannot be resolved for the systemd context.
+        A ``(argv, problem)`` pair: the resolved argv (list) with a None problem
+        on success, or ``(None, problem)`` when the executable cannot be resolved
+        or is not executable for the systemd context.
     """
     raw = config.scheduler.loopctl_bin.strip()
     if not raw:
@@ -147,49 +150,82 @@ def resolve_loopctl_command(config: LoopcraftConfig) -> tuple[str | None, str | 
     except ValueError as exc:
         return None, f"scheduler.loopctl_bin is not a valid command: {exc}"
     head, *rest = parts
-    if Path(head).is_absolute():
-        resolved = head if Path(head).exists() else None
+    head = os.path.expanduser(head)
+    if os.path.isabs(head):
+        if not (Path(head).is_file() and os.access(head, os.X_OK)):
+            return None, (
+                f"scheduler.loopctl_bin '{head}' is not an executable file"
+            )
+        resolved: str | None = head
     else:
-        resolved = shutil.which(head)
-    if resolved is None:
-        return None, (
-            f"scheduler.loopctl_bin '{raw}' cannot be resolved to an absolute "
-            "executable for the systemd context (set an absolute path in "
-            "[scheduler].loopctl_bin)"
-        )
-    return " ".join([resolved, *rest]), None
+        resolved = shutil.which(head, path=config.scheduled_path)
+        if resolved is None:
+            return None, (
+                f"scheduler.loopctl_bin '{raw}' cannot be resolved to an executable "
+                "on the scheduled PATH (set an absolute path in [scheduler].loopctl_bin "
+                "or add its directory to [scheduler].path)"
+            )
+    return [resolved, *rest], None
+
+
+def _is_lexically_under(path: Path, root: Path) -> bool:
+    """Return whether ``path`` is textually under ``root`` (no symlink resolution).
+
+    Used so an ``environment_file`` *configured as* a path inside a git tree is
+    rejected even if it is a symlink whose target lives outside — a tracked stub
+    inside the repo still leaks the secret relationship.
+    """
+    try:
+        Path(os.path.normpath(path)).relative_to(os.path.normpath(root))
+    except ValueError:
+        return False
+    return True
 
 
 def environment_file_health(config: LoopcraftConfig) -> tuple[set[str], list[str]]:
     """Inspect ``scheduler.environment_file``: return its keys and any problems.
 
-    File-level checks only (existence + placement outside both git trees); the
-    per-loop "does it contain the declared vars" check lives in
-    :func:`validate_environment`. Shared by ``apply`` and ``auth`` so both agree
-    on which keys a scheduled service would see.
+    File-level checks only (absolute, placement, symlink, existence, regular
+    file, readability); the per-loop "does it contain the declared vars" check
+    lives in :func:`validate_environment`. Shared by ``apply`` and ``auth`` so
+    both agree on which keys a scheduled service would see. Never raises — a
+    misconfigured path is a structured problem, not a traceback.
 
     Returns:
         A ``(keys, problems)`` pair. ``keys`` is the set of env var names in the
-        file (empty when unset or missing); ``problems`` describes a missing or
-        misplaced file.
+        file (empty when unset or unusable); ``problems`` describes any issue.
     """
     env_file = config.scheduler.environment_file
     if not env_file:
         return set(), []
     path = Path(env_file).expanduser()
-    if not path.exists():
-        return set(), [f"scheduler.environment_file not found: {env_file}"]
+
+    if not path.is_absolute():
+        return set(), [f"scheduler.environment_file must be an absolute path: {env_file!r}"]
+
     problems: list[str] = []
+    # Lexical (pre-resolve) containment: a stub inside a git tree is rejected
+    # even if its symlink target is outside.
     for label, root in (("source", config.source_path), ("memory", config.memory_path)):
-        try:
-            assert_under(root, path, label="environment file")
-        except ValueError:
-            continue  # good: the secrets file is outside this tree
-        problems.append(
-            f"scheduler.environment_file must live outside the {label} tree "
-            f"(secrets stay out of git): {env_file}"
-        )
-    return set(parse_env_file(path)), problems
+        if _is_lexically_under(path, root):
+            problems.append(
+                f"scheduler.environment_file must live outside the {label} tree "
+                f"(secrets stay out of git): {env_file}"
+            )
+    if path.is_symlink():
+        problems.append(f"scheduler.environment_file must not be a symlink: {env_file}")
+    if not path.exists():
+        problems.append(f"scheduler.environment_file not found: {env_file}")
+        return set(), problems
+    if not path.is_file():
+        problems.append(f"scheduler.environment_file is not a regular file: {env_file}")
+        return set(), problems
+    try:
+        keys = set(parse_env_file(path))
+    except OSError as exc:
+        problems.append(f"scheduler.environment_file could not be read: {exc}")
+        return set(), problems
+    return keys, problems
 
 
 def validate_environment(config: LoopcraftConfig, manifests: list[LoopManifest]) -> list[str]:
@@ -197,11 +233,11 @@ def validate_environment(config: LoopcraftConfig, manifests: list[LoopManifest])
 
     When ``scheduler.environment_file`` is configured it is treated as the
     authority for a scheduled service's credentials (a service does not see the
-    operator's ``.env`` or interactive shell): the file must exist, live outside
-    *both* git trees, and contain every env var the deployed loops declare. When
-    it is not configured but loops declare env vars, that gap is reported too —
-    otherwise ``apply`` could pass on the operator's shell while the service
-    later fails at runtime.
+    operator's ``.env`` or interactive shell): the file must be an absolute,
+    non-symlink regular file outside *both* git trees, and contain every env var
+    the deployed loops declare. When it is not configured but loops declare env
+    vars, that gap is reported too — otherwise ``apply`` could pass on the
+    operator's shell while the service later fails at runtime.
 
     Returns:
         A list of problem strings (empty when the scheduled environment can
@@ -218,8 +254,9 @@ def validate_environment(config: LoopcraftConfig, manifests: list[LoopManifest])
         return []
 
     keys, problems = environment_file_health(config)
-    # A missing file already fails clearly; don't also list every var as absent.
-    if not any("not found" in problem for problem in problems):
+    # Only check declared vars once the file itself is healthy; otherwise the
+    # file-level problem already explains why nothing can be satisfied.
+    if not problems:
         missing = [var for var in required if var not in keys]
         if missing:
             problems.append(f"scheduler.environment_file is missing declared env vars: {missing}")
@@ -247,19 +284,21 @@ def plan_deployment(
     target = loops_dir or config.loops_dir
     catalog = load_all(target)
 
-    render_problems: list[str] = []
+    # Structural scheduler config problems (unit_prefix, path) make rendering
+    # unsafe/ambiguous, as does an unresolvable service command — both are
+    # fleet-wide render problems, so nothing is rendered until they are fixed.
+    render_problems: list[str] = list(config.scheduler.problems())
     units: list[LoopUnits] = []
-    # A single unresolvable service command breaks every rendered unit, so it is
-    # a fleet-wide render problem and nothing is rendered until it is fixed.
-    command, command_problem = resolve_loopctl_command(config)
-    if command_problem:
-        render_problems.append(command_problem)
-    else:
-        for manifest in catalog.manifests:
-            try:
-                units.append(render_loop_units(config, manifest, loopctl_command=command))
-            except SchedulerError as exc:
-                render_problems.append(f"{manifest.id}: {exc}")
+    if not render_problems:
+        command, command_problem = resolve_loopctl_command(config)
+        if command_problem:
+            render_problems.append(command_problem)
+        else:
+            for manifest in catalog.manifests:
+                try:
+                    units.append(render_loop_units(config, manifest, loopctl_command=command))
+                except SchedulerError as exc:
+                    render_problems.append(f"{manifest.id}: {exc}")
 
     env_problems = validate_environment(config, catalog.manifests)
 
@@ -283,6 +322,21 @@ def plan_deployment(
     )
 
 
+def _safe_unit_dest(directory: Path, filename: str) -> Path:
+    """Compose ``directory / filename`` after asserting it stays a direct child.
+
+    Defense-in-depth for rendered unit filenames: even though ``unit_prefix`` is
+    validated before rendering, a filename must be a single path component so it
+    cannot escape the staging / unit directory.
+
+    Raises:
+        ValueError: If ``filename`` is not a plain filename.
+    """
+    if filename != Path(filename).name or os.sep in filename or (os.altsep and os.altsep in filename):
+        raise ValueError(f"unsafe unit filename: {filename!r}")
+    return directory / filename
+
+
 def write_units(plan: DeploymentPlan, out_dir: Path) -> list[Path]:
     """Write every rendered unit in ``plan`` to ``out_dir``; return the paths.
 
@@ -293,16 +347,22 @@ def write_units(plan: DeploymentPlan, out_dir: Path) -> list[Path]:
     written: list[Path] = []
     for loop_units in plan.units:
         for unit in loop_units.units:
-            path = out_dir / unit.filename
+            path = _safe_unit_dest(out_dir, unit.filename)
             path.write_text(unit.content, encoding="utf-8")
             written.append(path)
     return written
 
 
 def systemd_unit_dir(config: LoopcraftConfig) -> Path:
-    """Return the real systemd unit directory for the configured scope."""
+    """Return the real systemd unit directory for the configured scope.
+
+    User scope follows the XDG convention ``systemctl --user`` uses:
+    ``$XDG_CONFIG_HOME/systemd/user`` when set, else ``~/.config/systemd/user``.
+    """
     if config.scheduler.scope == SystemdScope.USER:
-        return Path.home().joinpath(*_USER_UNIT_SUBPATH)
+        xdg = os.environ.get("XDG_CONFIG_HOME")
+        base = Path(xdg) if xdg else Path.home() / ".config"
+        return base / "systemd" / "user"
     return _SYSTEM_UNIT_DIR
 
 
@@ -372,10 +432,18 @@ def install_units(config: LoopcraftConfig, plan: DeploymentPlan) -> InstallResul
     try:
         unit_dir.mkdir(parents=True, exist_ok=True)
         for unit in units:
-            dest = unit_dir / unit.filename
+            dest = _safe_unit_dest(unit_dir, unit.filename)
+            # A symlink here would make read/write operate on its target outside
+            # the unit dir (and install may run privileged for system scope).
+            if dest.is_symlink():
+                _rollback_install(unit_dir, backups, enabled=[], base=base)
+                return InstallResult(
+                    problems=[f"refusing to install over a symlinked unit: {dest}"],
+                    rolled_back=True,
+                )
             backups[unit.filename] = dest.read_text(encoding="utf-8") if dest.exists() else None
             dest.write_text(unit.content, encoding="utf-8")
-    except OSError as exc:
+    except (OSError, ValueError) as exc:
         _rollback_install(unit_dir, backups, enabled=[], base=base)
         return InstallResult(problems=[f"could not write units to {unit_dir}: {exc}"], rolled_back=True)
 

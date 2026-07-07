@@ -202,7 +202,7 @@ def test_arxiv_run_produces_manifest_outputs_for_control_plane_run_id(tmp_path, 
     monkeypatch.setenv("LOOPCRAFT_RUN_DATE", run_date)
     monkeypatch.setattr(arxiv_cli.ArxivClient, "search_recent", lambda self, config: [])
 
-    rc = arxiv_cli.run(str(REPO_ROOT / "config" / "arxiv_intel.yaml"))
+    rc = arxiv_cli.run("config/arxiv_intel.yaml")
     assert rc == 0
 
     loopcraft = LoopcraftConfig.load(REPO_ROOT)
@@ -223,9 +223,7 @@ def test_arxiv_run_rejects_malformed_run_date_env(tmp_path, monkeypatch, capsys)
     monkeypatch.delenv("LOOPCRAFT_RUN_ID", raising=False)
     monkeypatch.setenv("LOOPCRAFT_RUN_DATE", "../../../../../escaped-date")
 
-    rc = arxiv_cli.main(
-        ["--json", "run", "--config", str(REPO_ROOT / "config" / "arxiv_intel.yaml")]
-    )
+    rc = arxiv_cli.main(["--json", "run", "--config", "config/arxiv_intel.yaml"])
     payload = json.loads(capsys.readouterr().out)
     assert rc == 2
     assert payload["ok"] is False
@@ -255,12 +253,13 @@ def test_arxiv_cli_reports_invalid_config_as_json_envelope(tmp_path, monkeypatch
 
     from loopcraft.research_intel.arxiv import cli as arxiv_cli
 
-    monkeypatch.setenv("LOOPCRAFT_SOURCE", str(tmp_path / "src"))
+    source = tmp_path / "src"
+    monkeypatch.setenv("LOOPCRAFT_SOURCE", str(source))
     monkeypatch.setenv("LOOPCRAFT_MEMORY", str(tmp_path / "mem"))
-    bad = tmp_path / "bad.yaml"
-    bad.write_text("sources: [unclosed\n", encoding="utf-8")
+    (source / "config").mkdir(parents=True)
+    (source / "config" / "bad.yaml").write_text("sources: [unclosed\n", encoding="utf-8")
 
-    rc = arxiv_cli.main(["--json", "run", "--config", str(bad)])
+    rc = arxiv_cli.main(["--json", "run", "--config", "config/bad.yaml"])
     payload = json.loads(capsys.readouterr().out)
     assert rc == 2
     assert payload["command"] == "run"

@@ -16,11 +16,17 @@ writing and installing the rendered units lives in :mod:`loopcraft.deploy`.
 from __future__ import annotations
 
 import re
+import shlex
 from enum import StrEnum
 
 from pydantic import BaseModel, Field
 
 from loopcraft.config import LoopcraftConfig, StatePathError, SystemdScope, is_state_path
+
+#: Argument characters safe to render unquoted in a systemd ``ExecStart=`` line.
+#: Anything else triggers double-quoting so the argv survives systemd's own
+#: command-line parsing (spaces, shell-sensitive characters, etc.).
+_EXEC_SAFE_RE = re.compile(r"^[A-Za-z0-9_@%+=:,./-]+$")
 from loopcraft.manifest import CadenceType, LoopManifest
 
 #: Inclusive value bounds for each cron time/date field, used to reject
@@ -229,7 +235,7 @@ def unit_name(config: LoopcraftConfig, loop_id: str, kind: UnitKind) -> str:
 
 
 def _render_service(
-    config: LoopcraftConfig, manifest: LoopManifest, loopctl_command: str
+    config: LoopcraftConfig, manifest: LoopManifest, loopctl_command: list[str]
 ) -> RenderedUnit:
     """Render the ``.service`` unit that executes one loop headless.
 
@@ -240,9 +246,9 @@ def _render_service(
     host's out-of-tree secrets file is referenced (never inlined) when set.
 
     Args:
-        loopctl_command: The command prefix for ``ExecStart`` (before
-            ``run <loop>``). Callers pass a resolved, absolute command so a
-            scheduled service does not depend on systemd's PATH.
+        loopctl_command: The resolved argv prefix for ``ExecStart`` (before
+            ``run <loop>``). Callers pass a resolved, absolute, executable
+            command so a scheduled service does not depend on systemd's PATH.
     """
     scheduler = config.scheduler
     lines = [
@@ -261,17 +267,37 @@ def _render_service(
         f"Environment=LOOPCRAFT_SOURCE={config.source_path}",
         f"Environment=LOOPCRAFT_MEMORY={config.memory_path}",
     ]
-    if scheduler.environment_file:
-        lines.append(f"EnvironmentFile={scheduler.environment_file}")
+    env_file = config.rendered_environment_file
+    if env_file:
+        lines.append(f"EnvironmentFile={env_file}")
     if scheduler.scope == SystemdScope.SYSTEM and scheduler.user:
         lines.append(f"User={scheduler.user}")
-    lines.append(f"ExecStart={loopctl_command} run {manifest.id}")
+    lines.append(f"ExecStart={render_exec_start([*loopctl_command, 'run', manifest.id])}")
     lines.append("")
     return RenderedUnit(
         kind=UnitKind.SERVICE,
         filename=unit_name(config, manifest.id, UnitKind.SERVICE),
         content="\n".join(lines),
     )
+
+
+def _exec_quote(arg: str) -> str:
+    """Quote one ``ExecStart=`` argument for systemd's command-line parser.
+
+    systemd double-quotes support ``\\`` and ``"`` escapes; a simple argument is
+    left bare. This keeps a multi-word ``loopctl_bin`` (e.g. ``uv run loopctl``)
+    or a path/argument with spaces or shell-sensitive characters from being
+    mis-split into the wrong argv.
+    """
+    if arg and _EXEC_SAFE_RE.fullmatch(arg):
+        return arg
+    escaped = arg.replace("\\", "\\\\").replace('"', '\\"')
+    return f'"{escaped}"'
+
+
+def render_exec_start(argv: list[str]) -> str:
+    """Render a full ``ExecStart=`` value from an argv, quoted for systemd."""
+    return " ".join(_exec_quote(arg) for arg in argv)
 
 
 def install_target(scope: SystemdScope) -> str:
@@ -360,17 +386,17 @@ def _watched_inputs(config: LoopcraftConfig, manifest: LoopManifest) -> list[str
 
 
 def render_loop_units(
-    config: LoopcraftConfig, manifest: LoopManifest, *, loopctl_command: str | None = None
+    config: LoopcraftConfig, manifest: LoopManifest, *, loopctl_command: list[str] | None = None
 ) -> LoopUnits:
     """Render every systemd unit for one loop from its cadence.
 
     Args:
         config: Resolved control-plane config (supplies host/scheduler settings).
         manifest: The loop manifest to render.
-        loopctl_command: Resolved command prefix for the service ``ExecStart``.
-            Defaults to the raw ``scheduler.loopctl_bin``; the deploy planner
-            passes an absolute-resolved command so a scheduled service does not
-            depend on systemd's PATH.
+        loopctl_command: Resolved argv prefix for the service ``ExecStart``.
+            Defaults to ``shlex.split(scheduler.loopctl_bin)``; the deploy planner
+            passes an absolute-resolved, executable-checked argv so a scheduled
+            service does not depend on systemd's PATH.
 
     Returns:
         The rendered service plus its trigger unit and a schedule summary.
@@ -380,7 +406,7 @@ def render_loop_units(
             (missing cron expression, unsupported cron construct, no watchable
             input for on-artifact, or the not-yet-supported ``event`` cadence).
     """
-    command = loopctl_command or config.scheduler.loopctl_bin
+    command = loopctl_command or shlex.split(config.scheduler.loopctl_bin)
     service = _render_service(config, manifest, command)
     cadence = manifest.cadence
 

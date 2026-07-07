@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from loopcraft import deploy
-from loopcraft.config import LoopcraftConfig, SchedulerConfig
+from loopcraft.config import LoopcraftConfig, SchedulerConfig, SystemdScope
 from loopcraft.manifest import load_all
 from loopcraft.runners.base import PreflightReport
 
@@ -162,6 +162,26 @@ def test_write_units_writes_all_files(tmp_path: Path) -> None:
     assert all(p.exists() for p in written)
 
 
+def test_write_units_refuses_escaping_filename(tmp_path: Path) -> None:
+    """write_units's defense-in-depth rejects a non-plain unit filename (finding 5)."""
+    import pytest
+
+    from loopcraft.scheduler import LoopUnits, RenderedUnit, UnitKind
+
+    plan = deploy.DeploymentPlan(
+        loops_dir="x",
+        units=[
+            LoopUnits(
+                loop="demo",
+                trigger="t",
+                units=[RenderedUnit(kind=UnitKind.SERVICE, filename="../escape.service", content="x")],
+            )
+        ],
+    )
+    with pytest.raises(ValueError, match="unsafe unit filename"):
+        deploy.write_units(plan, tmp_path / "out")
+
+
 def test_install_units_requires_systemctl(monkeypatch, tmp_path: Path) -> None:
     """Install fails cleanly (no raise) when systemctl is not on PATH."""
     config = _source(tmp_path, _CRON_MANIFEST)
@@ -282,7 +302,7 @@ def test_resolve_loopctl_command_absolute(tmp_path: Path) -> None:
         scheduler=SchedulerConfig(loopctl_bin=binary),
     )
     command, problem = deploy.resolve_loopctl_command(config)
-    assert command == binary
+    assert command == [binary]
     assert problem is None
 
 
@@ -412,6 +432,147 @@ def test_scheduled_preflight_tool_found_on_configured_path(monkeypatch, tmp_path
     monkeypatch.setattr(deploy, "get_runner", lambda vendor: _CapabilityRunner())
     plan = deploy.plan_deployment(config, run_preflight=True)
     assert not any("mytool" in p for p in plan.preflight_problems)
+
+
+# --- path-boundary hardening (review 05) -------------------------------------
+
+
+def test_resolve_loopctl_command_rejects_non_executable(tmp_path: Path) -> None:
+    """An absolute but non-executable loopctl_bin is rejected (finding 1)."""
+    binary = tmp_path / "not-exec"
+    binary.write_text("#!/bin/sh\n", encoding="utf-8")
+    binary.chmod(0o644)
+    config = LoopcraftConfig(
+        source_path=tmp_path / "src",
+        memory_path=tmp_path / "mem",
+        scheduler=SchedulerConfig(loopctl_bin=str(binary)),
+    )
+    command, problem = deploy.resolve_loopctl_command(config)
+    assert command is None
+    assert "not an executable file" in problem
+
+
+def test_resolve_loopctl_command_rejects_directory(tmp_path: Path) -> None:
+    """An absolute loopctl_bin pointing at a directory is rejected (finding 1)."""
+    directory = tmp_path / "dir"
+    directory.mkdir()
+    config = LoopcraftConfig(
+        source_path=tmp_path / "src",
+        memory_path=tmp_path / "mem",
+        scheduler=SchedulerConfig(loopctl_bin=str(directory)),
+    )
+    command, problem = deploy.resolve_loopctl_command(config)
+    assert command is None
+    assert "not an executable file" in problem
+
+
+def test_resolve_loopctl_bare_uses_scheduled_path(monkeypatch, tmp_path: Path) -> None:
+    """A bare loopctl_bin only on the operator PATH does not resolve (finding 7)."""
+    bindir = tmp_path / "opbin"
+    bindir.mkdir()
+    binary = bindir / "loopctl"
+    binary.write_text("#!/bin/sh\n", encoding="utf-8")
+    binary.chmod(0o755)
+    monkeypatch.setenv("PATH", str(bindir))  # operator PATH only
+    config = LoopcraftConfig(
+        source_path=tmp_path / "src",
+        memory_path=tmp_path / "mem",
+        scheduler=SchedulerConfig(loopctl_bin="loopctl"),  # no scheduler.path
+    )
+    command, problem = deploy.resolve_loopctl_command(config)
+    assert command is None
+    assert "scheduled PATH" in problem
+    # On the scheduled PATH it resolves.
+    config2 = config.model_copy(
+        update={"scheduler": SchedulerConfig(loopctl_bin="loopctl", path=str(bindir))}
+    )
+    command2, problem2 = deploy.resolve_loopctl_command(config2)
+    assert command2 == [str(binary)]
+    assert problem2 is None
+
+
+def test_plan_flags_bad_unit_prefix(tmp_path: Path) -> None:
+    """A bad unit_prefix makes the plan non-renderable (finding 5)."""
+    config = _source(
+        tmp_path, _CRON_MANIFEST, scheduler=SchedulerConfig(loopctl_bin=_abs_loopctl(tmp_path), unit_prefix="../x-")
+    )
+    plan = deploy.plan_deployment(config, run_preflight=False)
+    assert not plan.renderable
+    assert any("unit_prefix" in p for p in plan.render_problems)
+
+
+def test_environment_file_directory_is_problem_not_crash(tmp_path: Path) -> None:
+    """A directory environment_file is a structured problem, never a crash (finding 2)."""
+    env_dir = tmp_path / "envdir"
+    env_dir.mkdir()
+    config = _source(
+        tmp_path,
+        "id: demo\nname: Demo\ncadence: {type: cron, at: '0 9 * * *'}\n"
+        "depends_on: {env: [DEMO_TOKEN]}\nlogic: {skill: skills/demo/SKILL.md}\n",
+        scheduler=SchedulerConfig(loopctl_bin=_abs_loopctl(tmp_path), environment_file=str(env_dir)),
+    )
+    plan = deploy.plan_deployment(config, run_preflight=False)
+    assert any("not a regular file" in p for p in plan.env_problems)
+
+
+def test_environment_file_relative_is_rejected(tmp_path: Path) -> None:
+    """A relative environment_file is rejected (finding 3)."""
+    config = _source(
+        tmp_path,
+        _CRON_MANIFEST,
+        scheduler=SchedulerConfig(loopctl_bin=_abs_loopctl(tmp_path), environment_file="secrets.env"),
+    )
+    _keys, problems = deploy.environment_file_health(config)
+    assert any("must be an absolute path" in p for p in problems)
+
+
+def test_environment_file_in_tree_symlink_rejected(tmp_path: Path) -> None:
+    """An in-tree env_file symlink to an outside secret is rejected (finding 8)."""
+    outside = tmp_path / "real-secrets.env"
+    outside.write_text("DEMO_TOKEN=x\n", encoding="utf-8")
+    config = _source(tmp_path, _CRON_MANIFEST, scheduler=SchedulerConfig(loopctl_bin=_abs_loopctl(tmp_path)))
+    stub = config.memory_path / "secrets.env"
+    stub.parent.mkdir(parents=True, exist_ok=True)
+    stub.symlink_to(outside)
+    config = config.model_copy(
+        update={"scheduler": SchedulerConfig(loopctl_bin=_abs_loopctl(tmp_path), environment_file=str(stub))}
+    )
+    _keys, problems = deploy.environment_file_health(config)
+    assert any("outside the memory tree" in p for p in problems)
+    assert any("must not be a symlink" in p for p in problems)
+
+
+def test_systemd_unit_dir_honors_xdg(monkeypatch, tmp_path: Path) -> None:
+    """User-scope unit dir follows XDG_CONFIG_HOME (finding 9)."""
+    xdg = tmp_path / "xdg"
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(xdg))
+    config = LoopcraftConfig(
+        source_path=tmp_path / "src",
+        memory_path=tmp_path / "mem",
+        scheduler=SchedulerConfig(scope=SystemdScope.USER),
+    )
+    assert deploy.systemd_unit_dir(config) == xdg / "systemd" / "user"
+    monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    assert deploy.systemd_unit_dir(config) == tmp_path / ".config" / "systemd" / "user"
+
+
+def test_install_refuses_symlinked_unit(monkeypatch, tmp_path: Path) -> None:
+    """Install refuses to write over a symlinked unit and rolls back (finding 12)."""
+    config = _source(tmp_path, _CRON_MANIFEST)
+    plan = deploy.plan_deployment(config, run_preflight=False)
+    unit_dir = tmp_path / "systemd"
+    unit_dir.mkdir()
+    outside = tmp_path / "outside.service"
+    outside.write_text("HIJACK\n", encoding="utf-8")
+    (unit_dir / "loop-demo.service").symlink_to(outside)
+    _fake_systemctl(monkeypatch, unit_dir)
+    result = deploy.install_units(config, plan)
+    assert not result.ok
+    assert result.rolled_back
+    assert any("symlink" in p for p in result.problems)
+    # The symlink target is untouched.
+    assert outside.read_text(encoding="utf-8") == "HIJACK\n"
 
 
 # --- live probes execute on the scheduled PATH (review 04, finding 1) ---------

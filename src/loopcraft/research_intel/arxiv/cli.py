@@ -6,7 +6,6 @@ import argparse
 import json
 import sys
 from datetime import UTC, datetime
-from pathlib import Path
 
 from loopcraft.cli_output import emit, fail as _fail
 from loopcraft.config import LoopcraftConfig, resolve_run_stamps
@@ -54,7 +53,9 @@ def run(
     """
     loopcraft = LoopcraftConfig.load()
     try:
-        config = ArxivIntelConfig.load(Path(config_path))
+        # The content config (and any .local override) must stay under the source
+        # tree, matching control-plane preflight/staging.
+        config = ArxivIntelConfig.load(loopcraft.resolve_content_config(config_path))
     except Exception as exc:  # noqa: BLE001 — CLI boundary: emit envelope, not traceback
         return _fail("run", 2, f"invalid or unreadable content config {config_path}: {exc}", as_json=as_json)
     # Validate inherited control-plane protocol values before any work: a

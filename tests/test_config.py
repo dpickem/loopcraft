@@ -96,3 +96,93 @@ def test_which_direct_uses_process_path(monkeypatch, tmp_path: Path) -> None:
     _make_executable(tool_dir, "mytool")
     monkeypatch.setenv("PATH", str(tool_dir))
     assert _config(tmp_path).which("mytool") == str(tool_dir / "mytool")
+
+
+# --- scheduler config validation (review 05) ---------------------------------
+
+
+def test_scheduler_problems_flag_bad_unit_prefix(tmp_path: Path) -> None:
+    """A unit_prefix with path separators/traversal is rejected (finding 5)."""
+    problems = SchedulerConfig(unit_prefix="../../escape-").problems()
+    assert any("unit_prefix" in p for p in problems)
+
+
+def test_scheduler_problems_flag_relative_path_entry(tmp_path: Path) -> None:
+    """A relative or empty scheduler.path entry is rejected (finding 4)."""
+    assert any("not an absolute" in p for p in SchedulerConfig(path="tools").problems())
+    assert any("empty component" in p for p in SchedulerConfig(path="/usr/bin:").problems())
+    assert SchedulerConfig(path="/usr/bin:/bin").problems() == []
+
+
+def test_scheduled_path_expands_user(monkeypatch, tmp_path: Path) -> None:
+    """scheduled_path expands ~ per component for both which() and rendering."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    config = _config(tmp_path, SchedulerConfig(path="~/bin:/usr/bin"))
+    assert config.scheduled_path == f"{tmp_path}/bin:/usr/bin"
+
+
+def test_probe_env_excludes_operator_only_vars(monkeypatch, tmp_path: Path) -> None:
+    """Scheduled probe_env starts from a minimal baseline (finding 13)."""
+    monkeypatch.setenv("HTTPS_PROXY", "http://evil:8080")
+    monkeypatch.setenv("HOME", str(tmp_path))
+    env = _config(tmp_path).for_scheduled_preflight().probe_env()
+    assert env is not None
+    assert "HTTPS_PROXY" not in env
+    assert env["PATH"] == _config(tmp_path).scheduled_path
+    assert env["HOME"] == str(tmp_path)
+
+
+# --- content-config containment (review 05, findings 16/17) ------------------
+
+
+def _source_config(tmp_path: Path) -> LoopcraftConfig:
+    """A config whose source tree has a config/ directory."""
+    source = tmp_path / "src"
+    (source / "config").mkdir(parents=True)
+    return LoopcraftConfig(source_path=source, memory_path=tmp_path / "mem")
+
+
+def test_resolve_content_config_rejects_absolute(tmp_path: Path) -> None:
+    """An absolute --config path is rejected (finding 16)."""
+    import pytest
+
+    from loopcraft.config import SourcePathError
+
+    config = _source_config(tmp_path)
+    with pytest.raises(SourcePathError):
+        config.resolve_content_config("/etc/passwd")
+
+
+def test_resolve_content_config_rejects_traversal(tmp_path: Path) -> None:
+    """A traversing --config path is rejected (finding 16)."""
+    import pytest
+
+    from loopcraft.config import SourcePathError
+
+    config = _source_config(tmp_path)
+    with pytest.raises(SourcePathError):
+        config.resolve_content_config("../../etc/passwd")
+
+
+def test_resolve_content_config_prefers_local(tmp_path: Path) -> None:
+    """A .local sibling under source is preferred and returned."""
+    config = _source_config(tmp_path)
+    (config.source_path / "config" / "c.yaml").write_text("a: 1\n", encoding="utf-8")
+    local = config.source_path / "config" / "c.local.yaml"
+    local.write_text("a: 2\n", encoding="utf-8")
+    assert config.resolve_content_config("config/c.yaml") == local
+
+
+def test_resolve_content_config_rejects_local_symlink_escape(tmp_path: Path) -> None:
+    """A .local override symlinked outside the source tree is rejected (finding 17)."""
+    import pytest
+
+    from loopcraft.config import SourcePathError
+
+    config = _source_config(tmp_path)
+    (config.source_path / "config" / "c.yaml").write_text("a: 1\n", encoding="utf-8")
+    outside = tmp_path / "outside.yaml"
+    outside.write_text("a: 9\n", encoding="utf-8")
+    (config.source_path / "config" / "c.local.yaml").symlink_to(outside)
+    with pytest.raises(SourcePathError):
+        config.resolve_content_config("config/c.yaml")

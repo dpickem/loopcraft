@@ -9,6 +9,7 @@ addition to human-readable text output.
 from __future__ import annotations
 
 import argparse
+import os
 import shutil
 import subprocess
 import sys
@@ -38,6 +39,7 @@ from loopcraft.deploy import (
 )
 from loopcraft.env import load_dotenv
 from loopcraft.manifest import CadenceType, LoopManifest, ManifestError, find_manifest, load_all
+from loopcraft.paths import assert_under
 from loopcraft.runners import RunContext, get_runner
 from loopcraft.runners.base import PreflightReport, RunStatus
 from loopcraft.runners.capabilities import (
@@ -53,6 +55,7 @@ from loopcraft.worktree import (
     prune_loop_worktrees,
     stage_loop_assets,
     worktree_dir,
+    worktrees_root,
 )
 
 
@@ -104,6 +107,11 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Render diagnostic units even when preflight/env checks fail (default: don't write).",
     )
+    p_apply.add_argument(
+        "--allow-source-output",
+        action="store_true",
+        help="Permit --out to point inside the source tree (default: refused).",
+    )
 
     sub.add_parser("list", help="List known loops.")
     sub.add_parser("fleet", help="Show all loops in a formatted table (schedule, last run, install state).")
@@ -120,8 +128,10 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     args = parser.parse_args(argv)
-    load_dotenv()
+    # Resolve config first so the source tree's own .env is loaded (not a random
+    # .env in the invocation cwd), keeping credentials tied to LOOPCRAFT_SOURCE.
     config = LoopcraftConfig.load(args.source)
+    load_dotenv(config.source_path / ".env")
     as_json = args.json
 
     if args.command == "run":
@@ -141,6 +151,7 @@ def main(argv: list[str] | None = None) -> int:
             install=args.install,
             skip_preflight=args.skip_preflight,
             render_invalid=args.render_invalid,
+            allow_source_output=args.allow_source_output,
             as_json=as_json,
         )
     if args.command == "list":
@@ -689,6 +700,7 @@ def _cmd_apply(
     install: bool,
     skip_preflight: bool,
     render_invalid: bool,
+    allow_source_output: bool,
     as_json: bool,
 ) -> int:
     """Validate the fleet, render systemd units, and optionally install them.
@@ -705,6 +717,20 @@ def _cmd_apply(
     target = Path(loops_dir) if loops_dir else None
     plan = plan_deployment(config, loops_dir=target, run_preflight=not skip_preflight)
     out_dir = Path(out) if out else config.systemd_stage_dir
+
+    # Generated units are build/deploy artifacts; refuse to write them into the
+    # source tree unless explicitly allowed (source/memory separation).
+    if out and not allow_source_output:
+        problem = _source_output_problem(config, out_dir)
+        if problem:
+            return _emit(
+                "apply",
+                as_json=as_json,
+                ok=False,
+                rc=ExitCode.INVALID,
+                data={"loops_dir": plan.loops_dir, "error": problem},
+                lines=[f"error: {problem}"],
+            )
 
     planned_units = [unit.filename for lu in plan.units for unit in lu.units]
     data: dict[str, Any] = {
@@ -764,6 +790,31 @@ def _cmd_apply(
     rc = _apply_emit(plan, data, lines, as_json=as_json)
     _print_apply_problems(plan, as_json=as_json)
     return rc
+
+
+def _source_output_problem(config: LoopcraftConfig, out_dir: Path) -> str | None:
+    """Return a problem if ``out_dir`` would write generated units into source.
+
+    Uses lexical and resolved containment so neither a direct source-tree path
+    nor a symlink into it slips through.
+    """
+    source = config.source_path
+    try:
+        Path(os.path.normpath(out_dir.expanduser())).relative_to(os.path.normpath(source))
+        lexical_under = True
+    except ValueError:
+        lexical_under = False
+    resolved_under = True
+    try:
+        assert_under(source, out_dir, label="apply --out")
+    except ValueError:
+        resolved_under = False
+    if lexical_under or resolved_under:
+        return (
+            f"--out '{out_dir}' is inside the source tree ({source}); generated "
+            "units belong under the memory tree (use --allow-source-output to override)"
+        )
+    return None
 
 
 def _env_file_guidance(config: LoopcraftConfig) -> list[str]:
@@ -1026,6 +1077,24 @@ def _cmd_logs(config: LoopcraftConfig, loop_id: str, *, as_json: bool) -> int:
             rc=ExitCode.FAILURE,
             data={"loop": loop_id, "run_id": latest.run_id, "error": "no log on disk"},
             lines=[f"run {latest.run_id} has no log on disk"],
+        )
+    # Run records are hand-editable ledger files, so `logs` must not become an
+    # arbitrary file reader: the log must live under the loopcraft log root.
+    log_root = worktrees_root(config)
+    try:
+        assert_under(log_root, Path(latest.log_path), label="run log")
+    except ValueError:
+        return _emit(
+            "logs",
+            as_json=as_json,
+            ok=False,
+            rc=ExitCode.INVALID,
+            data={
+                "loop": loop_id,
+                "run_id": latest.run_id,
+                "error": f"log path outside allowed root ({log_root}): {latest.log_path}",
+            },
+            lines=[f"refusing to read log outside {log_root}: {latest.log_path}"],
         )
     log_text = Path(latest.log_path).read_text(encoding="utf-8")
     return _emit(

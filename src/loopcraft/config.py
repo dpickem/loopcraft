@@ -20,6 +20,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from loopcraft.env import parse_env_file
 from loopcraft.paths import assert_under, safe_relpath
+from loopcraft.settings import local_override_path
 
 # --- globals -------------------------------------------------------------------
 
@@ -60,6 +61,18 @@ SYSTEMD_STAGE_SUBPATH = ("var", "systemd")
 #: ``[scheduler].path`` overrides it), and the rendered unit sets exactly the
 #: same value, so ``apply`` validates the PATH the service actually runs with.
 SYSTEMD_DEFAULT_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
+#: Safe systemd unit filename prefix: letters, digits, ``_``, ``.``, ``-`` only.
+#: A prefix with path separators, ``..``, whitespace, or glob metacharacters
+#: could make a rendered unit filename escape the staging / unit directory.
+_UNIT_PREFIX_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
+
+#: Operator environment variables a *scheduled* live probe is allowed to inherit.
+#: A systemd service only sees a minimal base env plus its own Environment=/
+#: EnvironmentFile= lines, so a scheduled probe starts from this allowlist rather
+#: than the operator's full environment (proxies, cert paths, etc. must be in the
+#: EnvironmentFile to affect a probe, matching what the deployed service sees).
+_SCHEDULED_ENV_ALLOWLIST = ("HOME", "USER", "LOGNAME", "LANG", "LC_ALL", "TERM")
 
 #: User agent sent by loopcraft HTTP clients (arXiv, X).
 HTTP_USER_AGENT = "loopcraft/0.1"
@@ -181,6 +194,31 @@ def _load_project_dependencies(source: Path, table: str) -> dict[str, str]:
     if isinstance(declared, dict):
         return {str(k): str(v) for k, v in declared.items()}
     return {}
+
+
+def _abs_path_list_problems(value: str, *, field: str) -> list[str]:
+    """Validate a ``PATH``-style string as absolute, non-empty components.
+
+    A relative or empty (``""`` = current directory) component resolves
+    differently depending on the process cwd, so ``apply`` (run anywhere) and the
+    systemd service (run from ``WorkingDirectory``) would search different
+    directories. Requiring absolute components keeps the two aligned.
+
+    Returns:
+        A list of problem strings (empty when every component is absolute and
+        free of ``..``). ``~`` is expanded before the checks.
+    """
+    problems: list[str] = []
+    for entry in value.split(os.pathsep):
+        if entry == "":
+            problems.append(f"{field} has an empty component (means current dir): {value!r}")
+            continue
+        expanded = os.path.expanduser(entry)
+        if not os.path.isabs(expanded):
+            problems.append(f"{field} entry is not an absolute directory: {entry!r}")
+        elif ".." in Path(expanded).parts:
+            problems.append(f"{field} entry contains '..': {entry!r}")
+    return problems
 
 
 # --- public functions ---------------------------------------------------------------
@@ -317,6 +355,25 @@ class SchedulerConfig(BaseModel):
     environment_file: str | None = None
     path: str | None = None
 
+    def problems(self) -> list[str]:
+        """Return structural (root-independent) scheduler config problems.
+
+        Covers the render-affecting fields — ``unit_prefix`` (must be a safe
+        filename prefix so a rendered unit cannot escape its directory) and
+        ``path`` (must be absolute components). ``environment_file`` placement is
+        validated separately in :func:`loopcraft.deploy.environment_file_health`
+        because it needs the source/memory roots.
+        """
+        out: list[str] = []
+        if not _UNIT_PREFIX_RE.fullmatch(self.unit_prefix):
+            out.append(
+                "scheduler.unit_prefix must be a safe filename prefix "
+                f"(letters, digits, '_', '.', '-'): {self.unit_prefix!r}"
+            )
+        if self.path is not None:
+            out += _abs_path_list_problems(self.path, field="scheduler.path")
+        return out
+
 
 class LoopcraftConfig(BaseModel):
     """Resolved control-plane configuration.
@@ -432,6 +489,25 @@ class LoopcraftConfig(BaseModel):
             raise SourcePathError(str(exc)) from exc
         return resolved
 
+    def resolve_content_config(self, declared: str) -> Path:
+        """Resolve a content-config path to the contained effective file.
+
+        Validates ``declared`` as a source-relative path, prefers a gitignored
+        ``*.local.*`` sibling, and asserts the effective file (symlinks resolved)
+        stays under the source tree. This gives the direct research CLIs the same
+        source-boundary and ``.local`` containment the control-plane preflight and
+        worktree staging already enforce, so a ``--config`` (or its ``.local``
+        override) cannot read outside the source tree.
+
+        Raises:
+            SourcePathError: If ``declared`` is unsafe or the effective file
+                escapes the source tree.
+        """
+        public = self.resolve_source_path(declared)
+        effective = local_override_path(public)
+        self.assert_source_contained(effective, label="content config")
+        return effective
+
     def assert_source_contained(self, candidate: Path, *, label: str = "source asset") -> None:
         """Guard that ``candidate`` (symlinks resolved) stays under the source root.
 
@@ -487,12 +563,25 @@ class LoopcraftConfig(BaseModel):
     def scheduled_path(self) -> str:
         """PATH a scheduled systemd service will use for binary lookup.
 
-        ``scheduler.path`` when set, else systemd's default service PATH. The
-        rendered unit sets exactly this as ``Environment=PATH=`` and scheduled
-        preflight resolves runtime/tool binaries against it, so ``apply``
-        validates the same PATH the service runs with.
+        ``scheduler.path`` when set, else systemd's default service PATH, with
+        ``~`` expanded per component. The rendered unit sets exactly this as
+        ``Environment=PATH=`` and scheduled preflight resolves runtime/tool
+        binaries against it, so ``apply`` validates the same PATH the service
+        runs with.
         """
-        return self.scheduler.path or SYSTEMD_DEFAULT_PATH
+        raw = self.scheduler.path or SYSTEMD_DEFAULT_PATH
+        return os.pathsep.join(os.path.expanduser(entry) for entry in raw.split(os.pathsep))
+
+    @property
+    def rendered_environment_file(self) -> str | None:
+        """The ``EnvironmentFile=`` value to render (``~``-expanded absolute).
+
+        Returns None when no environment file is configured. Rendering the
+        expanded path (not the raw string) keeps the unit's ``EnvironmentFile=``
+        aligned with what ``apply`` validated.
+        """
+        env_file = self.scheduler.environment_file
+        return str(Path(env_file).expanduser()) if env_file else None
 
     def which(self, binary: str) -> str | None:
         """Resolve a binary on PATH, honoring scheduled vs direct mode.
@@ -510,17 +599,28 @@ class LoopcraftConfig(BaseModel):
         """Environment for a *live* capability probe subprocess (or None).
 
         Direct mode returns None (the probe inherits the operator process env).
-        Scheduled mode returns the operator env with ``PATH`` overridden to the
-        scheduled service PATH and the scheduled ``EnvironmentFile`` values
-        overlaid, so a live probe (e.g. ``nv-tools slack list-channels``) runs in
-        the same environment the deployed service will — matching the binary that
-        :meth:`which` validated.
+        Scheduled mode builds a **minimal** environment that mirrors what the
+        systemd service will see, rather than inheriting the operator's full
+        environment: a small base allowlist (``HOME``/``USER``/locale/...), the
+        scheduled ``PATH``, ``LOOPCRAFT_SOURCE``/``LOOPCRAFT_MEMORY``, and the
+        scheduled ``EnvironmentFile`` values. This prevents an operator-only
+        variable (e.g. ``HTTPS_PROXY``, ``SSL_CERT_FILE``) from making a probe
+        pass when the deployed service would not have it.
         """
         if not self.scheduled_env:
             return None
-        env = {**os.environ, "PATH": self.scheduled_path}
+        env = {
+            name: os.environ[name]
+            for name in _SCHEDULED_ENV_ALLOWLIST
+            if name in os.environ
+        }
+        env["PATH"] = self.scheduled_path
+        env["LOOPCRAFT_SOURCE"] = str(self.source_path)
+        env["LOOPCRAFT_MEMORY"] = str(self.memory_path)
         if self.scheduler.environment_file:
-            env.update(parse_env_file(Path(self.scheduler.environment_file).expanduser()))
+            path = Path(self.scheduler.environment_file).expanduser()
+            if path.is_file():
+                env.update(parse_env_file(path))
         return env
 
     @classmethod

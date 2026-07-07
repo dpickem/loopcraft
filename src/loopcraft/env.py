@@ -17,10 +17,11 @@ def parse_env_file(path: Path) -> dict[str, str]:
 
     Blank lines, comments, and lines without ``=`` are ignored; a single layer
     of matching surrounding quotes is stripped from each value. Returns an empty
-    dict when the file does not exist.
+    dict when the path is not a regular file (missing, a directory, etc.), so it
+    never raises for a misconfigured path.
     """
     result: dict[str, str] = {}
-    if not path.exists():
+    if not path.is_file():
         return result
     for line in path.read_text(encoding="utf-8").splitlines():
         stripped = line.strip()

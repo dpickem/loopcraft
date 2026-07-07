@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from loopcraft.cli_output import emit, fail as _fail
-from loopcraft.config import LoopcraftConfig, resolve_run_stamps
+from loopcraft.config import LoopcraftConfig, is_state_path, resolve_run_stamps
 from loopcraft.env import load_dotenv
 from loopcraft.research_intel.x.client import XApiClient, XApiError
 from loopcraft.research_intel.x.config import IntelConfig, OutputPaths, XApiTokens
@@ -51,14 +51,31 @@ class XIntelRunner:
     """
 
     def __init__(self, config_path: str) -> None:
-        """Resolve dotenv, loopcraft config, content config, tokens, and store."""
-        load_dotenv()
+        """Resolve loopcraft config, dotenv, content config, tokens, and store."""
+        # Resolve config first, then load the source tree's own .env (not a
+        # random .env in the invocation cwd) before reading tokens from the env.
         self.loopcraft = LoopcraftConfig.load()
-        self.config = IntelConfig.load(Path(config_path))
+        load_dotenv(self.loopcraft.source_path / ".env")
+        # The content config (and any .local override) must stay under the source
+        # tree, matching control-plane preflight/staging.
+        self.config = IntelConfig.load(self.loopcraft.resolve_content_config(config_path))
         self.tokens = XApiTokens.from_env()
         # Output locations are fixed in code (mirroring the manifest contract),
         # never read from the content config.
         self.store = IntelStore(self.loopcraft, OutputPaths())
+
+    def _resolved_snapshot(self) -> Path | None:
+        """Resolve the configured following snapshot under the source tree.
+
+        The snapshot is a declared source-relative asset; resolving it through
+        the config (instead of ``Path(snapshot)`` relative to cwd) keeps direct
+        and staged runs reading the same file and matches what preflight
+        validated.
+        """
+        snapshot = self.config.sources.following_snapshot
+        if not snapshot:
+            return None
+        return self.loopcraft.resolve_source_path(snapshot.as_posix())
 
     def _client(self, *, require_user_context: bool = False) -> XApiClient:
         """Return an X API client, raising if no suitable token is set.
@@ -142,9 +159,19 @@ class XIntelRunner:
         except MissingTokenError as exc:
             return _fail("discover-follows", 2, str(exc), as_json=as_json)
 
-        digest_path = Path(digest_json) if digest_json else self.store.latest_digest_json()
+        # A caller-supplied digest path must be a state/... ledger path so this
+        # command cannot be pointed at an arbitrary file on disk.
+        try:
+            if digest_json is not None:
+                if not is_state_path(digest_json):
+                    raise ValueError(f"--digest-json must be a 'state/...' ledger path: {digest_json!r}")
+                digest_path = self.loopcraft.resolve_state_path(digest_json)
+            else:
+                digest_path = self.store.latest_digest_json()
+        except (ValueError, FileNotFoundError) as exc:
+            return _fail("discover-follows", 2, str(exc), as_json=as_json)
         digest = json.loads(digest_path.read_text(encoding="utf-8"))
-        followed = followed_handles_from_snapshot(self.config.sources.following_snapshot)
+        followed = followed_handles_from_snapshot(self._resolved_snapshot())
         initial = discover_candidates(digest, self.config, followed_handles=followed, top_n=top * 3)
 
         try:
@@ -173,12 +200,15 @@ class XIntelRunner:
             indent=2,
             ensure_ascii=False,
         )
-        markdown_path, json_path = self.store.write_follow_candidates(
-            markdown=markdown,
-            payload=payload,
-            date_stamp=generated_at.strftime("%Y-%m-%d"),
-            output_dir=output_dir,
-        )
+        try:
+            markdown_path, json_path = self.store.write_follow_candidates(
+                markdown=markdown,
+                payload=payload,
+                date_stamp=generated_at.strftime("%Y-%m-%d"),
+                output_dir=output_dir,
+            )
+        except ValueError as exc:
+            return _fail("discover-follows", 2, str(exc), as_json=as_json)
         data = {
             "markdown_path": str(markdown_path),
             "json_path": str(json_path),
@@ -263,11 +293,11 @@ class XIntelRunner:
         becomes a named source error through the per-source isolation, never a
         silently empty (yet "successful") source.
         """
-        snapshot = self.config.sources.following_snapshot
+        snapshot = self._resolved_snapshot()
         if not snapshot:
             return []
         try:
-            handles = load_following_snapshot_handles(Path(snapshot))
+            handles = load_following_snapshot_handles(snapshot)
         except ValueError as exc:
             raise XApiError(f"snapshot source: {exc}") from exc
         return self._fetch_author_batches(
@@ -312,7 +342,14 @@ def snapshot_following(
     as_json: bool = False,
 ) -> int:
     """Fetch followed accounts and write a private snapshot for focused searches."""
-    load_dotenv()
+    loopcraft = LoopcraftConfig.load()
+    load_dotenv(loopcraft.source_path / ".env")
+    # The snapshot is private source config; require a safe source-relative path
+    # so it cannot be written outside the source tree.
+    try:
+        output = loopcraft.resolve_source_path(output_path)
+    except ValueError as exc:
+        return _fail("snapshot-following", 2, str(exc), as_json=as_json)
     tokens = XApiTokens.from_env()
     token = tokens.token(require_user_context=not (user_id or username))
     if not token:
@@ -336,7 +373,6 @@ def snapshot_following(
     except XApiError as exc:
         return _fail("snapshot-following", 1, str(exc), as_json=as_json)
 
-    output = Path(output_path)
     output.parent.mkdir(parents=True, exist_ok=True)
     snapshot = {
         "generated_at": datetime.now(UTC).isoformat(),
