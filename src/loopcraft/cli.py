@@ -753,7 +753,11 @@ def _cmd_apply(
     if dry_run:
         data["planned_units"] = planned_units
         lines.append(f"dry run: {len(planned_units)} unit(s) would be written (nothing written)")
-        return _apply_emit(plan, data, lines, as_json=as_json)
+        rc = _apply_emit(plan, data, lines, as_json=as_json)
+        # Like every other failing path, surface *why* a dry run is nonzero
+        # (e.g. an unresolvable loopctl_bin) instead of only the unit count.
+        _print_apply_problems(plan, as_json=as_json)
+        return rc
 
     if not plan.renderable:
         # Structural manifest or render problems: refuse to write partial units.

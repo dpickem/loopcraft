@@ -184,6 +184,27 @@ def test_auth_env_var_satisfied_by_environment_file(monkeypatch, tmp_path: Path,
 # --- apply -------------------------------------------------------------------
 
 
+def test_apply_dry_run_prints_problems_on_failure(monkeypatch, tmp_path: Path, capsys) -> None:
+    """A nonzero --dry-run explains why (render problems on stderr), not just the count."""
+    # Build a source with an unresolvable loopctl_bin (no .venv, not on PATH) so
+    # the plan is non-renderable. Do not use _demo_source, which stubs resolution.
+    source = tmp_path / "src"
+    (source / "loops").mkdir(parents=True)
+    (source / "skills" / "demo").mkdir(parents=True)
+    (source / "skills" / "demo" / "SKILL.md").write_text("body", encoding="utf-8")
+    (source / "loops" / "demo.yaml").write_text(_CRON_MANIFEST, encoding="utf-8")
+    (source / "loopcraft.toml").write_text(
+        '[scheduler]\nloopctl_bin = "definitely-not-a-real-loopctl-xyz"\n', encoding="utf-8"
+    )
+    monkeypatch.setenv("LOOPCRAFT_SOURCE", str(source))
+    monkeypatch.setenv("LOOPCRAFT_MEMORY", str(tmp_path / "mem"))
+
+    rc = cli.main(["apply", "--dry-run", "--skip-preflight"])
+    captured = capsys.readouterr()
+    assert rc == 1
+    assert "cannot be resolved" in captured.err
+
+
 def test_apply_dry_run_plans_without_writing(monkeypatch, tmp_path: Path, capsys) -> None:
     """apply --dry-run plans units and writes nothing."""
     monkeypatch.setattr(deploy, "get_runner", lambda vendor: _OkRunner())
