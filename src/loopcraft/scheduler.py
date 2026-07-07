@@ -80,6 +80,11 @@ _CRON_DOW_NAMES: dict[str, int] = {
 #: A single numeric cron token (a plain integer component of a field).
 _INT_RE = re.compile(r"^\d+$")
 
+#: First line of every rendered unit, marking it loopcraft-managed. ``loopctl
+#: remove`` only disables/deletes units carrying this marker, so it never touches
+#: a foreign unit that happens to match the ``loop-`` filename prefix.
+MANAGED_MARKER = "# Managed by loopcraft (created by `loopctl apply`; remove with `loopctl remove`)"
+
 
 class SchedulerError(ValueError):
     """Raised when a manifest's cadence cannot be rendered into systemd units."""
@@ -285,6 +290,7 @@ def _render_service(
     """
     scheduler = config.scheduler
     lines = [
+        MANAGED_MARKER,
         "[Unit]",
         f"Description=Loopcraft loop: {manifest.name} ({manifest.id})",
         "After=network-online.target",
@@ -359,6 +365,7 @@ def _render_timer(config: LoopcraftConfig, manifest: LoopManifest, oncalendar: s
     """Render the ``.timer`` unit for a cron-cadence loop."""
     service = unit_name(config, manifest.id, UnitKind.SERVICE)
     lines = [
+        MANAGED_MARKER,
         "[Unit]",
         f"Description=Loopcraft timer for {manifest.id}",
         "",
@@ -384,6 +391,7 @@ def _render_path(config: LoopcraftConfig, manifest: LoopManifest, watched: list[
     """Render the ``.path`` unit that wakes an on-artifact loop on input change."""
     service = unit_name(config, manifest.id, UnitKind.SERVICE)
     lines = [
+        MANAGED_MARKER,
         "[Unit]",
         f"Description=Loopcraft artifact trigger for {manifest.id}",
         "",

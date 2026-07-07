@@ -154,6 +154,15 @@ def test_service_renders_configured_path(tmp_path) -> None:
     assert "Environment=PATH=/opt/loopcraft/bin:/usr/bin" in service.content
 
 
+def test_rendered_units_carry_managed_marker(tmp_path) -> None:
+    """Every rendered unit starts with the loopcraft-managed marker (review 06)."""
+    from loopcraft.scheduler import MANAGED_MARKER
+
+    units = render_loop_units(_config(tmp_path), _cron_manifest())
+    for unit in units.units:
+        assert unit.content.startswith(MANAGED_MARKER)
+
+
 def test_render_service_uses_explicit_loopctl_command(tmp_path) -> None:
     """A resolved absolute command flows into ExecStart (finding 1)."""
     config = _config(tmp_path)

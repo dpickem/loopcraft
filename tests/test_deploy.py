@@ -485,11 +485,13 @@ def test_uninstall_removes_installed_and_staged(monkeypatch, tmp_path: Path) -> 
 
 def test_uninstall_without_systemctl_keeps_installed(monkeypatch, tmp_path: Path) -> None:
     """Without systemctl, installed units are left in place with a clear problem."""
+    from loopcraft.scheduler import MANAGED_MARKER
+
     config = _source(tmp_path, _CRON_MANIFEST)
     unit_dir = tmp_path / "systemd"
     unit_dir.mkdir()
-    (unit_dir / "loop-demo.service").write_text("x", encoding="utf-8")
-    (unit_dir / "loop-demo.timer").write_text("x", encoding="utf-8")
+    (unit_dir / "loop-demo.service").write_text(f"{MANAGED_MARKER}\n[Unit]\n", encoding="utf-8")
+    (unit_dir / "loop-demo.timer").write_text(f"{MANAGED_MARKER}\n[Timer]\n", encoding="utf-8")
     monkeypatch.setattr(deploy, "systemd_unit_dir", lambda cfg: unit_dir)
     monkeypatch.setattr(deploy.shutil, "which", lambda name: None)
 
@@ -498,6 +500,24 @@ def test_uninstall_without_systemctl_keeps_installed(monkeypatch, tmp_path: Path
     assert not result.ok
     assert any("systemctl not found" in p for p in result.problems)
     assert (unit_dir / "loop-demo.timer").exists()
+
+
+def test_remove_skips_foreign_unmanaged_units(monkeypatch, tmp_path: Path) -> None:
+    """A prefix-matching but non-loopcraft unit is skipped, never removed."""
+    config = _source(tmp_path, _CRON_MANIFEST)
+    stage_dir = config.systemd_stage_dir
+    stage_dir.mkdir(parents=True)
+    # A foreign unit that happens to match the loop- prefix but lacks the marker.
+    foreign = stage_dir / "loop-demo.service"
+    foreign.write_text("[Unit]\nDescription=someone else's unit\n", encoding="utf-8")
+
+    plan = deploy.plan_removal(config, ["demo"])
+    assert plan.staged == []
+    assert str(foreign) in plan.skipped
+
+    result = deploy.uninstall_units(config, ["demo"])
+    assert result.removed_staged == []
+    assert foreign.exists()  # left untouched
 
 
 def test_loop_unit_files_matches_only_the_loop(tmp_path: Path) -> None:

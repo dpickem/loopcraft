@@ -879,6 +879,7 @@ def _cmd_remove(
             "installed": plan.installed,
             "staged": plan.staged,
             "triggers": plan.triggers,
+            "skipped": plan.skipped,
         }
         lines = [
             f"would disable {len(plan.triggers)} trigger(s), "
@@ -886,23 +887,30 @@ def _cmd_remove(
             *[f"  disable: {name}" for name in plan.triggers],
             *[f"  rm installed: {p}" for p in plan.installed],
             *[f"  rm staged:    {p}" for p in plan.staged],
+            *[f"  skip (not loopcraft-managed): {p}" for p in plan.skipped],
         ]
         if plan.empty:
             lines = ["nothing to remove"]
+            lines += [f"  skip (not loopcraft-managed): {p}" for p in plan.skipped]
         return _emit("remove", as_json=as_json, ok=True, rc=ExitCode.OK, data=data, lines=lines)
 
     if plan.empty:
         return _emit(
             "remove", as_json=as_json, ok=True, rc=ExitCode.OK,
-            data={"removed": [], "removed_staged": [], "disabled": []},
-            lines=["nothing to remove"],
+            data={"removed": [], "removed_staged": [], "disabled": [], "skipped": plan.skipped},
+            lines=[
+                "nothing to remove",
+                *[f"  skip (not loopcraft-managed): {p}" for p in plan.skipped],
+            ],
         )
 
     result = uninstall_units(config, selectors)
     data = result.model_dump()
+    data["skipped"] = plan.skipped
     lines = [
         f"disabled {len(result.disabled)} trigger(s); "
         f"removed {len(result.removed)} installed + {len(result.removed_staged)} staged unit(s)",
+        *[f"  skip (not loopcraft-managed): {p}" for p in plan.skipped],
         *[f"  - {problem}" for problem in result.problems],
     ]
     rc = _emit(

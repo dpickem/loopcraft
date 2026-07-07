@@ -25,7 +25,13 @@ from loopcraft.env import parse_env_file
 from loopcraft.manifest import LoopManifest, load_all
 from loopcraft.paths import is_lexically_under
 from loopcraft.runners import get_runner
-from loopcraft.scheduler import LoopUnits, SchedulerError, UnitKind, render_loop_units
+from loopcraft.scheduler import (
+    MANAGED_MARKER,
+    LoopUnits,
+    SchedulerError,
+    UnitKind,
+    render_loop_units,
+)
 
 #: Systemd unit directory for system scope. User scope is resolved at install
 #: time from the XDG config location (see ``systemd_unit_dir``).
@@ -534,12 +540,33 @@ def loop_unit_files(directory: Path, prefix: str, selector: str) -> list[Path]:
     )
 
 
+def _is_managed_unit(path: Path) -> bool:
+    """Return whether ``path`` is a unit file loopcraft rendered (has the marker).
+
+    ``remove`` only deletes managed units, so a foreign unit that happens to match
+    the ``loop-`` filename prefix (e.g. from another setup) is never touched.
+    """
+    try:
+        return MANAGED_MARKER in path.read_text(encoding="utf-8")
+    except OSError:
+        return False
+
+
 class RemovalPlan(BaseModel):
-    """The units a ``remove`` would disable/delete, computed without side effects."""
+    """The units a ``remove`` would disable/delete, computed without side effects.
+
+    Attributes:
+        installed: Managed installed unit files (in the systemd unit dir).
+        staged: Managed staged unit files (in the memory-tree staging dir).
+        triggers: Managed installed timer/path unit names to ``disable --now``.
+        skipped: Prefix-matching files that are NOT loopcraft-managed and are
+            therefore left untouched (surfaced so the operator can see them).
+    """
 
     installed: list[str] = Field(default_factory=list)
     staged: list[str] = Field(default_factory=list)
     triggers: list[str] = Field(default_factory=list)
+    skipped: list[str] = Field(default_factory=list)
 
     @property
     def empty(self) -> bool:
@@ -572,14 +599,20 @@ def plan_removal(config: LoopcraftConfig, selectors: list[str]) -> RemovalPlan:
     stage_dir = config.systemd_stage_dir
     installed: list[Path] = []
     staged: list[Path] = []
+    skipped: list[Path] = []
+    # Only act on units loopcraft rendered (carrying the managed marker); a
+    # prefix-matching file from another setup is recorded as skipped, never removed.
     for selector in selectors:
-        installed += loop_unit_files(unit_dir, prefix, selector)
-        staged += loop_unit_files(stage_dir, prefix, selector)
+        for path in loop_unit_files(unit_dir, prefix, selector):
+            (installed if _is_managed_unit(path) else skipped).append(path)
+        for path in loop_unit_files(stage_dir, prefix, selector):
+            (staged if _is_managed_unit(path) else skipped).append(path)
     triggers = [p.name for p in installed if p.suffix in {".timer", ".path"}]
     return RemovalPlan(
         installed=[str(p) for p in installed],
         staged=[str(p) for p in staged],
         triggers=triggers,
+        skipped=[str(p) for p in skipped],
     )
 
 
