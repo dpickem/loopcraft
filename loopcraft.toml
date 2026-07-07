@@ -36,9 +36,18 @@ worktree_keep_last = 100
 # Filename prefix for every rendered unit (loop-<id>.timer / .service / .path).
 # unit_prefix = "loop-"
 
-# Which systemd manager owns the units: "system" (/etc/systemd/system, root) or
-# "user" (~/.config/systemd/user, no root but needs a lingering login session).
-# scope = "system"
+# Which systemd manager owns the units:
+#   - "system" (default): units in /etc/systemd/system, managed with `systemctl`
+#     (needs root); runs regardless of who is logged in.
+#   - "user": units in ~/.config/systemd/user (or $XDG_CONFIG_HOME/systemd/user),
+#     managed with `systemctl --user`; no root required.
+# To make "user" scope run UNATTENDED you must enable lingering for the account,
+# so its systemd user manager starts at boot and keeps the timers firing without
+# an active login session:
+#     loginctl enable-linger <user>
+# Without linger, user-scope timers only run while that user has a live session
+# (e.g. an open SSH/desktop login), so the fleet stops when you log out.
+scope = "user"
 
 # User= for system-scope services (ignored for user scope). Lets the fleet run
 # as a dedicated unprivileged account.
