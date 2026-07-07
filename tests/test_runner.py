@@ -379,10 +379,21 @@ def test_cursor_preflight_flags_missing_binary(tmp_path: Path, monkeypatch) -> N
 def test_cursor_accepts_any_model(tmp_path: Path, monkeypatch) -> None:
     """Cursor is cross-provider, so it does not reject a gpt-*/claude-* model."""
     monkeypatch.setattr(LoopcraftConfig, "which", lambda self, name: f"/usr/bin/{name}")
+    # No declared outputs, so the ledger-output limitation does not apply here.
     report = CursorRunner().preflight(
-        _manifest(runtime={"vendor": "cursor", "model": "gpt-5.5"}), _config(tmp_path)
+        _manifest(runtime={"vendor": "cursor", "model": "gpt-5.5"}, outputs=[]), _config(tmp_path)
     )
     assert report.ok, report.problems
+
+
+def test_cursor_flags_ledger_outputs(tmp_path: Path, monkeypatch) -> None:
+    """Cursor preflight rejects a loop that declares ledger outputs it can't write."""
+    monkeypatch.setattr(LoopcraftConfig, "which", lambda self, name: f"/usr/bin/{name}")
+    report = CursorRunner().preflight(
+        _manifest(runtime={"vendor": "cursor"}, outputs=["state/demo/out.md"]), _config(tmp_path)
+    )
+    assert not report.ok
+    assert any("cannot grant write access to ledger outputs" in p for p in report.problems)
 
 
 def test_cursor_build_command(tmp_path: Path) -> None:

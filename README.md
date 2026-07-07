@@ -91,6 +91,16 @@ model is left to the CLI to validate.
 > model) is therefore validated by the vendor CLI at run time, not at `apply`.
 > Live catalog probing is deferred to a later milestone.
 
+**Shipped adapter scope (M3).** Codex and Claude are full adapters: they grant
+each declared ledger-output directory to the sandboxed run (`--add-dir`), so a
+loop runs unchanged on either. The **Cursor adapter is limited** in M3 — it has
+no equivalent writable-root grant, so a loop that declares `state/...` outputs is
+reported as unsupported for Cursor at preflight (use Codex/Claude for
+output-producing loops). The M3 design's cross-provider **sub-agent** capability
+(a Cursor loop spawning a sub-agent on another provider) and per-role multi-model
+compilation are **deferred to M3.5**; the shipped adapters run a single headless
+invocation per loop.
+
 ## Scheduling & deployment (M2)
 
 M2 turns one-shot `loopctl run` into a scheduled, unattended fleet on the
