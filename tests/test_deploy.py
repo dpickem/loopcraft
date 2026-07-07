@@ -434,6 +434,66 @@ def test_scheduled_preflight_tool_found_on_configured_path(monkeypatch, tmp_path
     assert not any("mytool" in p for p in plan.preflight_problems)
 
 
+# --- remove / undeploy (inverse of apply) ------------------------------------
+
+
+def test_plan_removal_enumerates_staged_units(tmp_path: Path) -> None:
+    """plan_removal lists a loop's staged units without touching disk."""
+    config = _source(tmp_path, _CRON_MANIFEST)
+    deploy.write_units(deploy.plan_deployment(config, run_preflight=False), config.systemd_stage_dir)
+    plan = deploy.plan_removal(config, ["demo"])
+    assert sorted(Path(p).name for p in plan.staged) == ["loop-demo.service", "loop-demo.timer"]
+    assert plan.installed == []
+    assert not plan.empty
+
+
+def test_uninstall_removes_installed_and_staged(monkeypatch, tmp_path: Path) -> None:
+    """uninstall_units disables triggers and deletes installed + staged units."""
+    config = _source(tmp_path, _CRON_MANIFEST)
+    plan = deploy.plan_deployment(config, run_preflight=False)
+    unit_dir = tmp_path / "systemd"
+    calls = _fake_systemctl(monkeypatch, unit_dir)
+    deploy.install_units(config, plan)
+    deploy.write_units(plan, config.systemd_stage_dir)
+
+    result = deploy.uninstall_units(config, ["demo"])
+
+    assert result.ok
+    assert result.disabled == ["loop-demo.timer"]
+    assert set(result.removed) == {"loop-demo.service", "loop-demo.timer"}
+    assert set(result.removed_staged) == {"loop-demo.service", "loop-demo.timer"}
+    assert not (unit_dir / "loop-demo.timer").exists()
+    assert not (config.systemd_stage_dir / "loop-demo.service").exists()
+    assert ["systemctl", "disable", "--now", "loop-demo.timer"] in calls
+
+
+def test_uninstall_without_systemctl_keeps_installed(monkeypatch, tmp_path: Path) -> None:
+    """Without systemctl, installed units are left in place with a clear problem."""
+    config = _source(tmp_path, _CRON_MANIFEST)
+    unit_dir = tmp_path / "systemd"
+    unit_dir.mkdir()
+    (unit_dir / "loop-demo.service").write_text("x", encoding="utf-8")
+    (unit_dir / "loop-demo.timer").write_text("x", encoding="utf-8")
+    monkeypatch.setattr(deploy, "systemd_unit_dir", lambda cfg: unit_dir)
+    monkeypatch.setattr(deploy.shutil, "which", lambda name: None)
+
+    result = deploy.uninstall_units(config, ["demo"])
+
+    assert not result.ok
+    assert any("systemctl not found" in p for p in result.problems)
+    assert (unit_dir / "loop-demo.timer").exists()
+
+
+def test_loop_unit_files_matches_only_the_loop(tmp_path: Path) -> None:
+    """The glob matches loop-demo.* but not loop-demo-extra.*."""
+    d = tmp_path / "units"
+    d.mkdir()
+    for name in ("loop-demo.service", "loop-demo.timer", "loop-demo-extra.service", "other.txt"):
+        (d / name).write_text("x", encoding="utf-8")
+    names = sorted(p.name for p in deploy.loop_unit_files(d, "loop-", "demo"))
+    assert names == ["loop-demo.service", "loop-demo.timer"]
+
+
 # --- path-boundary hardening (review 05) -------------------------------------
 
 

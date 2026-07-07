@@ -34,11 +34,20 @@ from loopcraft.deploy import (
     environment_file_health,
     install_units,
     plan_deployment,
+    plan_removal,
     systemd_unit_dir,
+    uninstall_units,
     write_units,
 )
 from loopcraft.env import load_dotenv
-from loopcraft.manifest import CadenceType, LoopManifest, ManifestError, find_manifest, load_all
+from loopcraft.manifest import (
+    CadenceType,
+    LoopManifest,
+    ManifestError,
+    find_manifest,
+    load_all,
+    loop_id_problem,
+)
 from loopcraft.paths import assert_under
 from loopcraft.runners import RunContext, get_runner
 from loopcraft.runners.base import PreflightReport, RunStatus
@@ -113,6 +122,13 @@ def main(argv: list[str] | None = None) -> int:
         help="Permit --out to point inside the source tree (default: refused).",
     )
 
+    p_remove = sub.add_parser(
+        "remove", help="Undeploy a loop: disable + delete its systemd units (inverse of apply)."
+    )
+    p_remove.add_argument("loop", nargs="?", help="Loop id to remove (omit with --all).")
+    p_remove.add_argument("--all", action="store_true", dest="all_loops", help="Remove every deployed loop.")
+    p_remove.add_argument("--dry-run", action="store_true", help="Show what would be removed; change nothing.")
+
     sub.add_parser("list", help="List known loops.")
     sub.add_parser("fleet", help="Show all loops in a formatted table (schedule, last run, install state).")
     sub.add_parser("status", help="Show fleet status (last run per loop).")
@@ -153,6 +169,10 @@ def main(argv: list[str] | None = None) -> int:
             render_invalid=args.render_invalid,
             allow_source_output=args.allow_source_output,
             as_json=as_json,
+        )
+    if args.command == "remove":
+        return _cmd_remove(
+            config, args.loop, all_loops=args.all_loops, dry_run=args.dry_run, as_json=as_json
         )
     if args.command == "list":
         return _cmd_list(config, as_json=as_json)
@@ -640,7 +660,10 @@ def _cmd_auth(config: LoopcraftConfig, *, as_json: bool) -> int:
     for api in sorted(apis):
         items.append(_auth_item("api", api, _probe_declared_api(scheduled, api), API_GUIDANCE))
     for var in sorted(env_vars):
-        problem = None if scheduled.env_value(var) else f"env var not in scheduled environment: {var}"
+        # Presence, not truthiness: an empty value (e.g. `DISABLE_FEATURE=`) is
+        # still *set*, matching deploy.validate_environment's key-membership check
+        # so `auth` and `apply` agree on the scheduled credential model.
+        problem = None if scheduled.env_value(var) is not None else f"env var not in scheduled environment: {var}"
         items.append(_auth_item("env", var, problem, {}))
     if config.scheduler.environment_file:
         problem = env_file_problems[0] if env_file_problems else None
@@ -793,6 +816,88 @@ def _cmd_apply(
 
     rc = _apply_emit(plan, data, lines, as_json=as_json)
     _print_apply_problems(plan, as_json=as_json)
+    return rc
+
+
+def _cmd_remove(
+    config: LoopcraftConfig,
+    loop: str | None,
+    *,
+    all_loops: bool,
+    dry_run: bool,
+    as_json: bool,
+) -> int:
+    """Undeploy loops: disable + delete their systemd units (inverse of ``apply``).
+
+    Removes both the installed units (from the systemd unit directory, after
+    ``disable --now``) and the staged units (from the memory-tree staging dir).
+    Operates on the files on disk, so a loop can be removed even after its
+    manifest changed. Requires either a loop id or ``--all``.
+    """
+    if all_loops and loop:
+        return _emit(
+            "remove", as_json=as_json, ok=False, rc=ExitCode.INVALID,
+            data={"error": "pass either a loop id or --all, not both"},
+            lines=["error: pass either a loop id or --all, not both"],
+        )
+    if not all_loops and not loop:
+        return _emit(
+            "remove", as_json=as_json, ok=False, rc=ExitCode.INVALID,
+            data={"error": "specify a loop id or --all"},
+            lines=["error: specify a loop id or --all"],
+        )
+    if loop:
+        problem = loop_id_problem(loop)
+        if problem:
+            return _emit(
+                "remove", as_json=as_json, ok=False, rc=ExitCode.INVALID,
+                data={"loop": loop, "error": f"invalid loop id: {problem}"},
+                lines=[f"error: invalid loop id: {problem}"],
+            )
+
+    selectors = ["*"] if all_loops else [loop]  # type: ignore[list-item]
+    plan = plan_removal(config, selectors)
+
+    if dry_run:
+        data = {
+            "dry_run": True,
+            "installed": plan.installed,
+            "staged": plan.staged,
+            "triggers": plan.triggers,
+        }
+        lines = [
+            f"would disable {len(plan.triggers)} trigger(s), "
+            f"remove {len(plan.installed)} installed + {len(plan.staged)} staged unit(s)",
+            *[f"  disable: {name}" for name in plan.triggers],
+            *[f"  rm installed: {p}" for p in plan.installed],
+            *[f"  rm staged:    {p}" for p in plan.staged],
+        ]
+        if plan.empty:
+            lines = ["nothing to remove"]
+        return _emit("remove", as_json=as_json, ok=True, rc=ExitCode.OK, data=data, lines=lines)
+
+    if plan.empty:
+        return _emit(
+            "remove", as_json=as_json, ok=True, rc=ExitCode.OK,
+            data={"removed": [], "removed_staged": [], "disabled": []},
+            lines=["nothing to remove"],
+        )
+
+    result = uninstall_units(config, selectors)
+    data = result.model_dump()
+    lines = [
+        f"disabled {len(result.disabled)} trigger(s); "
+        f"removed {len(result.removed)} installed + {len(result.removed_staged)} staged unit(s)",
+        *[f"  - {problem}" for problem in result.problems],
+    ]
+    rc = _emit(
+        "remove",
+        as_json=as_json,
+        ok=result.ok,
+        rc=ExitCode.OK if result.ok else ExitCode.FAILURE,
+        data=data,
+        lines=lines,
+    )
     return rc
 
 

@@ -2,11 +2,21 @@
 
 ``loopctl apply`` turns each loop's ``cadence`` into deployable systemd units so
 the fleet fires on the always-on host whether or not the operator's laptop is
-open. A ``cron`` cadence renders a ``.timer`` + ``.service`` pair (with
-``Persistent=true`` so a trigger missed while the VM was down is caught up); an
-``on-artifact`` cadence renders a ``.path`` + ``.service`` pair that wakes the
-loop when an upstream output changes. ``event`` cadence has no unattended systemd
-representation yet and is reported as a deployment problem (it lands in M8).
+open.
+
+Supported trigger modes:
+
+- ``cron``: renders a ``.timer`` + ``.service`` pair. ``cadence.at`` is a
+  five-field cron expression translated to ``OnCalendar=...``. Timers include
+  ``Persistent=true`` so a trigger missed while the host was down is caught up
+  once.
+- ``on-artifact``: renders a ``.path`` + ``.service`` pair. The path unit watches
+  resolved ledger ``state/...`` inputs with ``PathModified=...`` and excludes
+  self-written inputs (for example cursor files) so a loop does not retrigger
+  itself.
+- ``event``: accepted by the manifest model for the future webhook/reactive
+  trigger path, but not deployable in M2. Rendering reports a deployment problem
+  until the M8 event-trigger work lands.
 
 The cron translation and unit rendering here are pure string transforms with no
 filesystem or subprocess effects, so they are fully unit-testable offline;
@@ -22,6 +32,7 @@ from enum import StrEnum
 from pydantic import BaseModel, Field
 
 from loopcraft.config import LoopcraftConfig, StatePathError, SystemdScope, is_state_path
+from loopcraft.manifest import CadenceType, LoopManifest
 
 #: Argument characters safe to render unquoted in a systemd ``ExecStart=`` line.
 #: Anything else triggers quoting/escaping so the argv survives systemd's own
@@ -30,7 +41,6 @@ from loopcraft.config import LoopcraftConfig, StatePathError, SystemdScope, is_s
 #: that expand even inside double quotes, so it needs ``%%`` escaping, not
 #: quoting (see :func:`_exec_quote`).
 _EXEC_SAFE_RE = re.compile(r"^[A-Za-z0-9_@+=:,./-]+$")
-from loopcraft.manifest import CadenceType, LoopManifest
 
 #: Inclusive value bounds for each cron time/date field, used to reject
 #: out-of-range components before they reach a rendered ``OnCalendar`` line.

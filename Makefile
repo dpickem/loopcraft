@@ -10,7 +10,7 @@ LOOPCTL := $(UV_RUN) loopctl
 
 .PHONY: help test compile validate-skills install-codex install-codex-skills \
 	snapshot-following daily-x-intel discover-follows daily-arxiv-intel \
-	run apply validate status logs list fleet check deps init auth
+	run apply remove validate status logs list fleet check deps init auth
 
 help:           ## list available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -28,6 +28,9 @@ auth:           ## report credential status + guidance for the fleet's deps (M2)
 
 apply:          ## validate the fleet + render systemd units into <memory>/var/systemd (M2)
 	$(LOOPCTL) apply ./loops
+
+remove:         ## undeploy one loop (inverse of apply):  make remove LOOP=slack-triage
+	$(LOOPCTL) remove $(LOOP)
 
 validate:       ## validate all manifests without deploying
 	$(LOOPCTL) validate ./loops

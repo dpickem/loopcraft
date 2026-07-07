@@ -181,6 +181,39 @@ def test_auth_env_var_satisfied_by_environment_file(monkeypatch, tmp_path: Path,
     assert token["ok"] is True
 
 
+def test_auth_treats_empty_env_var_as_present(monkeypatch, tmp_path: Path, capsys) -> None:
+    """An empty-valued env var (e.g. FLAG=) is *set*, so auth reports it present —
+    matching apply's key-membership check (presence, not truthiness)."""
+    env_file = tmp_path / "secrets.env"
+    env_file.write_text("DISABLE_FEATURE=\n", encoding="utf-8")
+    source = _demo_source(
+        monkeypatch,
+        tmp_path,
+        "id: demo\n"
+        "name: Demo\n"
+        "cadence: {type: cron, at: '0 9 * * *'}\n"
+        "depends_on: {env: [DISABLE_FEATURE]}\n"
+        "logic: {skill: skills/demo/SKILL.md}\n",
+    )
+    (source / "loopcraft.toml").write_text(
+        f'[scheduler]\nenvironment_file = "{env_file}"\n', encoding="utf-8"
+    )
+    monkeypatch.delenv("DISABLE_FEATURE", raising=False)
+    rc = cli.main(["--json", "auth"])
+    payload = json.loads(capsys.readouterr().out)
+    assert rc == 0  # auth agrees with apply: the var is present
+    item = next(i for i in payload["data"]["items"] if i["name"] == "DISABLE_FEATURE")
+    assert item["ok"] is True
+    # apply's validate_environment agrees: no missing-var problem for the same var.
+    from loopcraft.config import LoopcraftConfig
+    from loopcraft.deploy import validate_environment
+    from loopcraft.manifest import load_all
+
+    config = LoopcraftConfig.load(source)
+    problems = validate_environment(config, load_all(config.loops_dir).manifests)
+    assert not any("DISABLE_FEATURE" in p for p in problems)
+
+
 # --- apply -------------------------------------------------------------------
 
 
@@ -268,6 +301,71 @@ def test_apply_install_refused_and_writes_nothing_with_unmet_dependency(
     assert payload["data"]["written"] == []
     assert "install" not in payload["data"]
     assert not (tmp_path / "mem" / "var" / "systemd").exists()
+
+
+# --- remove (inverse of apply) -----------------------------------------------
+
+
+def test_remove_requires_a_target(monkeypatch, tmp_path: Path, capsys) -> None:
+    """remove with neither a loop id nor --all is a usage error."""
+    _demo_source(monkeypatch, tmp_path, _CRON_MANIFEST)
+    rc = cli.main(["--json", "remove"])
+    payload = json.loads(capsys.readouterr().out)
+    assert rc == 2
+    assert "specify a loop id or --all" in payload["data"]["error"]
+
+
+def test_remove_dry_run_keeps_units(monkeypatch, tmp_path: Path, capsys) -> None:
+    """remove --dry-run lists staged units without deleting them."""
+    monkeypatch.setattr(deploy, "get_runner", lambda vendor: _OkRunner())
+    _demo_source(monkeypatch, tmp_path, _CRON_MANIFEST)
+    assert cli.main(["apply"]) == 0
+    capsys.readouterr()
+    rc = cli.main(["--json", "remove", "demo", "--dry-run"])
+    payload = json.loads(capsys.readouterr().out)
+    assert rc == 0
+    assert any("loop-demo.timer" in s for s in payload["data"]["staged"])
+    assert (tmp_path / "mem" / "var" / "systemd" / "loop-demo.timer").exists()
+
+
+def test_remove_deletes_staged_units(monkeypatch, tmp_path: Path, capsys) -> None:
+    """remove deletes a loop's staged units (inverse of apply)."""
+    monkeypatch.setattr(deploy, "get_runner", lambda vendor: _OkRunner())
+    _demo_source(monkeypatch, tmp_path, _CRON_MANIFEST)
+    assert cli.main(["apply"]) == 0
+    capsys.readouterr()
+    rc = cli.main(["remove", "demo"])
+    assert rc == 0
+    staged = tmp_path / "mem" / "var" / "systemd"
+    assert not (staged / "loop-demo.service").exists()
+    assert not (staged / "loop-demo.timer").exists()
+
+
+def test_remove_all_deletes_every_loop(monkeypatch, tmp_path: Path, capsys) -> None:
+    """remove --all clears the whole staged fleet."""
+    monkeypatch.setattr(deploy, "get_runner", lambda vendor: _OkRunner())
+    source = _demo_source(monkeypatch, tmp_path, _CRON_MANIFEST)
+    (source / "loops" / "second.yaml").write_text(
+        "id: second\nname: Second\ncadence: {type: cron, at: '0 8 * * *'}\n"
+        "logic: {skill: skills/demo/SKILL.md}\n",
+        encoding="utf-8",
+    )
+    assert cli.main(["apply"]) == 0
+    capsys.readouterr()
+    rc = cli.main(["remove", "--all"])
+    assert rc == 0
+    staged = tmp_path / "mem" / "var" / "systemd"
+    assert list(staged.glob("*.service")) == []
+    assert list(staged.glob("*.timer")) == []
+
+
+def test_remove_rejects_non_canonical_loop_id(monkeypatch, tmp_path: Path, capsys) -> None:
+    """A non-canonical loop id is rejected before any glob/removal."""
+    _demo_source(monkeypatch, tmp_path, _CRON_MANIFEST)
+    rc = cli.main(["--json", "remove", "../escape"])
+    payload = json.loads(capsys.readouterr().out)
+    assert rc == 2
+    assert "invalid loop id" in payload["data"]["error"]
 
 
 # --- fleet -------------------------------------------------------------------

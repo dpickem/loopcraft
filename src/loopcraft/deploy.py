@@ -33,6 +33,10 @@ _SYSTEM_UNIT_DIR = Path("/etc/systemd/system")
 #: Seconds allowed for a single ``systemctl`` invocation during install.
 _SYSTEMCTL_TIMEOUT_S = 30
 
+#: Rendered unit-file suffixes loopcraft owns (used when enumerating a loop's
+#: units for install-state and removal).
+_UNIT_SUFFIXES = frozenset({".service", ".timer", ".path"})
+
 
 class LoopPreflight(BaseModel):
     """One loop's adapter preflight result, flattened for aggregate reporting."""
@@ -481,6 +485,121 @@ def _rollback_install(
         else:
             dest.write_text(prior, encoding="utf-8")
     _run_systemctl([*base, "daemon-reload"])
+
+
+def loop_unit_files(directory: Path, prefix: str, selector: str) -> list[Path]:
+    """Return a loop's rendered unit files in ``directory``.
+
+    ``selector`` is a canonical loop id, or ``"*"`` to match every loop. The
+    ``{prefix}{selector}.*`` glob matches only that loop's units (the literal
+    ``.`` after the id prevents ``loop-demo`` from also matching
+    ``loop-demo-extra``), filtered to loopcraft's unit suffixes.
+    """
+    if not directory.is_dir():
+        return []
+    return sorted(
+        path
+        for path in directory.glob(f"{prefix}{selector}.*")
+        if path.suffix in _UNIT_SUFFIXES and (path.is_file() or path.is_symlink())
+    )
+
+
+class RemovalPlan(BaseModel):
+    """The units a ``remove`` would disable/delete, computed without side effects."""
+
+    installed: list[str] = Field(default_factory=list)
+    staged: list[str] = Field(default_factory=list)
+    triggers: list[str] = Field(default_factory=list)
+
+    @property
+    def empty(self) -> bool:
+        """Whether there is nothing to remove."""
+        return not (self.installed or self.staged)
+
+
+class UninstallResult(BaseModel):
+    """Outcome of removing (undeploying) a loop's units."""
+
+    disabled: list[str] = Field(default_factory=list)
+    removed: list[str] = Field(default_factory=list)
+    removed_staged: list[str] = Field(default_factory=list)
+    problems: list[str] = Field(default_factory=list)
+
+    @property
+    def ok(self) -> bool:
+        """Whether the removal completed without problems."""
+        return not self.problems
+
+
+def plan_removal(config: LoopcraftConfig, selectors: list[str]) -> RemovalPlan:
+    """Enumerate the installed + staged units ``remove`` would act on.
+
+    Works purely from the files on disk (not the current manifests), so a loop
+    can be undeployed even after its manifest was edited or deleted.
+    """
+    prefix = config.scheduler.unit_prefix
+    unit_dir = systemd_unit_dir(config)
+    stage_dir = config.systemd_stage_dir
+    installed: list[Path] = []
+    staged: list[Path] = []
+    for selector in selectors:
+        installed += loop_unit_files(unit_dir, prefix, selector)
+        staged += loop_unit_files(stage_dir, prefix, selector)
+    triggers = [p.name for p in installed if p.suffix in {".timer", ".path"}]
+    return RemovalPlan(
+        installed=[str(p) for p in installed],
+        staged=[str(p) for p in staged],
+        triggers=triggers,
+    )
+
+
+def uninstall_units(config: LoopcraftConfig, selectors: list[str]) -> UninstallResult:
+    """Undeploy loops: disable their triggers and delete installed + staged units.
+
+    The inverse of ``apply``/``apply --install``. Installed triggers are
+    ``disable --now``'d before their files are removed (requires ``systemctl``);
+    staged files are always removed. Best-effort: each step's failure is recorded
+    as a problem rather than raised, and a final ``daemon-reload`` settles the
+    manager after installed units change.
+    """
+    result = UninstallResult()
+    plan = plan_removal(config, selectors)
+    unit_dir = systemd_unit_dir(config)
+    base = _systemctl_base(config)
+
+    if plan.installed:
+        if shutil.which("systemctl") is None:
+            result.problems.append(
+                "systemctl not found on PATH; installed units left in place "
+                f"(remove manually from {unit_dir})"
+            )
+        else:
+            for trigger in plan.triggers:
+                problem = _run_systemctl([*base, "disable", "--now", trigger])
+                if problem:
+                    result.problems.append(problem)
+                else:
+                    result.disabled.append(trigger)
+            for path_str in plan.installed:
+                removed = _remove_file(Path(path_str), result)
+                if removed:
+                    result.removed.append(Path(path_str).name)
+            _run_systemctl([*base, "daemon-reload"])
+
+    for path_str in plan.staged:
+        if _remove_file(Path(path_str), result):
+            result.removed_staged.append(Path(path_str).name)
+    return result
+
+
+def _remove_file(path: Path, result: UninstallResult) -> bool:
+    """Delete one unit file, recording a problem on failure; return success."""
+    try:
+        path.unlink()
+    except OSError as exc:
+        result.problems.append(f"could not remove {path}: {exc}")
+        return False
+    return True
 
 
 def _run_systemctl(cmd: list[str]) -> str | None:
