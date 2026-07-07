@@ -26,6 +26,27 @@ TOOL_BINARIES: dict[str, str] = {"nv-tools": "nv-tools"}
 #: Seconds allowed for a bounded capability probe (a single targeted API read).
 _PROBE_TIMEOUT_S = 30
 
+#: Human guidance for satisfying each known auth bundle, shown by ``loopctl
+#: auth`` when a bundle is missing so the operator knows the exact next step.
+AUTH_GUIDANCE: dict[str, str] = {
+    "nv-tools": "install the nv-tools CLI and run its login flow (e.g. `nv-tools auth login`)",
+    "x-api": "set X_API_BEARER_TOKEN or X_API_OAUTH2_ACCESS_TOKEN in the host EnvironmentFile / .env",
+}
+
+#: Human guidance for satisfying each known declared API.
+API_GUIDANCE: dict[str, str] = {
+    "slack": "authorize the nv-tools Slack connector (`nv-tools slack list-channels`)",
+    "x": "provide an X API token (see the x-api auth bundle)",
+    "arxiv": "no credentials required (public API)",
+}
+
+#: Human-readable nouns for declared source assets in problem messages.
+_ASSET_NOUNS = {
+    "logic.skill": "skill",
+    "logic.verify": "verify file",
+    "content.config": "content config",
+}
+
 
 def probe_nv_tools_auth(config: LoopcraftConfig) -> str | None:
     """Check the nv-tools connector is installed.
@@ -129,28 +150,6 @@ API_PROBES: dict[str, Callable[[LoopcraftConfig], str | None]] = {
     "slack": probe_slack_api,
     "x": probe_x_api,
     "arxiv": probe_arxiv_api,
-}
-
-#: Human guidance for satisfying each known auth bundle, shown by ``loopctl
-#: auth`` when a bundle is missing so the operator knows the exact next step.
-AUTH_GUIDANCE: dict[str, str] = {
-    "nv-tools": "install the nv-tools CLI and run its login flow (e.g. `nv-tools auth login`)",
-    "x-api": "set X_API_BEARER_TOKEN or X_API_OAUTH2_ACCESS_TOKEN in the host EnvironmentFile / .env",
-}
-
-#: Human guidance for satisfying each known declared API.
-API_GUIDANCE: dict[str, str] = {
-    "slack": "authorize the nv-tools Slack connector (`nv-tools slack list-channels`)",
-    "x": "provide an X API token (see the x-api auth bundle)",
-    "arxiv": "no credentials required (public API)",
-}
-
-
-#: Human-readable nouns for declared source assets in problem messages.
-_ASSET_NOUNS = {
-    "logic.skill": "skill",
-    "logic.verify": "verify file",
-    "content.config": "content config",
 }
 
 

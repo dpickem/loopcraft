@@ -67,6 +67,9 @@ from loopcraft.worktree import (
     worktrees_root,
 )
 
+#: Column headers for the ``fleet`` table, in display order.
+_FLEET_COLUMNS = ["LOOP", "NAME", "TIER", "VENDOR", "TRIGGER", "LAST RUN", "INSTALLED"]
+
 
 class FailurePhase(StrEnum):
     """Closed vocabulary of pre/mid-execution phases a run can fail in."""
@@ -1031,10 +1034,6 @@ def _cmd_list(config: LoopcraftConfig, *, as_json: bool) -> int:
         for problem in problems:
             print(f"  ! {problem}", file=sys.stderr)
     return rc
-
-
-#: Column headers for the ``fleet`` table, in display order.
-_FLEET_COLUMNS = ["LOOP", "NAME", "TIER", "VENDOR", "TRIGGER", "LAST RUN", "INSTALLED"]
 
 
 def _loop_trigger(manifest: LoopManifest) -> str:

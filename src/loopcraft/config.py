@@ -385,6 +385,23 @@ class LoopcraftConfig(BaseModel):
 
     Connects the source tree (manifests, skills, code) to the memory tree
     (ledger + artifacts + run-history DB).
+
+    Attributes:
+        source_path: Absolute root of the source tree (loops/, skills/, code).
+        memory_path: Absolute root of the memory tree (ledger/, artifacts/, DB).
+        default_vendor: Runtime vendor used when a loop does not pin one.
+        host: Execution host label (informational; e.g. ``vm``).
+        worktree_keep_last: Number of per-loop run worktrees retained by pruning.
+        dependencies: Required binary name -> probe target (from pyproject).
+        optional_dependencies: Optional/future-runtime binary probes (never fail
+            ``deps check``).
+        artifact_store: Optional external artifact-store URI (e.g. ``s3://...``).
+        scheduler: Host-specific systemd rendering/install settings
+            (see :class:`SchedulerConfig`).
+        scheduled_env: When True, ``env_value``/``which`` resolve against the
+            scheduled service environment (set only on the copy handed to
+            ``apply``/``auth`` preflight; see :meth:`for_scheduled_preflight`).
+        extra: Any unrecognized top-level ``loopcraft.toml`` keys, preserved.
     """
 
     model_config = ConfigDict(frozen=True)

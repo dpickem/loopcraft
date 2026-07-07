@@ -81,16 +81,16 @@ _CRON_DOW_NAMES: dict[str, int] = {
 _INT_RE = re.compile(r"^\d+$")
 
 
+class SchedulerError(ValueError):
+    """Raised when a manifest's cadence cannot be rendered into systemd units."""
+
+
 class UnitKind(StrEnum):
     """The systemd unit types loopcraft renders."""
 
     SERVICE = "service"
     TIMER = "timer"
     PATH = "path"
-
-
-class SchedulerError(ValueError):
-    """Raised when a manifest's cadence cannot be rendered into systemd units."""
 
 
 class RenderedUnit(BaseModel):
@@ -139,6 +139,14 @@ def _render_numeric_field(spec: str, *, field: str, width: int) -> str:
     Components are zero-padded to ``width`` so rendered lines read like the
     design's ``07:00:00``.
 
+    Examples (``field="hour"``, ``width=2``):
+        - ``"*"`` -> ``"*"``
+        - ``"7"`` -> ``"07"``
+        - ``"9,13,17"`` -> ``"09,13,17"``
+        - ``"9-17"`` -> ``"09..17"``
+        - ``"*/4"`` -> ``"00/4"``
+        - ``"9-17/2"`` -> ``"09..17/2"``
+
     Raises:
         SchedulerError: If the field uses an unsupported construct.
     """
@@ -178,6 +186,13 @@ def _render_dow_field(spec: str) -> str:
 
     Returns an empty string for ``*`` (every day, so systemd omits the weekday),
     otherwise a comma list of ``Mon``/``Mon..Fri`` style tokens.
+
+    Examples:
+        - ``"*"`` -> ``""`` (weekday omitted)
+        - ``"1-5"`` -> ``"Mon..Fri"``
+        - ``"mon-fri"`` -> ``"Mon..Fri"``
+        - ``"0"`` and ``"7"`` -> ``"Sun"``
+        - ``"1,3,5"`` -> ``"Mon,Wed,Fri"``
 
     Raises:
         SchedulerError: If the field uses an unsupported construct (e.g. steps).
@@ -254,9 +269,14 @@ def _render_service(
 
     The service is ``Type=oneshot`` (a loop run starts, does its work, and
     exits) and runs from the source tree; ``loopctl run`` creates its own
-    per-run worktree under the memory tree. Both tree roots are passed through
-    the environment so the unit does not depend on the invoking shell, and the
-    host's out-of-tree secrets file is referenced (never inlined) when set.
+    per-run worktree under the memory tree. That per-run worktree is *ephemeral
+    scratch* (``<memory>/var/worktrees/<loop>/<run_id>``): it is git-ignored and
+    retention-pruned, never merged into the memory tree's git branch. Durable
+    state is written separately through the store — the run record and the loop's
+    ``state/...`` outputs land in the git-versioned ledger — so nothing needs to
+    be "consolidated" from a worktree. Both tree roots are passed through the
+    environment so the unit does not depend on the invoking shell, and the host's
+    out-of-tree secrets file is referenced (never inlined) when set.
 
     Args:
         loopctl_command: The resolved argv prefix for ``ExecStart`` (before

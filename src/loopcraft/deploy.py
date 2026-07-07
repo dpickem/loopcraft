@@ -333,6 +333,12 @@ def _safe_unit_dest(directory: Path, filename: str) -> Path:
     validated before rendering, a filename must be a single path component so it
     cannot escape the staging / unit directory.
 
+    Examples:
+        - allowed: ``loop-slack-triage.service``, ``loop-demo.timer``
+        - rejected: ``../escape.service``, ``sub/loop-demo.timer``,
+          ``/etc/systemd/system/x.service`` (all contain a path separator or
+          ``..``, so they are not a single filename component)
+
     Raises:
         ValueError: If ``filename`` is not a plain filename.
     """
