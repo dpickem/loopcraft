@@ -274,6 +274,22 @@ def test_install_rollback_disables_already_enabled_triggers(monkeypatch, tmp_pat
     assert not (unit_dir / "loop-a.timer").exists()
 
 
+def test_install_reports_partial_state_when_rollback_fails(monkeypatch, tmp_path: Path) -> None:
+    """If the rollback itself fails, rolled_back is False and the problem surfaces."""
+    config = _source(tmp_path, _CRON_MANIFEST)
+    plan = deploy.plan_deployment(config, run_preflight=False)
+    unit_dir = tmp_path / "systemd"
+    # daemon-reload fails: it breaks the install (step 2) and also the rollback's
+    # own final daemon-reload, so the rollback cannot fully complete.
+    _fake_systemctl(monkeypatch, unit_dir, fail_on="daemon-reload")
+
+    result = deploy.install_units(config, plan)
+
+    assert not result.ok
+    assert result.rolled_back is False
+    assert any("rollback" in p for p in result.problems)
+
+
 def test_install_restores_replaced_unit_on_failure(monkeypatch, tmp_path: Path) -> None:
     """Rollback restores a unit file the install overwrote."""
     config = _source(tmp_path, _CRON_MANIFEST)

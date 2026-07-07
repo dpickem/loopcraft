@@ -423,8 +423,9 @@ def install_units(config: LoopcraftConfig, plan: DeploymentPlan) -> InstallResul
     base = _systemctl_base(config)
     units = [unit for loop_units in plan.units for unit in loop_units.units]
 
-    # filename -> prior content (None when the file did not exist), so rollback
-    # can restore a replaced unit or remove a newly written one.
+    # 1. Write unit files, recording a backup of each one replaced (None when the
+    #    file is new) so a later failure can restore or remove exactly what we
+    #    touched.
     backups: dict[str, str | None] = {}
     try:
         unit_dir.mkdir(parents=True, exist_ok=True)
@@ -433,51 +434,87 @@ def install_units(config: LoopcraftConfig, plan: DeploymentPlan) -> InstallResul
             # A symlink here would make read/write operate on its target outside
             # the unit dir (and install may run privileged for system scope).
             if dest.is_symlink():
-                _rollback_install(unit_dir, backups, enabled=[], base=base)
-                return InstallResult(
-                    problems=[f"refusing to install over a symlinked unit: {dest}"],
-                    rolled_back=True,
+                return _install_failure(
+                    f"refusing to install over a symlinked unit: {dest}",
+                    unit_dir, backups, enabled=[], base=base,
                 )
             backups[unit.filename] = dest.read_text(encoding="utf-8") if dest.exists() else None
             dest.write_text(unit.content, encoding="utf-8")
     except (OSError, ValueError) as exc:
-        _rollback_install(unit_dir, backups, enabled=[], base=base)
-        return InstallResult(problems=[f"could not write units to {unit_dir}: {exc}"], rolled_back=True)
+        return _install_failure(
+            f"could not write units to {unit_dir}: {exc}", unit_dir, backups, enabled=[], base=base
+        )
 
+    # 2. Reload so systemd picks up the new unit files before we enable them.
     reload_problem = _run_systemctl([*base, "daemon-reload"])
     if reload_problem:
-        _rollback_install(unit_dir, backups, enabled=[], base=base)
-        return InstallResult(problems=[reload_problem], rolled_back=True)
+        return _install_failure(reload_problem, unit_dir, backups, enabled=[], base=base)
 
+    # 3. Enable + start each trigger; on the first failure roll back the ones
+    #    already enabled (plus the written files).
     enabled: list[str] = []
     for trigger in _enable_targets(plan):
         problem = _run_systemctl([*base, "enable", "--now", trigger])
         if problem:
-            _rollback_install(unit_dir, backups, enabled=enabled, base=base)
-            return InstallResult(problems=[problem], rolled_back=True)
+            return _install_failure(problem, unit_dir, backups, enabled=enabled, base=base)
         enabled.append(trigger)
 
     return InstallResult(installed=[unit.filename for unit in units], enabled=enabled)
 
 
+def _install_failure(
+    problem: str,
+    unit_dir: Path,
+    backups: dict[str, str | None],
+    *,
+    enabled: list[str],
+    base: list[str],
+) -> InstallResult:
+    """Build a failed :class:`InstallResult`, attempting a rollback first.
+
+    ``rolled_back`` reflects whether the rollback actually restored the prior
+    state: it is True only when every rollback step succeeded. Any rollback
+    problems are appended so the operator is told the fleet may be in a partial
+    state and what to clean up, rather than seeing a misleading ``rolled_back``.
+    """
+    rollback_problems = _rollback_install(unit_dir, backups, enabled=enabled, base=base)
+    return InstallResult(
+        problems=[problem, *rollback_problems],
+        rolled_back=not rollback_problems,
+    )
+
+
 def _rollback_install(
     unit_dir: Path, backups: dict[str, str | None], *, enabled: list[str], base: list[str]
-) -> None:
+) -> list[str]:
     """Undo a partial install: disable enabled triggers and restore units.
 
-    Best-effort — each step is attempted regardless of the others so one
-    failing cleanup command does not strand the rest — then a final
-    ``daemon-reload`` settles the manager.
+    Best-effort — every step is attempted regardless of the others so one
+    failing cleanup does not strand the rest — but each failure is collected and
+    returned (rather than swallowed), so the caller can report that the rollback
+    itself was incomplete.
+
+    Returns:
+        The rollback problems (empty when the prior state was fully restored).
     """
+    problems: list[str] = []
     for trigger in enabled:
-        _run_systemctl([*base, "disable", "--now", trigger])
+        problem = _run_systemctl([*base, "disable", "--now", trigger])
+        if problem:
+            problems.append(f"rollback: disabling {trigger}: {problem}")
     for filename, prior in backups.items():
         dest = unit_dir / filename
-        if prior is None:
-            dest.unlink(missing_ok=True)
-        else:
-            dest.write_text(prior, encoding="utf-8")
-    _run_systemctl([*base, "daemon-reload"])
+        try:
+            if prior is None:
+                dest.unlink(missing_ok=True)
+            else:
+                dest.write_text(prior, encoding="utf-8")
+        except OSError as exc:
+            problems.append(f"rollback: could not restore {dest}: {exc}")
+    reload_problem = _run_systemctl([*base, "daemon-reload"])
+    if reload_problem:
+        problems.append(f"rollback: {reload_problem}")
+    return problems
 
 
 def loop_unit_files(directory: Path, prefix: str, selector: str) -> list[Path]:
