@@ -16,7 +16,6 @@ from typing import Any
 
 from loopcraft.cli_output import emit, fail as _fail
 from loopcraft.config import LoopcraftConfig, is_state_path, resolve_run_stamps
-from loopcraft.env import load_dotenv
 from loopcraft.research_intel.x.client import XApiClient, XApiError
 from loopcraft.research_intel.x.config import IntelConfig, OutputPaths, XApiTokens
 from loopcraft.research_intel.x.digest import render_digest
@@ -55,7 +54,7 @@ class XIntelRunner:
         # Resolve config first, then load the source tree's own .env (not a
         # random .env in the invocation cwd) before reading tokens from the env.
         self.loopcraft = LoopcraftConfig.load()
-        load_dotenv(self.loopcraft.source_path / ".env")
+        self.loopcraft.load_dotenv()
         # The content config (and any .local override) must stay under the source
         # tree, matching control-plane preflight/staging.
         self.config = IntelConfig.load(self.loopcraft.resolve_content_config(config_path))
@@ -343,7 +342,7 @@ def snapshot_following(
 ) -> int:
     """Fetch followed accounts and write a private snapshot for focused searches."""
     loopcraft = LoopcraftConfig.load()
-    load_dotenv(loopcraft.source_path / ".env")
+    loopcraft.load_dotenv()
     # The snapshot is private source config; require a safe source-relative path
     # so it cannot be written outside the source tree.
     try:

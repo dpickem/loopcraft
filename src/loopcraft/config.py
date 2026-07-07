@@ -18,7 +18,7 @@ from pathlib import Path, PurePosixPath
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from loopcraft.env import parse_env_file
+from loopcraft.env import load_dotenv as _load_dotenv_file, parse_env_file
 from loopcraft.paths import assert_under, safe_relpath
 from loopcraft.settings import local_override_path
 
@@ -544,6 +544,16 @@ class LoopcraftConfig(BaseModel):
             assert_under(self.source_path, candidate, label=label)
         except ValueError as exc:
             raise SourcePathError(str(exc)) from exc
+
+    def load_dotenv(self) -> None:
+        """Load the source tree's ``.env`` into the process environment.
+
+        Loads ``<source_path>/.env`` (only for variables not already set), so
+        credentials/config overrides stay tied to ``LOOPCRAFT_SOURCE`` rather
+        than whatever directory a command happened to be invoked from. A no-op
+        when the file is absent.
+        """
+        _load_dotenv_file(self.source_path / ".env")
 
     def env_value(self, name: str) -> str | None:
         """Return one environment value through the central config object.

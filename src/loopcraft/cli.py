@@ -38,7 +38,6 @@ from loopcraft.deploy import (
     uninstall_units,
     write_units,
 )
-from loopcraft.env import load_dotenv
 from loopcraft.manifest import (
     CadenceType,
     LoopManifest,
@@ -76,6 +75,16 @@ class FailurePhase(StrEnum):
     PREFLIGHT = "preflight"
     STAGING = "staging"
     EXECUTION = "execution"
+
+
+class GitInitStatus(StrEnum):
+    """Outcome of ``loopctl init``'s best-effort ``git init`` of the memory tree."""
+
+    SKIPPED = "skipped"
+    ALREADY_REPO = "already a repo"
+    INITIALIZED = "initialized"
+    UNAVAILABLE = "unavailable (git not on PATH)"
+    ERROR = "error"
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -149,7 +158,7 @@ def main(argv: list[str] | None = None) -> int:
     # Resolve config first so the source tree's own .env is loaded (not a random
     # .env in the invocation cwd), keeping credentials tied to LOOPCRAFT_SOURCE.
     config = LoopcraftConfig.load(args.source)
-    load_dotenv(config.source_path / ".env")
+    config.load_dotenv()
     as_json = args.json
 
     if args.command == "run":
@@ -571,18 +580,18 @@ def _cmd_init(config: LoopcraftConfig, *, host: str | None, git: bool, as_json: 
             created.append(str(directory))
         directory.mkdir(parents=True, exist_ok=True)
 
-    git_status = "skipped"
+    git_status = GitInitStatus.SKIPPED
     if git:
         git_status = _git_init_memory(config.memory_path)
 
     source_ok = config.loops_dir.is_dir()
-    ok = source_ok and not git_status.startswith("error")
+    ok = source_ok and git_status is not GitInitStatus.ERROR
     data = {
         "host": host or config.host,
         "source_path": str(config.source_path),
         "memory_path": str(config.memory_path),
         "created": created,
-        "git": git_status,
+        "git": git_status.value,
         "source_ok": source_ok,
         "ok": ok,
     }
@@ -590,7 +599,7 @@ def _cmd_init(config: LoopcraftConfig, *, host: str | None, git: bool, as_json: 
         f"host:   {host or config.host}",
         f"source: {config.source_path} ({'ok' if source_ok else 'MISSING loops/'})",
         f"memory: {config.memory_path}",
-        f"git:    {git_status}",
+        f"git:    {git_status.value}",
     ]
     lines += [f"created {path}" for path in created] or ["memory tree already initialized"]
     if not source_ok:
@@ -605,18 +614,18 @@ def _cmd_init(config: LoopcraftConfig, *, host: str | None, git: bool, as_json: 
     )
 
 
-def _git_init_memory(memory_path: Path) -> str:
-    """Best-effort ``git init`` of the memory tree; return a status string.
+def _git_init_memory(memory_path: Path) -> GitInitStatus:
+    """Best-effort ``git init`` of the memory tree; return a :class:`GitInitStatus`.
 
     The memory tree is the git-versioned ledger, so a fresh host should have it
-    under version control. Returns ``"already a repo"``, ``"initialized"``,
-    ``"unavailable (git not on PATH)"``, or an ``"error: ..."`` string — a git
-    failure is reported, never raised, so init stays best-effort.
+    under version control. A git failure is reported (its detail printed to
+    stderr for diagnosis) and mapped to :attr:`GitInitStatus.ERROR`, never
+    raised, so init stays best-effort.
     """
     if (memory_path / ".git").exists():
-        return "already a repo"
+        return GitInitStatus.ALREADY_REPO
     if shutil.which("git") is None:
-        return "unavailable (git not on PATH)"
+        return GitInitStatus.UNAVAILABLE
     try:
         completed = subprocess.run(
             ["git", "init"],
@@ -627,8 +636,12 @@ def _git_init_memory(memory_path: Path) -> str:
             timeout=30,
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
-        return f"error: {exc}"
-    return "initialized" if completed.returncode == 0 else f"error: {completed.stderr.strip()}"
+        print(f"git init failed: {exc}", file=sys.stderr)
+        return GitInitStatus.ERROR
+    if completed.returncode == 0:
+        return GitInitStatus.INITIALIZED
+    print(f"git init failed: {completed.stderr.strip()}", file=sys.stderr)
+    return GitInitStatus.ERROR
 
 
 def _cmd_auth(config: LoopcraftConfig, *, as_json: bool) -> int:
