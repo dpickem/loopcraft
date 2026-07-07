@@ -54,6 +54,30 @@ def safe_relpath(
     return "/".join(parts)
 
 
+def is_lexically_under(candidate: Path, root: Path) -> bool:
+    """Return whether ``candidate`` is textually under ``root`` (no symlink follow).
+
+    Unlike :func:`assert_under` (which resolves symlinks before comparing), this
+    compares normalized paths without dereferencing, so a path *configured as*
+    inside a tree is detected even when it is a symlink whose target lives
+    outside — e.g. rejecting a tracked ``environment_file`` stub inside a git tree
+    that points at an external secret. ``root`` is resolved so a symlinked tree
+    root still matches.
+
+    Args:
+        candidate: Path to test (compared lexically, not resolved).
+        root: Directory the candidate must be under.
+
+    Returns:
+        True when ``candidate`` normalizes to ``root`` or a descendant of it.
+    """
+    try:
+        Path(os.path.normpath(candidate)).relative_to(os.path.normpath(root.resolve()))
+    except ValueError:
+        return False
+    return True
+
+
 def contained_child(root: Path, name: str, *, label: str) -> Path:
     """Compose ``root / name`` and assert the child stays under ``root``.
 

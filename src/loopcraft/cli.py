@@ -9,7 +9,6 @@ addition to human-readable text output.
 from __future__ import annotations
 
 import argparse
-import os
 import shutil
 import subprocess
 import sys
@@ -48,7 +47,7 @@ from loopcraft.manifest import (
     load_all,
     loop_id_problem,
 )
-from loopcraft.paths import assert_under
+from loopcraft.paths import assert_under, is_lexically_under
 from loopcraft.runners import RunContext, get_runner
 from loopcraft.runners.base import PreflightReport, RunStatus
 from loopcraft.runners.capabilities import (
@@ -911,11 +910,7 @@ def _source_output_problem(config: LoopcraftConfig, out_dir: Path) -> str | None
     nor a symlink into it slips through.
     """
     source = config.source_path
-    try:
-        Path(os.path.normpath(out_dir.expanduser())).relative_to(os.path.normpath(source))
-        lexical_under = True
-    except ValueError:
-        lexical_under = False
+    lexical_under = is_lexically_under(out_dir.expanduser(), source)
     resolved_under = True
     try:
         assert_under(source, out_dir, label="apply --out")

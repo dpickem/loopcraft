@@ -23,6 +23,7 @@ from pydantic import BaseModel, Field
 from loopcraft.config import LoopcraftConfig, SystemdScope
 from loopcraft.env import parse_env_file
 from loopcraft.manifest import LoopManifest, load_all
+from loopcraft.paths import is_lexically_under
 from loopcraft.runners import get_runner
 from loopcraft.scheduler import LoopUnits, SchedulerError, UnitKind, render_loop_units
 
@@ -172,20 +173,6 @@ def resolve_loopctl_command(config: LoopcraftConfig) -> tuple[list[str] | None, 
     return [resolved, *rest], None
 
 
-def _is_lexically_under(path: Path, root: Path) -> bool:
-    """Return whether ``path`` is textually under ``root`` (no symlink resolution).
-
-    Used so an ``environment_file`` *configured as* a path inside a git tree is
-    rejected even if it is a symlink whose target lives outside — a tracked stub
-    inside the repo still leaks the secret relationship.
-    """
-    try:
-        Path(os.path.normpath(path)).relative_to(os.path.normpath(root))
-    except ValueError:
-        return False
-    return True
-
-
 def environment_file_health(config: LoopcraftConfig) -> tuple[set[str], list[str]]:
     """Inspect ``scheduler.environment_file``: return its keys and any problems.
 
@@ -211,7 +198,7 @@ def environment_file_health(config: LoopcraftConfig) -> tuple[set[str], list[str
     # Lexical (pre-resolve) containment: a stub inside a git tree is rejected
     # even if its symlink target is outside.
     for label, root in (("source", config.source_path), ("memory", config.memory_path)):
-        if _is_lexically_under(path, root):
+        if is_lexically_under(path, root):
             problems.append(
                 f"scheduler.environment_file must live outside the {label} tree "
                 f"(secrets stay out of git): {env_file}"
