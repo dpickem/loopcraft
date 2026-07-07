@@ -83,6 +83,14 @@ only its own binary/model checks (`codex` / `claude` / `cursor-agent`). Model
 values differ per vendor (see the tables below); Cursor is cross-provider so its
 model is left to the CLI to validate.
 
+> **Model checks are a local shape/typo guard, not an availability check.**
+> Preflight (`apply`, `deps check --loop`) flags a `runtime.model` that clearly
+> belongs to the wrong vendor (e.g. a `gpt-*` slug on Claude), but it does not
+> query the vendor's live model catalog — that would need per-CLI, account- and
+> plan-specific calls. A *plausible but unavailable* model (or, for Cursor, any
+> model) is therefore validated by the vendor CLI at run time, not at `apply`.
+> Live catalog probing is deferred to a later milestone.
+
 ## Scheduling & deployment (M2)
 
 M2 turns one-shot `loopctl run` into a scheduled, unattended fleet on the

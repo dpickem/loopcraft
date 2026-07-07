@@ -91,6 +91,37 @@ def test_vendor_set_requires_name(monkeypatch, tmp_path: Path, capsys) -> None:
     assert "requires a vendor name" in payload["data"]["error"]
 
 
+def test_vendor_get_flags_invalid_config_default(monkeypatch, tmp_path: Path, capsys) -> None:
+    """A loopcraft.toml default_vendor with no adapter fails vendor get (review 01)."""
+    _source(monkeypatch, tmp_path, toml='default_vendor = "gemini"\n')
+    rc = cli.main(["--json", "vendor", "get"])
+    payload = json.loads(capsys.readouterr().out)
+    assert rc == 1
+    assert payload["ok"] is False
+    assert payload["data"]["default"] == "gemini"
+    assert payload["data"]["default_ok"] is False
+
+
+def test_vendor_list_flags_invalid_config_default(monkeypatch, tmp_path: Path, capsys) -> None:
+    """vendor list also reports an unregistered default as a failure."""
+    _source(monkeypatch, tmp_path, toml='default_vendor = "gemini"\n')
+    rc = cli.main(["--json", "vendor", "list"])
+    payload = json.loads(capsys.readouterr().out)
+    assert rc == 1
+    assert payload["data"]["default_ok"] is False
+
+
+def test_vendor_get_flags_invalid_env_override(monkeypatch, tmp_path: Path, capsys) -> None:
+    """An invalid LOOPCRAFT_VENDOR override is flagged too (env wins at load)."""
+    _source(monkeypatch, tmp_path)  # toml default is codex
+    monkeypatch.setenv("LOOPCRAFT_VENDOR", "gemini")
+    rc = cli.main(["--json", "vendor", "get"])
+    payload = json.loads(capsys.readouterr().out)
+    assert rc == 1
+    assert payload["data"]["default"] == "gemini"
+    assert payload["data"]["default_ok"] is False
+
+
 def test_vendor_get_notes_env_override(monkeypatch, tmp_path: Path, capsys) -> None:
     """LOOPCRAFT_VENDOR override is surfaced by `vendor get`."""
     _source(monkeypatch, tmp_path)

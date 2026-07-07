@@ -1029,30 +1029,45 @@ def _cmd_vendor(config: LoopcraftConfig, action: str, name: str | None, *, as_js
     when ``LOOPCRAFT_VENDOR`` is set, since that env var overrides the file.
     """
     vendors = available_vendors()
+    default = config.default_vendor
+    # The effective default (from loopcraft.toml or LOOPCRAFT_VENDOR) is only
+    # usable if an adapter is registered for it. Report an unregistered default
+    # as a failure here rather than letting it slip through to a run/apply.
+    default_ok = default in vendors
     override = config.env_value("LOOPCRAFT_VENDOR")
     override_note = (
         f"note: LOOPCRAFT_VENDOR={override} overrides the config default at runtime"
         if override
         else None
     )
+    invalid_note = (
+        None if default_ok
+        else f"error: default vendor '{default}' has no runtime adapter (available: {vendors})"
+    )
 
     if action == "list":
-        lines = [f"{'* ' if v == config.default_vendor else '  '}{v}" for v in vendors]
+        lines = [f"{'* ' if v == default else '  '}{v}" for v in vendors]
+        if invalid_note:
+            lines.append(invalid_note)
         if override_note:
             lines.append(override_note)
         return _emit(
-            "vendor", as_json=as_json, ok=True, rc=ExitCode.OK,
-            data={"vendors": vendors, "default": config.default_vendor, "override": override},
+            "vendor", as_json=as_json, ok=default_ok,
+            rc=ExitCode.OK if default_ok else ExitCode.FAILURE,
+            data={"vendors": vendors, "default": default, "override": override, "default_ok": default_ok},
             lines=lines,
         )
 
     if action == "get":
-        lines = [f"default_vendor: {config.default_vendor}"]
+        lines = [f"default_vendor: {default}"]
+        if invalid_note:
+            lines.append(invalid_note)
         if override_note:
             lines.append(override_note)
         return _emit(
-            "vendor", as_json=as_json, ok=True, rc=ExitCode.OK,
-            data={"default": config.default_vendor, "override": override},
+            "vendor", as_json=as_json, ok=default_ok,
+            rc=ExitCode.OK if default_ok else ExitCode.FAILURE,
+            data={"default": default, "override": override, "vendors": vendors, "default_ok": default_ok},
             lines=lines,
         )
 
