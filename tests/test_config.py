@@ -176,6 +176,24 @@ def test_probe_env_excludes_operator_only_vars(monkeypatch, tmp_path: Path) -> N
     assert env["HOME"] == str(tmp_path)
 
 
+def test_probe_env_reserved_keys_win_over_env_file(tmp_path: Path) -> None:
+    """An EnvironmentFile PATH cannot override the validated scheduled PATH."""
+    env_file = tmp_path / "secrets.env"
+    env_file.write_text(
+        "PATH=/evil/bin\nLOOPCRAFT_SOURCE=/evil/src\nDEMO_TOKEN=ok\n", encoding="utf-8"
+    )
+    config = _config(
+        tmp_path, SchedulerConfig(path="/opt/bin:/usr/bin", environment_file=str(env_file))
+    ).for_scheduled_preflight()
+    env = config.probe_env()
+    assert env is not None
+    # PATH matches what config.which() validates against, not the env file.
+    assert env["PATH"] == config.scheduled_path == "/opt/bin:/usr/bin"
+    assert env["LOOPCRAFT_SOURCE"] == str(config.source_path)
+    # Non-reserved credentials from the file are still present.
+    assert env["DEMO_TOKEN"] == "ok"
+
+
 # --- content-config containment (review 05, findings 16/17) ------------------
 
 

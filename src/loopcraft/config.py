@@ -619,13 +619,18 @@ class LoopcraftConfig(BaseModel):
             for name in _SCHEDULED_ENV_ALLOWLIST
             if name in os.environ
         }
-        env["PATH"] = self.scheduled_path
-        env["LOOPCRAFT_SOURCE"] = str(self.source_path)
-        env["LOOPCRAFT_MEMORY"] = str(self.memory_path)
+        # Overlay the EnvironmentFile first, then re-assert the loopcraft-managed
+        # keys so they win. PATH in particular must equal the validated
+        # ``scheduled_path`` (the same value ``which()`` checks and the rendered
+        # unit sets), so an EnvironmentFile PATH cannot make the probe execute on
+        # a different PATH than binary validation used.
         if self.scheduler.environment_file:
             path = Path(self.scheduler.environment_file).expanduser()
             if path.is_file():
                 env.update(parse_env_file(path))
+        env["PATH"] = self.scheduled_path
+        env["LOOPCRAFT_SOURCE"] = str(self.source_path)
+        env["LOOPCRAFT_MEMORY"] = str(self.memory_path)
         return env
 
     @classmethod

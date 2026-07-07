@@ -97,6 +97,18 @@ def test_render_cron_loop_units(tmp_path) -> None:
     assert "WantedBy=timers.target" in timer.content
 
 
+def test_environment_file_rendered_before_env_lines(tmp_path) -> None:
+    """EnvironmentFile precedes Environment=PATH so the managed PATH wins at runtime."""
+    config = _config(
+        tmp_path, SchedulerConfig(environment_file="/etc/loopcraft/loopcraft.env")
+    )
+    service = next(
+        u for u in render_loop_units(config, _cron_manifest()).units if u.kind == UnitKind.SERVICE
+    )
+    body = service.content
+    assert body.index("EnvironmentFile=") < body.index("Environment=PATH=")
+
+
 def test_render_service_honors_scheduler_config(tmp_path) -> None:
     """EnvironmentFile, User, and loopctl_bin flow into the rendered service."""
     scheduler = SchedulerConfig(
@@ -156,6 +168,23 @@ def test_exec_start_quotes_arguments_with_spaces(tmp_path) -> None:
     units = render_loop_units(config, _cron_manifest(), loopctl_command=["/opt/my dir/loopctl"])
     service = next(u for u in units.units if u.kind == UnitKind.SERVICE)
     assert 'ExecStart="/opt/my dir/loopctl" run demo' in service.content
+
+
+def test_exec_start_escapes_percent_specifier(tmp_path) -> None:
+    """A literal % is doubled to %% so systemd does not expand a specifier."""
+    config = _config(tmp_path)
+    units = render_loop_units(config, _cron_manifest(), loopctl_command=["/opt/pct%m/loopctl"])
+    service = next(u for u in units.units if u.kind == UnitKind.SERVICE)
+    assert 'ExecStart="/opt/pct%%m/loopctl" run demo' in service.content
+    # The single (unescaped) specifier form must not appear.
+    assert "/opt/pct%m/loopctl" not in service.content
+
+
+def test_render_exec_start_doubles_percent() -> None:
+    """render_exec_start escapes % even without other special characters."""
+    from loopcraft.scheduler import render_exec_start
+
+    assert render_exec_start(["a%mb"]) == '"a%%mb"'
 
 
 def test_exec_start_preserves_multiword_command(tmp_path) -> None:

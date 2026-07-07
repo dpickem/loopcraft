@@ -24,9 +24,12 @@ from pydantic import BaseModel, Field
 from loopcraft.config import LoopcraftConfig, StatePathError, SystemdScope, is_state_path
 
 #: Argument characters safe to render unquoted in a systemd ``ExecStart=`` line.
-#: Anything else triggers double-quoting so the argv survives systemd's own
-#: command-line parsing (spaces, shell-sensitive characters, etc.).
-_EXEC_SAFE_RE = re.compile(r"^[A-Za-z0-9_@%+=:,./-]+$")
+#: Anything else triggers quoting/escaping so the argv survives systemd's own
+#: command-line parsing (spaces, shell-sensitive characters, etc.). Note ``%``
+#: is deliberately excluded: it prefixes systemd specifiers (``%m``/``%H``/...)
+#: that expand even inside double quotes, so it needs ``%%`` escaping, not
+#: quoting (see :func:`_exec_quote`).
+_EXEC_SAFE_RE = re.compile(r"^[A-Za-z0-9_@+=:,./-]+$")
 from loopcraft.manifest import CadenceType, LoopManifest
 
 #: Inclusive value bounds for each cron time/date field, used to reject
@@ -260,6 +263,15 @@ def _render_service(
         "[Service]",
         "Type=oneshot",
         f"WorkingDirectory={config.source_path}",
+    ]
+    # EnvironmentFile is rendered BEFORE the Environment= lines so the
+    # loopcraft-managed values win (systemd applies later directives last): the
+    # secrets file supplies credentials, but PATH/SOURCE/MEMORY stay exactly the
+    # values apply validated against (matching config.probe_env / config.which).
+    env_file = config.rendered_environment_file
+    if env_file:
+        lines.append(f"EnvironmentFile={env_file}")
+    lines += [
         # PATH is set explicitly to exactly the PATH apply resolved runtime/tool
         # binaries against, so the service finds `codex`/`nv-tools`/etc. instead
         # of relying on systemd's ambient (often smaller) default.
@@ -267,9 +279,6 @@ def _render_service(
         f"Environment=LOOPCRAFT_SOURCE={config.source_path}",
         f"Environment=LOOPCRAFT_MEMORY={config.memory_path}",
     ]
-    env_file = config.rendered_environment_file
-    if env_file:
-        lines.append(f"EnvironmentFile={env_file}")
     if scheduler.scope == SystemdScope.SYSTEM and scheduler.user:
         lines.append(f"User={scheduler.user}")
     lines.append(f"ExecStart={render_exec_start([*loopctl_command, 'run', manifest.id])}")
@@ -288,10 +297,15 @@ def _exec_quote(arg: str) -> str:
     left bare. This keeps a multi-word ``loopctl_bin`` (e.g. ``uv run loopctl``)
     or a path/argument with spaces or shell-sensitive characters from being
     mis-split into the wrong argv.
+
+    ``%`` is special: systemd expands ``%``-specifiers (``%m``, ``%H``, ...)
+    *regardless of quoting*, so a literal ``%`` must be doubled to ``%%``. That
+    escaping happens unconditionally, independent of whether the argument is
+    otherwise quoted.
     """
     if arg and _EXEC_SAFE_RE.fullmatch(arg):
         return arg
-    escaped = arg.replace("\\", "\\\\").replace('"', '\\"')
+    escaped = arg.replace("%", "%%").replace("\\", "\\\\").replace('"', '\\"')
     return f'"{escaped}"'
 
 
