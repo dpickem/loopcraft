@@ -26,8 +26,11 @@ worktree_keep_last = 100
 # host. These are per-host operational choices and never affect loop semantics,
 # so they live here rather than in the loop manifests. All fields are optional.
 [scheduler]
-# Command the rendered service runs (ExecStart). Prefer an absolute path on a
-# hardened host so the unit does not depend on PATH.
+# Command the rendered service runs (ExecStart). When unset, config load
+# defaults it to the project's uv-managed `.venv/bin/loopctl` if present (so a
+# clean `uv sync` checkout renders units via `make check`), otherwise the bare
+# name `loopctl`. Prefer an absolute path on a hardened host so the unit does
+# not depend on PATH.
 # loopctl_bin = "/usr/local/bin/loopctl"
 
 # Filename prefix for every rendered unit (loop-<id>.timer / .service / .path).

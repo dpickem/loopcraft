@@ -50,6 +50,11 @@ DEFAULT_MEMORY_PATH = "~/workspace/loopcraft_memory"
 #: name by default (resolved on the unit's PATH); set an absolute path in
 #: ``[scheduler].loopctl_bin`` for a hardened host.
 DEFAULT_LOOPCTL_BIN = "loopctl"
+#: Project uv-managed ``loopctl`` location under the source tree. When present
+#: and ``[scheduler].loopctl_bin`` is unset, config load defaults the scheduled
+#: command to this absolute path so a clean ``uv sync`` checkout renders units
+#: (e.g. ``make check``) without extra config.
+_VENV_LOOPCTL_SUBPATH = (".venv", "bin", "loopctl")
 #: Filename prefix for every rendered systemd unit (``loop-<id>.timer`` etc.),
 #: so the whole fleet is greppable and ``systemctl`` completion groups it.
 DEFAULT_UNIT_PREFIX = "loop-"
@@ -661,9 +666,17 @@ class LoopcraftConfig(BaseModel):
         optional_dependencies = _load_project_dependencies(source, "optional-dependencies")
 
         scheduler_raw = raw.get("scheduler", {})
-        scheduler = SchedulerConfig.model_validate(
-            scheduler_raw if isinstance(scheduler_raw, dict) else {}
-        )
+        scheduler_dict = dict(scheduler_raw) if isinstance(scheduler_raw, dict) else {}
+        # Default the scheduled command to the project's uv-managed loopctl when
+        # the operator has not pinned one, so a clean `uv sync` checkout renders
+        # units (make check) without hidden local config. Deploy/install stay
+        # strict: a real host overrides this with an absolute command or a
+        # validated [scheduler].path.
+        if "loopctl_bin" not in scheduler_dict:
+            venv_loopctl = source.joinpath(*_VENV_LOOPCTL_SUBPATH)
+            if venv_loopctl.is_file():
+                scheduler_dict["loopctl_bin"] = str(venv_loopctl)
+        scheduler = SchedulerConfig.model_validate(scheduler_dict)
 
         known = {
             "default_vendor",

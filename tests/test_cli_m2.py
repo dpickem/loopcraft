@@ -5,10 +5,14 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from loopcraft import cli
 from loopcraft import deploy
 from loopcraft.runners import capabilities as caps
 from loopcraft.runners.base import PreflightReport
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 class _OkRunner:
@@ -339,6 +343,19 @@ def test_apply_out_into_source_allowed_with_flag(monkeypatch, tmp_path: Path, ca
     rc = cli.main(["--json", "apply", "--out", str(out), "--allow-source-output"])
     assert rc == 0
     assert (out / "loop-demo.timer").exists()
+
+
+def test_default_config_renders_shipped_loops(monkeypatch, tmp_path: Path, capsys) -> None:
+    """Review 06: the repo's default config + uv .venv renders the 3 shipped loops."""
+    if not (REPO_ROOT / ".venv" / "bin" / "loopctl").is_file():
+        pytest.skip("uv-managed .venv/bin/loopctl not present")
+    monkeypatch.setenv("LOOPCRAFT_SOURCE", str(REPO_ROOT))
+    monkeypatch.setenv("LOOPCRAFT_MEMORY", str(tmp_path / "mem"))
+    rc = cli.main(["--json", "apply", "--dry-run", "--skip-preflight"])
+    payload = json.loads(capsys.readouterr().out)
+    assert rc == 0
+    assert payload["data"]["ok"] is True
+    assert payload["data"]["validated"] == 3
 
 
 def test_apply_structural_problem_writes_nothing(monkeypatch, tmp_path: Path, capsys) -> None:

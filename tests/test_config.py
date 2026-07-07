@@ -98,6 +98,50 @@ def test_which_direct_uses_process_path(monkeypatch, tmp_path: Path) -> None:
     assert _config(tmp_path).which("mytool") == str(tool_dir / "mytool")
 
 
+# --- default uv-managed loopctl (review 06) ----------------------------------
+
+
+def _venv_loopctl(source: Path) -> Path:
+    """Create a fake uv-managed loopctl under ``source/.venv/bin`` and return it."""
+    venv_bin = source / ".venv" / "bin"
+    venv_bin.mkdir(parents=True)
+    binary = venv_bin / "loopctl"
+    binary.write_text("#!/bin/sh\n", encoding="utf-8")
+    binary.chmod(0o755)
+    return binary
+
+
+def test_config_defaults_loopctl_to_venv(tmp_path: Path) -> None:
+    """A clean uv checkout defaults loopctl_bin to .venv/bin/loopctl (finding 1)."""
+    source = tmp_path / "src"
+    source.mkdir()
+    (source / "loopcraft.toml").write_text("", encoding="utf-8")
+    binary = _venv_loopctl(source)
+    config = LoopcraftConfig.load(source)
+    assert config.scheduler.loopctl_bin == str(binary)
+
+
+def test_config_respects_explicit_loopctl_bin(tmp_path: Path) -> None:
+    """An explicit [scheduler].loopctl_bin is not overridden by the venv default."""
+    source = tmp_path / "src"
+    source.mkdir()
+    (source / "loopcraft.toml").write_text(
+        '[scheduler]\nloopctl_bin = "/opt/loopctl"\n', encoding="utf-8"
+    )
+    _venv_loopctl(source)
+    config = LoopcraftConfig.load(source)
+    assert config.scheduler.loopctl_bin == "/opt/loopctl"
+
+
+def test_config_loopctl_default_stays_bare_without_venv(tmp_path: Path) -> None:
+    """Without a project venv, the default stays the bare name (strict on a host)."""
+    source = tmp_path / "src"
+    source.mkdir()
+    (source / "loopcraft.toml").write_text("", encoding="utf-8")
+    config = LoopcraftConfig.load(source)
+    assert config.scheduler.loopctl_bin == "loopctl"
+
+
 # --- scheduler config validation (review 05) ---------------------------------
 
 
