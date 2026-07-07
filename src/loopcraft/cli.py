@@ -27,6 +27,7 @@ from loopcraft.config import (
     ExitCode,
     LoopcraftConfig,
     SystemdScope,
+    set_default_vendor,
 )
 from loopcraft.deploy import (
     DeploymentPlan,
@@ -47,7 +48,7 @@ from loopcraft.manifest import (
     loop_id_problem,
 )
 from loopcraft.paths import assert_under, is_lexically_under
-from loopcraft.runners import RunContext, get_runner
+from loopcraft.runners import RunContext, available_vendors, get_runner
 from loopcraft.runners.base import PreflightReport, RunStatus
 from loopcraft.runners.capabilities import (
     API_GUIDANCE,
@@ -140,6 +141,10 @@ def main(argv: list[str] | None = None) -> int:
     p_remove.add_argument("--all", action="store_true", dest="all_loops", help="Remove every deployed loop.")
     p_remove.add_argument("--dry-run", action="store_true", help="Show what would be removed; change nothing.")
 
+    p_vendor = sub.add_parser("vendor", help="Show or set the default runtime vendor.")
+    p_vendor.add_argument("action", choices=["get", "set", "list"], help="get | set <name> | list")
+    p_vendor.add_argument("name", nargs="?", help="Vendor name (required for `set`).")
+
     sub.add_parser("list", help="List known loops.")
     sub.add_parser("fleet", help="Show all loops in a formatted table (schedule, last run, install state).")
     sub.add_parser("status", help="Show fleet status (last run per loop).")
@@ -185,6 +190,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_remove(
             config, args.loop, all_loops=args.all_loops, dry_run=args.dry_run, as_json=as_json
         )
+    if args.command == "vendor":
+        return _cmd_vendor(config, args.action, args.name, as_json=as_json)
     if args.command == "list":
         return _cmd_list(config, as_json=as_json)
     if args.command == "fleet":
@@ -1009,6 +1016,71 @@ def _print_apply_problems(plan: DeploymentPlan, *, as_json: bool) -> None:
         return
     for problem in plan.problems:
         print(f"  FAIL {problem}", file=sys.stderr)
+
+
+def _cmd_vendor(config: LoopcraftConfig, action: str, name: str | None, *, as_json: bool) -> int:
+    """Show or set the global default runtime vendor.
+
+    ``get`` prints the current default, ``list`` shows every vendor with an
+    adapter (marking the default), and ``set <name>`` persists a new default into
+    the source tree's ``loopcraft.toml``. Because the same manifest runs on any
+    vendor, this is the one-flag portability switch; a per-loop
+    ``runtime.vendor`` (or ``run --vendor``) still overrides it. ``set`` warns
+    when ``LOOPCRAFT_VENDOR`` is set, since that env var overrides the file.
+    """
+    vendors = available_vendors()
+    override = config.env_value("LOOPCRAFT_VENDOR")
+    override_note = (
+        f"note: LOOPCRAFT_VENDOR={override} overrides the config default at runtime"
+        if override
+        else None
+    )
+
+    if action == "list":
+        lines = [f"{'* ' if v == config.default_vendor else '  '}{v}" for v in vendors]
+        if override_note:
+            lines.append(override_note)
+        return _emit(
+            "vendor", as_json=as_json, ok=True, rc=ExitCode.OK,
+            data={"vendors": vendors, "default": config.default_vendor, "override": override},
+            lines=lines,
+        )
+
+    if action == "get":
+        lines = [f"default_vendor: {config.default_vendor}"]
+        if override_note:
+            lines.append(override_note)
+        return _emit(
+            "vendor", as_json=as_json, ok=True, rc=ExitCode.OK,
+            data={"default": config.default_vendor, "override": override},
+            lines=lines,
+        )
+
+    # action == "set"
+    if not name:
+        return _emit(
+            "vendor", as_json=as_json, ok=False, rc=ExitCode.INVALID,
+            data={"error": "vendor set requires a vendor name"},
+            lines=["error: vendor set requires a vendor name"],
+        )
+    if name not in vendors:
+        message = f"unknown vendor '{name}' (available: {vendors})"
+        return _emit(
+            "vendor", as_json=as_json, ok=False, rc=ExitCode.INVALID,
+            data={"error": message, "vendors": vendors},
+            lines=[f"error: {message}"],
+        )
+    path = set_default_vendor(config.source_path, name)
+    lines = [f"default_vendor set to '{name}' in {path}"]
+    if override:
+        lines.append(
+            f"warning: LOOPCRAFT_VENDOR={override} is set and overrides this at runtime"
+        )
+    return _emit(
+        "vendor", as_json=as_json, ok=True, rc=ExitCode.OK,
+        data={"default": name, "config": str(path), "override": override},
+        lines=lines,
+    )
 
 
 def _cmd_list(config: LoopcraftConfig, *, as_json: bool) -> int:

@@ -58,9 +58,30 @@ Override the memory location at runtime with `LOOPCRAFT_MEMORY`.
 > (`python` from uv's environment, `git`, `codex`, `nv-tools`); **optional**
 > future-runtime binaries
 > (`claude`, `cursor-agent`) are reported but never fail the check, so a
-> Codex-only M1 setup stays green. Use `loopctl deps check --loop <id>` to check
-> just one loop's declared runtime and dependencies. Claude/Cursor adapters, the
-> harvester, and UI arrive in later milestones (M3+).
+> Codex-only setup stays green. Use `loopctl deps check --loop <id>` to check
+> just one loop's declared runtime and dependencies. The harvester and web UI
+> arrive in later milestones (M4+).
+
+## Runtime portability (M3)
+
+The runtime is a config value, not a rewrite: the **Codex, Claude, and Cursor**
+adapters all consume the same manifest, so an existing loop runs unchanged on
+any of them. The vendor is resolved as: per-loop `runtime.vendor` (or
+`loopctl run --vendor <v>`) → the global default in `loopcraft.toml`
+(`default_vendor`) → `codex`. The `LOOPCRAFT_VENDOR` env var overrides the file
+at runtime.
+
+```bash
+loopctl vendor list           # show adapters (codex/claude/cursor); marks the default
+loopctl vendor get            # print the current default
+loopctl vendor set claude     # flip the global default (writes loopcraft.toml)
+loopctl run <loop> --vendor cursor   # one-off override for a single run
+```
+
+Each adapter shares the vendor-neutral prompt and dependency preflight and adds
+only its own binary/model checks (`codex` / `claude` / `cursor-agent`). Model
+values differ per vendor (see the tables below); Cursor is cross-provider so its
+model is left to the CLI to validate.
 
 ## Scheduling & deployment (M2)
 

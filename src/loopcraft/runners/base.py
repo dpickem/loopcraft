@@ -87,10 +87,64 @@ class BaseRunner(ABC):
         """Build the vendor command argv for one loop invocation."""
         raise NotImplementedError
 
-    @abstractmethod
     def build_prompt(self, loop: LoopManifest, ctx: RunContext) -> str:
-        """Build the initial prompt sent to the vendor runtime."""
-        raise NotImplementedError
+        """Assemble the vendor-neutral stdin prompt for one loop run.
+
+        The prompt (skill + runtime context + I/O contract + verify/stop
+        condition + budget) is deliberately identical across vendors — that
+        portability is the whole point of the manifest/adapter split, so an
+        existing loop runs unchanged on Codex, Claude, or Cursor. A vendor
+        adapter may override this only if its runtime needs a different framing.
+
+        Args:
+            loop: The loop manifest.
+            ctx: Run context (paths, resolved outputs).
+
+        Returns:
+            The full prompt text sent to the vendor runtime on stdin.
+        """
+        lines: list[str] = []
+        skill_text = self._load_source_text(ctx, loop.logic.skill)
+
+        lines.append(f"# Loop: {loop.name} ({loop.id})")
+        lines.append(loop.description)
+        lines.append("")
+        lines.append("## Runtime context")
+        lines.append(f"- source tree (repo with Makefile/config/src): {ctx.config.source_path}")
+        lines.append(f"- run worktree (staged loop assets, current cwd): {ctx.workdir}")
+        if loop.content.config:
+            lines.append(f"- content definition: {loop.content.config}")
+        lines.append(
+            "- If the skill invokes a repo-local CLI or Makefile target, run it from the source tree."
+        )
+        lines.append("")
+        if skill_text:
+            lines.append("## Skill")
+            lines.append(skill_text)
+            lines.append("")
+
+        lines.append("## I/O contract")
+        lines.append(f"- tier: {loop.tier} (observe = read-only; never take irreversible actions)")
+        if loop.inputs:
+            lines.append("- inputs (read these):")
+            for declared in loop.inputs:
+                lines.append(f"  - {declared} -> {ctx.config.resolve_state_path(declared)}")
+        if loop.outputs:
+            lines.append("- outputs (write exactly these absolute paths):")
+            for declared, resolved in zip(loop.outputs, ctx.resolved_outputs):
+                lines.append(f"  - {declared} -> {resolved}")
+        verify_text = self._load_source_text(ctx, loop.logic.verify)
+        if verify_text:
+            lines.append("")
+            lines.append("## Stop condition (verify)")
+            lines.append(verify_text)
+
+        budget = loop.budget
+        if budget.max_turns or budget.max_runtime:
+            lines.append(
+                f"- budget: max_turns={budget.max_turns}, max_runtime={budget.max_runtime}"
+            )
+        return "\n".join(lines) + "\n"
 
     def check_declared_capabilities(self, loop: LoopManifest, config: LoopcraftConfig) -> list[str]:
         """Return runtime-neutral problems for a loop's declared dependencies.

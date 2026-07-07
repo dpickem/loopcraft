@@ -10,11 +10,14 @@ from loopcraft.config import LoopcraftConfig
 from loopcraft.manifest import LoopManifest
 from loopcraft.runners import capabilities as capabilities_module
 from loopcraft.runners import base as runner_base_module
+from loopcraft.runners import available_vendors, get_runner
 from loopcraft.runners.base import (
     RunContext,
     RunStatus,
 )
+from loopcraft.runners.claude import ClaudeRunner
 from loopcraft.runners.codex import CodexRunner
+from loopcraft.runners.cursor import CursorRunner
 
 
 def _config(tmp_path: Path) -> LoopcraftConfig:
@@ -292,3 +295,100 @@ def test_run_timeout_returns_stalled(tmp_path: Path, monkeypatch) -> None:
     assert result.exit_code is None
     assert any("max_runtime" in p for p in result.problems)
     assert ctx.log_path.exists()
+
+
+# --- M3: Claude + Cursor adapters + shared prompt (portability) --------------
+
+
+def _ctx(config: LoopcraftConfig, tmp_path: Path) -> RunContext:
+    """A minimal RunContext for prompt/command tests."""
+    return RunContext(
+        config=config,
+        workdir=tmp_path / "wt",
+        log_path=tmp_path / "wt" / "run.log",
+        resolved_outputs=[config.resolve_state_path("state/demo/out.md")],
+    )
+
+
+def test_registry_exposes_all_three_vendors(tmp_path: Path) -> None:
+    """codex, claude, and cursor all resolve to their adapters."""
+    # Subset (not equality): other test modules register stub vendors into the
+    # shared registry, so only assert the shipped adapters are present.
+    assert {"claude", "codex", "cursor"}.issubset(available_vendors())
+    assert isinstance(get_runner("codex"), CodexRunner)
+    assert isinstance(get_runner("claude"), ClaudeRunner)
+    assert isinstance(get_runner("cursor"), CursorRunner)
+
+
+def test_prompt_is_identical_across_vendors(tmp_path: Path) -> None:
+    """The prompt is vendor-neutral: one manifest yields the same prompt everywhere."""
+    config = _config(tmp_path)
+    manifest = _manifest()
+    ctx = _ctx(config, tmp_path)
+    codex_prompt = CodexRunner().build_prompt(manifest, ctx)
+    assert ClaudeRunner().build_prompt(manifest, ctx) == codex_prompt
+    assert CursorRunner().build_prompt(manifest, ctx) == codex_prompt
+
+
+def test_claude_preflight_flags_missing_binary(tmp_path: Path, monkeypatch) -> None:
+    """Claude preflight fails when the claude CLI is not resolvable."""
+    monkeypatch.setattr(LoopcraftConfig, "which", lambda self, name: None)
+    report = ClaudeRunner().preflight(_manifest(runtime={"vendor": "claude"}), _config(tmp_path))
+    assert not report.ok
+    assert any("claude CLI not found" in p for p in report.problems)
+
+
+def test_claude_preflight_passes(tmp_path: Path, monkeypatch) -> None:
+    """Claude preflight passes with the binary present and a valid alias model."""
+    monkeypatch.setattr(LoopcraftConfig, "which", lambda self, name: f"/usr/bin/{name}")
+    report = ClaudeRunner().preflight(
+        _manifest(runtime={"vendor": "claude", "model": "sonnet"}), _config(tmp_path)
+    )
+    assert report.ok, report.problems
+
+
+def test_claude_flags_unrecognized_model(tmp_path: Path, monkeypatch) -> None:
+    """A gpt-* model is flagged as not a Claude model."""
+    monkeypatch.setattr(LoopcraftConfig, "which", lambda self, name: f"/usr/bin/{name}")
+    report = ClaudeRunner().preflight(
+        _manifest(runtime={"vendor": "claude", "model": "gpt-5.5"}), _config(tmp_path)
+    )
+    assert any("not a recognized Claude model" in p for p in report.problems)
+
+
+def test_claude_build_command(tmp_path: Path) -> None:
+    """Claude renders a headless argv with model, effort, and writable roots."""
+    config = _config(tmp_path)
+    manifest = _manifest(runtime={"vendor": "claude", "model": "opus", "reasoning_effort": "high"})
+    cmd = ClaudeRunner().build_command(manifest, _ctx(config, tmp_path))
+    assert cmd[:2] == ["claude", "-p"]
+    assert "--model" in cmd and "opus" in cmd
+    assert "--effort" in cmd and "high" in cmd
+    assert "--add-dir" in cmd
+    assert "--permission-mode" in cmd
+
+
+def test_cursor_preflight_flags_missing_binary(tmp_path: Path, monkeypatch) -> None:
+    """Cursor preflight fails when cursor-agent is not resolvable."""
+    monkeypatch.setattr(LoopcraftConfig, "which", lambda self, name: None)
+    report = CursorRunner().preflight(_manifest(runtime={"vendor": "cursor"}), _config(tmp_path))
+    assert not report.ok
+    assert any("cursor-agent not found" in p for p in report.problems)
+
+
+def test_cursor_accepts_any_model(tmp_path: Path, monkeypatch) -> None:
+    """Cursor is cross-provider, so it does not reject a gpt-*/claude-* model."""
+    monkeypatch.setattr(LoopcraftConfig, "which", lambda self, name: f"/usr/bin/{name}")
+    report = CursorRunner().preflight(
+        _manifest(runtime={"vendor": "cursor", "model": "gpt-5.5"}), _config(tmp_path)
+    )
+    assert report.ok, report.problems
+
+
+def test_cursor_build_command(tmp_path: Path) -> None:
+    """Cursor renders a headless argv with the pinned model."""
+    config = _config(tmp_path)
+    manifest = _manifest(runtime={"vendor": "cursor", "model": "gpt-5.5"})
+    cmd = CursorRunner().build_command(manifest, _ctx(config, tmp_path))
+    assert cmd[:2] == ["cursor-agent", "-p"]
+    assert "--model" in cmd and "gpt-5.5" in cmd
