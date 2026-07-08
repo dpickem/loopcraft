@@ -278,33 +278,6 @@ def resolve_run_stamps(config: LoopcraftConfig, now: datetime) -> tuple[str, str
     return run_stamp, date_stamp
 
 
-#: Matches the ``default_vendor = "..."`` scalar in loopcraft.toml (top-level,
-#: before any ``[table]``), so ``vendor set`` can rewrite just that line while
-#: preserving comments and the rest of the file.
-_DEFAULT_VENDOR_LINE_RE = re.compile(r'^\s*default_vendor\s*=.*$', re.MULTILINE)
-
-
-def set_default_vendor(source_path: Path | str, vendor: str) -> Path:
-    """Persist ``default_vendor`` into the source tree's ``loopcraft.toml``.
-
-    Rewrites the existing ``default_vendor = "..."`` line in place (preserving
-    comments and surrounding config); if the key is absent, it is prepended. The
-    value is written as a plain double-quoted string. Returns the config path.
-
-    Note: ``LOOPCRAFT_VENDOR`` still takes precedence at load time, so a caller
-    should tell the operator when that override is set.
-    """
-    config_file = Path(source_path) / CONFIG_FILENAME
-    text = config_file.read_text(encoding="utf-8") if config_file.exists() else ""
-    line = f'default_vendor = "{vendor}"'
-    if _DEFAULT_VENDOR_LINE_RE.search(text):
-        new_text = _DEFAULT_VENDOR_LINE_RE.sub(line, text, count=1)
-    else:
-        new_text = f"{line}\n{text}" if text else f"{line}\n"
-    config_file.write_text(new_text, encoding="utf-8")
-    return config_file
-
-
 def safe_source_relpath(declared: str) -> str:
     """Validate and normalize a source-relative path (e.g. ``logic.skill``).
 

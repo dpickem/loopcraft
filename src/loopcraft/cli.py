@@ -27,7 +27,6 @@ from loopcraft.config import (
     ExitCode,
     LoopcraftConfig,
     SystemdScope,
-    set_default_vendor,
 )
 from loopcraft.deploy import (
     DeploymentPlan,
@@ -88,6 +87,18 @@ class GitInitStatus(StrEnum):
     ERROR = "error"
 
 
+class VendorAction(StrEnum):
+    """Read-only subcommands for ``loopctl vendor``.
+
+    The default vendor is deliberately *not* settable at runtime: it lives in
+    the source tree's ``loopcraft.toml`` and changing it requires a code commit,
+    so there is no ``set`` action here.
+    """
+
+    GET = "get"
+    LIST = "list"
+
+
 def main(argv: list[str] | None = None) -> int:
     """Parse arguments, load config, and dispatch to the selected command."""
     parser = argparse.ArgumentParser(prog="loopctl", description="Loopcraft control plane.")
@@ -141,9 +152,10 @@ def main(argv: list[str] | None = None) -> int:
     p_remove.add_argument("--all", action="store_true", dest="all_loops", help="Remove every deployed loop.")
     p_remove.add_argument("--dry-run", action="store_true", help="Show what would be removed; change nothing.")
 
-    p_vendor = sub.add_parser("vendor", help="Show or set the default runtime vendor.")
-    p_vendor.add_argument("action", choices=["get", "set", "list"], help="get | set <name> | list")
-    p_vendor.add_argument("name", nargs="?", help="Vendor name (required for `set`).")
+    p_vendor = sub.add_parser("vendor", help="Show the default runtime vendor.")
+    p_vendor.add_argument(
+        "action", type=VendorAction, choices=list(VendorAction), help="get | list"
+    )
 
     sub.add_parser("list", help="List known loops.")
     sub.add_parser("fleet", help="Show all loops in a formatted table (schedule, last run, install state).")
@@ -191,7 +203,7 @@ def main(argv: list[str] | None = None) -> int:
             config, args.loop, all_loops=args.all_loops, dry_run=args.dry_run, as_json=as_json
         )
     if args.command == "vendor":
-        return _cmd_vendor(config, args.action, args.name, as_json=as_json)
+        return _cmd_vendor(config, args.action, as_json=as_json)
     if args.command == "list":
         return _cmd_list(config, as_json=as_json)
     if args.command == "fleet":
@@ -1018,15 +1030,15 @@ def _print_apply_problems(plan: DeploymentPlan, *, as_json: bool) -> None:
         print(f"  FAIL {problem}", file=sys.stderr)
 
 
-def _cmd_vendor(config: LoopcraftConfig, action: str, name: str | None, *, as_json: bool) -> int:
-    """Show or set the global default runtime vendor.
+def _cmd_vendor(config: LoopcraftConfig, action: VendorAction, *, as_json: bool) -> int:
+    """Show the global default runtime vendor (read-only).
 
-    ``get`` prints the current default, ``list`` shows every vendor with an
-    adapter (marking the default), and ``set <name>`` persists a new default into
-    the source tree's ``loopcraft.toml``. Because the same manifest runs on any
-    vendor, this is the one-flag portability switch; a per-loop
-    ``runtime.vendor`` (or ``run --vendor``) still overrides it. ``set`` warns
-    when ``LOOPCRAFT_VENDOR`` is set, since that env var overrides the file.
+    ``get`` prints the current default and ``list`` shows every vendor with an
+    adapter (marking the default). The default itself is defined by the source
+    tree's ``loopcraft.toml`` (``default_vendor``) and changing it requires a
+    code commit; there is intentionally no ``set`` action. A per-loop
+    ``runtime.vendor`` (or ``run --vendor``) still overrides the default, and
+    ``LOOPCRAFT_VENDOR`` overrides it at runtime.
     """
     vendors = available_vendors()
     default = config.default_vendor
@@ -1045,55 +1057,18 @@ def _cmd_vendor(config: LoopcraftConfig, action: str, name: str | None, *, as_js
         else f"error: default vendor '{default}' has no runtime adapter (available: {vendors})"
     )
 
-    if action == "list":
+    if action is VendorAction.LIST:
         lines = [f"{'* ' if v == default else '  '}{v}" for v in vendors]
-        if invalid_note:
-            lines.append(invalid_note)
-        if override_note:
-            lines.append(override_note)
-        return _emit(
-            "vendor", as_json=as_json, ok=default_ok,
-            rc=ExitCode.OK if default_ok else ExitCode.FAILURE,
-            data={"vendors": vendors, "default": default, "override": override, "default_ok": default_ok},
-            lines=lines,
-        )
-
-    if action == "get":
+    else:  # VendorAction.GET
         lines = [f"default_vendor: {default}"]
-        if invalid_note:
-            lines.append(invalid_note)
-        if override_note:
-            lines.append(override_note)
-        return _emit(
-            "vendor", as_json=as_json, ok=default_ok,
-            rc=ExitCode.OK if default_ok else ExitCode.FAILURE,
-            data={"default": default, "override": override, "vendors": vendors, "default_ok": default_ok},
-            lines=lines,
-        )
-
-    # action == "set"
-    if not name:
-        return _emit(
-            "vendor", as_json=as_json, ok=False, rc=ExitCode.INVALID,
-            data={"error": "vendor set requires a vendor name"},
-            lines=["error: vendor set requires a vendor name"],
-        )
-    if name not in vendors:
-        message = f"unknown vendor '{name}' (available: {vendors})"
-        return _emit(
-            "vendor", as_json=as_json, ok=False, rc=ExitCode.INVALID,
-            data={"error": message, "vendors": vendors},
-            lines=[f"error: {message}"],
-        )
-    path = set_default_vendor(config.source_path, name)
-    lines = [f"default_vendor set to '{name}' in {path}"]
-    if override:
-        lines.append(
-            f"warning: LOOPCRAFT_VENDOR={override} is set and overrides this at runtime"
-        )
+    if invalid_note:
+        lines.append(invalid_note)
+    if override_note:
+        lines.append(override_note)
     return _emit(
-        "vendor", as_json=as_json, ok=True, rc=ExitCode.OK,
-        data={"default": name, "config": str(path), "override": override},
+        "vendor", as_json=as_json, ok=default_ok,
+        rc=ExitCode.OK if default_ok else ExitCode.FAILURE,
+        data={"vendors": vendors, "default": default, "override": override, "default_ok": default_ok},
         lines=lines,
     )
 

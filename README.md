@@ -71,10 +71,14 @@ any of them. The vendor is resolved as: per-loop `runtime.vendor` (or
 (`default_vendor`) → `codex`. The `LOOPCRAFT_VENDOR` env var overrides the file
 at runtime.
 
+The global default lives in `loopcraft.toml` and is intentionally **not**
+settable from the CLI — changing the fleet-wide default is a code change that
+goes through commit + review. Edit `default_vendor` in `loopcraft.toml` (or use
+a per-loop / per-run override for one-offs).
+
 ```bash
 loopctl vendor list           # show adapters (codex/claude/cursor); marks the default
 loopctl vendor get            # print the current default
-loopctl vendor set claude     # flip the global default (writes loopcraft.toml)
 loopctl run <loop> --vendor cursor   # one-off override for a single run
 ```
 
