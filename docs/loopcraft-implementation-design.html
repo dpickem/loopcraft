@@ -1499,7 +1499,7 @@ check:        ## verify deps + manifests without deploying
       <ul>
         <li><strong>Build:</strong> the Claude and Cursor <code>Runner</code> implementations; <code>loopctl vendor set</code> + per-loop <code>runtime.vendor</code> override; <code>preflight</code> capability checks (tools mappable, auth present, model available).</li>
         <li><strong>Depends on:</strong> M1 (the adapter interface).</li>
-        <li><strong>Exit criteria:</strong> an existing loop runs unchanged on Codex <em>and</em> Claude; a vendor swap is one flag; a Cursor loop can spawn a cross-provider sub-agent.</li>
+        <li><strong>Exit criteria:</strong> an existing loop runs unchanged on Codex <em>and</em> Claude; a vendor swap is one flag. Cursor ships as a <em>limited</em> single-run adapter &mdash; it has no writable-root grant yet, so a loop that writes ledger (<code>state/&hellip;</code>) outputs is reported unsupported for Cursor at <code>preflight</code>. Full Cursor parity (writable roots) and the cross-provider <strong>sub-agent</strong> capability move to M3.5.</li>
         <li><strong>Risks:</strong> Cursor CLI per-sub-agent model caveats (plan-dependent); Codex/Claude cross-provider needing a gateway; normalizing results across three log formats.</li>
       </ul>
     </details>
@@ -1508,9 +1508,9 @@ check:        ## verify deps + manifests without deploying
       <summary>M3.5 &mdash; Multi-model loops</summary>
       <p>Enable per-role models (maker/checker on different providers).</p>
       <ul>
-        <li><strong>Build:</strong> the <code>roles:</code> manifest block; the agent-definition compiler (role def &rarr; <code>.codex/.claude/.cursor</code> agent formats); both execution paths &mdash; intra-run sub-agents (native on Cursor) and inter-stage composition across adapters via the memory ledger.</li>
+        <li><strong>Build:</strong> the <code>roles:</code> manifest block; the agent-definition compiler (role def &rarr; <code>.codex/.claude/.cursor</code> agent formats); both execution paths &mdash; intra-run sub-agents (native on Cursor) and inter-stage composition across adapters via the memory ledger; the Cursor writable-root grant so ledger-writing loops run under Cursor (parity carried over from M3).</li>
         <li><strong>Depends on:</strong> M3 (adapters).</li>
-        <li><strong>Exit criteria:</strong> a maker/checker loop runs a <code>gpt-5.5</code> implementer + an <code>opus</code> reviewer and hands the diff between stages cleanly.</li>
+        <li><strong>Exit criteria:</strong> a maker/checker loop runs a <code>gpt-5.5</code> implementer + an <code>opus</code> reviewer and hands the diff between stages cleanly; a Cursor loop spawns a cross-provider sub-agent; a ledger-writing loop runs unchanged under Cursor.</li>
         <li><strong>Risks:</strong> passing context/diffs across stages without loss; two-model token cost; verifying the readonly reviewer can&rsquo;t mutate.</li>
       </ul>
     </details>
