@@ -58,9 +58,52 @@ Override the memory location at runtime with `LOOPCRAFT_MEMORY`.
 > (`python` from uv's environment, `git`, `codex`, `nv-tools`); **optional**
 > future-runtime binaries
 > (`claude`, `cursor-agent`) are reported but never fail the check, so a
-> Codex-only M1 setup stays green. Use `loopctl deps check --loop <id>` to check
-> just one loop's declared runtime and dependencies. Claude/Cursor adapters, the
-> harvester, and UI arrive in later milestones (M3+).
+> Codex-only setup stays green. Use `loopctl deps check --loop <id>` to check
+> just one loop's declared runtime and dependencies. The harvester and web UI
+> arrive in later milestones (M4+).
+
+## Runtime portability (M3)
+
+The runtime is a config value, not a rewrite: the **Codex, Claude, and Cursor**
+adapters all consume the same manifest, so an existing loop runs unchanged on
+any of them. The vendor is resolved as: per-loop `runtime.vendor` (or
+`loopctl run --vendor <v>`) → the global default in `loopcraft.toml`
+(`default_vendor`) → `codex`. The `LOOPCRAFT_VENDOR` env var overrides the file
+at runtime.
+
+The global default lives in `loopcraft.toml` and is intentionally **not**
+settable from the CLI — changing the fleet-wide default is a code change that
+goes through commit + review. Edit `default_vendor` in `loopcraft.toml` (or use
+a per-loop / per-run override for one-offs).
+
+```bash
+loopctl vendor list           # show adapters (codex/claude/cursor); marks the default
+loopctl vendor get            # print the current default
+loopctl run <loop> --vendor cursor   # one-off override for a single run
+```
+
+Each adapter shares the vendor-neutral prompt and dependency preflight and adds
+only its own binary/model checks (`codex` / `claude` / `cursor-agent`). Model
+values differ per vendor (see the tables below); Cursor is cross-provider so its
+model is left to the CLI to validate.
+
+> **Model checks are a local shape/typo guard, not an availability check.**
+> Preflight (`apply`, `deps check --loop`) flags a `runtime.model` that clearly
+> belongs to the wrong vendor (e.g. a `gpt-*` slug on Claude), but it does not
+> query the vendor's live model catalog — that would need per-CLI, account- and
+> plan-specific calls. A *plausible but unavailable* model (or, for Cursor, any
+> model) is therefore validated by the vendor CLI at run time, not at `apply`.
+> Live catalog probing is deferred to a later milestone.
+
+**Shipped adapter scope (M3).** Codex and Claude are full adapters: they grant
+each declared ledger-output directory to the sandboxed run (`--add-dir`), so a
+loop runs unchanged on either. The **Cursor adapter is limited** in M3 — it has
+no equivalent writable-root grant, so a loop that declares `state/...` outputs is
+reported as unsupported for Cursor at preflight (use Codex/Claude for
+output-producing loops). The M3 design's cross-provider **sub-agent** capability
+(a Cursor loop spawning a sub-agent on another provider) and per-role multi-model
+compilation are **deferred to M3.5**; the shipped adapters run a single headless
+invocation per loop.
 
 ## Scheduling & deployment (M2)
 

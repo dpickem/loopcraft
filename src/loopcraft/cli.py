@@ -47,7 +47,7 @@ from loopcraft.manifest import (
     loop_id_problem,
 )
 from loopcraft.paths import assert_under, is_lexically_under
-from loopcraft.runners import RunContext, get_runner
+from loopcraft.runners import RunContext, available_vendors, get_runner
 from loopcraft.runners.base import PreflightReport, RunStatus
 from loopcraft.runners.capabilities import (
     API_GUIDANCE,
@@ -85,6 +85,18 @@ class GitInitStatus(StrEnum):
     INITIALIZED = "initialized"
     UNAVAILABLE = "unavailable (git not on PATH)"
     ERROR = "error"
+
+
+class VendorAction(StrEnum):
+    """Read-only subcommands for ``loopctl vendor``.
+
+    The default vendor is deliberately *not* settable at runtime: it lives in
+    the source tree's ``loopcraft.toml`` and changing it requires a code commit,
+    so there is no ``set`` action here.
+    """
+
+    GET = "get"
+    LIST = "list"
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -140,6 +152,11 @@ def main(argv: list[str] | None = None) -> int:
     p_remove.add_argument("--all", action="store_true", dest="all_loops", help="Remove every deployed loop.")
     p_remove.add_argument("--dry-run", action="store_true", help="Show what would be removed; change nothing.")
 
+    p_vendor = sub.add_parser("vendor", help="Show the default runtime vendor.")
+    p_vendor.add_argument(
+        "action", type=VendorAction, choices=list(VendorAction), help="get | list"
+    )
+
     sub.add_parser("list", help="List known loops.")
     sub.add_parser("fleet", help="Show all loops in a formatted table (schedule, last run, install state).")
     sub.add_parser("status", help="Show fleet status (last run per loop).")
@@ -185,6 +202,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_remove(
             config, args.loop, all_loops=args.all_loops, dry_run=args.dry_run, as_json=as_json
         )
+    if args.command == "vendor":
+        return _cmd_vendor(config, args.action, as_json=as_json)
     if args.command == "list":
         return _cmd_list(config, as_json=as_json)
     if args.command == "fleet":
@@ -1009,6 +1028,49 @@ def _print_apply_problems(plan: DeploymentPlan, *, as_json: bool) -> None:
         return
     for problem in plan.problems:
         print(f"  FAIL {problem}", file=sys.stderr)
+
+
+def _cmd_vendor(config: LoopcraftConfig, action: VendorAction, *, as_json: bool) -> int:
+    """Show the global default runtime vendor (read-only).
+
+    ``get`` prints the current default and ``list`` shows every vendor with an
+    adapter (marking the default). The default itself is defined by the source
+    tree's ``loopcraft.toml`` (``default_vendor``) and changing it requires a
+    code commit; there is intentionally no ``set`` action. A per-loop
+    ``runtime.vendor`` (or ``run --vendor``) still overrides the default, and
+    ``LOOPCRAFT_VENDOR`` overrides it at runtime.
+    """
+    vendors = available_vendors()
+    default = config.default_vendor
+    # The effective default (from loopcraft.toml or LOOPCRAFT_VENDOR) is only
+    # usable if an adapter is registered for it. Report an unregistered default
+    # as a failure here rather than letting it slip through to a run/apply.
+    default_ok = default in vendors
+    override = config.env_value("LOOPCRAFT_VENDOR")
+    override_note = (
+        f"note: LOOPCRAFT_VENDOR={override} overrides the config default at runtime"
+        if override
+        else None
+    )
+    invalid_note = (
+        None if default_ok
+        else f"error: default vendor '{default}' has no runtime adapter (available: {vendors})"
+    )
+
+    if action is VendorAction.LIST:
+        lines = [f"{'* ' if v == default else '  '}{v}" for v in vendors]
+    else:  # VendorAction.GET
+        lines = [f"default_vendor: {default}"]
+    if invalid_note:
+        lines.append(invalid_note)
+    if override_note:
+        lines.append(override_note)
+    return _emit(
+        "vendor", as_json=as_json, ok=default_ok,
+        rc=ExitCode.OK if default_ok else ExitCode.FAILURE,
+        data={"vendors": vendors, "default": default, "override": override, "default_ok": default_ok},
+        lines=lines,
+    )
 
 
 def _cmd_list(config: LoopcraftConfig, *, as_json: bool) -> int:
