@@ -61,6 +61,28 @@ class AgentDefinition(BaseModel):
     verify: str | None = None
     instructions: str = ""
 
+    def readonly_preamble(self) -> str:
+        """Return the read-only contract line for a checker role (or empty).
+
+        The ``readonly`` policy travels with the role, not the model, so this is
+        restated in every compiled/inline prompt as defense in depth alongside
+        native runtime enforcement and the control-plane post-run check.
+        """
+        if not self.readonly:
+            return ""
+        return (
+            "IMPORTANT: You are a READ-ONLY review role. Do not modify source code "
+            "or another role's outputs, and do not run mutating commands. You may "
+            "write only your own declared review output(s). Report findings only.\n\n"
+        )
+
+    def prompt_body(self) -> str:
+        """Assemble the full instruction body: preamble + instructions + verify."""
+        body = self.readonly_preamble() + self.instructions
+        if self.verify:
+            body += f"\n\n## Acceptance criteria (verify)\n{self.verify}"
+        return body
+
 
 def _split_frontmatter(text: str) -> tuple[dict[str, Any], str]:
     """Split a markdown document into its YAML frontmatter and body.

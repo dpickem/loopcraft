@@ -20,6 +20,7 @@ grant collapses to nothing for Codex/Claude/Cursor alike.
 
 from __future__ import annotations
 
+import os
 import shutil
 from pathlib import Path
 
@@ -30,6 +31,23 @@ from loopcraft.paths import assert_under
 
 #: Subdirectory of a run worktree where declared outputs are staged for writing.
 OUTPUTS_STAGING_DIR = "outputs"
+
+
+class PromotionError(Exception):
+    """Raised when a produced output cannot be safely promoted to the ledger."""
+
+
+def is_safe_regular_file(path: Path) -> bool:
+    """Return whether ``path`` is a real regular file (not a symlink/dir/device).
+
+    Uses ``lstat`` so a symlink is never followed: an agent that writes its
+    declared output as a symlink cannot trick the control plane into reading or
+    copying the link target.
+    """
+    try:
+        return path.is_file() and not path.is_symlink()
+    except OSError:
+        return False
 
 
 class OutputBinding(BaseModel):
@@ -79,17 +97,46 @@ def plan_output_bindings(
     return bindings
 
 
-def promote_outputs(bindings: list[OutputBinding]) -> list[Path]:
-    """Copy produced worktree outputs to their ledger destinations.
+def promote_outputs(bindings: list[OutputBinding], *, workdir: Path | None = None) -> list[Path]:
+    """Atomically copy produced worktree outputs to their ledger destinations.
 
-    Only bindings whose ``write_path`` exists are promoted (a run may not produce
-    every declared output). Returns the ledger paths actually written.
+    Only bindings whose ``write_path`` is a real regular file are promoted (a run
+    may not produce every declared output). Each copy goes through a temporary
+    file in the destination directory and is then atomically renamed into place,
+    so a reader never observes a half-written ledger file and a failed copy
+    cannot leave a partial canonical output.
+
+    Args:
+        bindings: The output bindings to promote.
+        workdir: When given, re-assert every write path stays inside it right
+            before reading — defense against a symlinked/relocated staging path.
+
+    Returns:
+        The ledger paths actually written.
+
+    Raises:
+        PromotionError: If a declared output exists but is not a safe regular
+            file (symlink, directory, device, etc.).
     """
     promoted: list[Path] = []
     for binding in bindings:
-        if not binding.write_path.exists():
+        write_path = binding.write_path
+        if not write_path.exists() and not write_path.is_symlink():
             continue
+        if not is_safe_regular_file(write_path):
+            raise PromotionError(
+                f"declared output is not a regular file (symlink/dir refused): {binding.declared}"
+            )
+        if workdir is not None:
+            assert_under(workdir.resolve(), write_path.resolve(), label="output write path")
         binding.ledger_path.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(binding.write_path, binding.ledger_path)
+        # Copy to a temp file in the destination dir, then atomically replace.
+        tmp = binding.ledger_path.with_name(binding.ledger_path.name + ".loopcraft.tmp")
+        try:
+            shutil.copyfile(write_path, tmp)  # copyfile does not follow dest symlinks
+            os.replace(tmp, binding.ledger_path)
+        finally:
+            if tmp.exists():
+                tmp.unlink()
         promoted.append(binding.ledger_path)
     return promoted

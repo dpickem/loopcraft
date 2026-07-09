@@ -1,17 +1,23 @@
 """Compile vendor-neutral agent definitions into runtime-native sub-agent files.
 
-Each runtime discovers sub-agents from its own on-disk format and directory:
+Each runtime discovers sub-agents from its own on-disk format and directory. The
+formats below track the current runtime documentation (verified against Cursor
+`https://cursor.com/docs/subagents.md` and Codex
+`https://developers.openai.com/codex/subagents`):
 
-- Codex   -> ``.codex/agents/<name>.toml``
-- Claude  -> ``.claude/agents/<name>.md`` (YAML frontmatter + system prompt)
-- Cursor  -> ``.cursor/agents/<name>.yaml``
+- **Cursor** -> ``.cursor/agents/<name>.md`` — Markdown with YAML frontmatter
+  (``name``/``description``/``model``/``readonly``) and a Markdown prompt body.
+- **Claude** -> ``.claude/agents/<name>.md`` — Markdown with YAML frontmatter
+  (``name``/``description``/``tools``/``model``) and a prompt body.
+- **Codex** -> ``.codex/agents/<name>.toml`` — TOML with ``name``/``description``/
+  ``developer_instructions`` (plus ``model`` and ``sandbox_mode = "read-only"``
+  for a read-only role).
 
-:func:`compile_agent` renders one :class:`~loopcraft.agents.AgentDefinition`
-into the chosen runtime's format with the role's model attached; the agent
-definition stays the single source of truth for behavior, and the vendor/model
-is a swappable binding on top of it. :func:`write_compiled_agents` materializes
-the rendered files into a run worktree (used by the intra-run execution path, so
-one harness can spawn the roles as sub-agents).
+The compiled file's ``name`` and filename come from the manifest **role key**
+(canonical, unique, filename-safe), not the agent definition's own ``name``, so
+two roles can never collide on one destination. A role's ``verify`` rubric is
+compiled into the instructions so the stop/acceptance contract travels with the
+behavior. :func:`write_compiled_agents` materializes the files into a worktree.
 """
 
 from __future__ import annotations
@@ -30,7 +36,7 @@ from loopcraft.paths import assert_under
 _VENDOR_LAYOUT: dict[str, tuple[str, str]] = {
     Vendor.CODEX: (".codex/agents", "toml"),
     Vendor.CLAUDE: (".claude/agents", "md"),
-    Vendor.CURSOR: (".cursor/agents", "yaml"),
+    Vendor.CURSOR: (".cursor/agents", "md"),
 }
 
 
@@ -53,80 +59,61 @@ class CompiledAgent(BaseModel):
     content: str
 
 
-def _readonly_preamble(defn: AgentDefinition) -> str:
-    """Return a leading instruction that restates a role's read-only contract.
+def _compile_codex(name: str, defn: AgentDefinition, model: str | None) -> str:
+    """Render a Codex ``.codex/agents/*.toml`` custom-agent file.
 
-    The ``readonly`` flag travels with the *role*, not the model, so the
-    reviewer's constraint survives an engine swap. Runtimes vary in how strictly
-    they enforce a read-only sub-agent, so the contract is also stated in the
-    prompt as defense in depth.
+    Uses the current Codex schema: required ``name``/``description``/
+    ``developer_instructions``, optional ``model``, and ``sandbox_mode =
+    "read-only"`` to enforce a read-only role.
     """
-    if not defn.readonly:
-        return ""
-    return (
-        "IMPORTANT: You are a READ-ONLY review role. Do not modify source code or "
-        "another role's outputs, and do not run mutating commands. You may write "
-        "only your own declared review output(s). Report findings only.\n\n"
-    )
-
-
-def _compile_codex(defn: AgentDefinition, model: str | None) -> str:
-    """Render an agent definition as a Codex ``.codex/agents/*.toml`` file."""
-    instructions = _readonly_preamble(defn) + defn.instructions
     lines = [
-        f"name = {json.dumps(defn.name)}",
+        f"name = {json.dumps(name)}",
         f"description = {json.dumps(defn.description)}",
-        f"read_only = {str(defn.readonly).lower()}",
     ]
     if model:
         lines.append(f"model = {json.dumps(model)}")
-    if defn.tools:
-        rendered = ", ".join(json.dumps(tool) for tool in defn.tools)
-        lines.append(f"tools = [{rendered}]")
-    # A TOML basic string (json.dumps) escapes quotes/newlines safely, so
-    # arbitrary instruction text round-trips without a fragile multi-line block.
-    lines.append(f"instructions = {json.dumps(instructions)}")
+    if defn.readonly:
+        lines.append('sandbox_mode = "read-only"')
+    # A TOML basic string (json.dumps) escapes quotes/newlines safely.
+    lines.append(f"developer_instructions = {json.dumps(defn.prompt_body())}")
     return "\n".join(lines) + "\n"
 
 
-def _compile_claude(defn: AgentDefinition, model: str | None) -> str:
-    """Render an agent definition as a Claude ``.claude/agents/*.md`` file."""
-    header: dict[str, object] = {"name": defn.name, "description": defn.description}
-    if defn.tools:
-        header["tools"] = ", ".join(defn.tools)
-    if model:
-        header["model"] = model
+def _compile_markdown(name: str, defn: AgentDefinition, model: str | None, *, cursor: bool) -> str:
+    """Render a Cursor/Claude Markdown sub-agent (YAML frontmatter + body).
+
+    Cursor supports a native ``readonly`` field; Claude carries ``tools`` and
+    relies on the preamble for read-only intent.
+    """
+    header: dict[str, object] = {"name": name, "description": defn.description}
+    if cursor:
+        if model:
+            header["model"] = model
+        if defn.readonly:
+            header["readonly"] = True
+    else:  # Claude
+        if defn.tools:
+            header["tools"] = ", ".join(defn.tools)
+        if model:
+            header["model"] = model
     frontmatter = yaml.safe_dump(header, sort_keys=False).strip()
-    body = _readonly_preamble(defn) + defn.instructions
-    return f"---\n{frontmatter}\n---\n{body}\n"
+    return f"---\n{frontmatter}\n---\n{defn.prompt_body()}\n"
 
 
-def _compile_cursor(defn: AgentDefinition, model: str | None) -> str:
-    """Render an agent definition as a Cursor ``.cursor/agents/*.yaml`` file."""
-    doc: dict[str, object] = {
-        "name": defn.name,
-        "description": defn.description,
-        "readonly": defn.readonly,
-    }
-    if model:
-        doc["model"] = model
-    if defn.tools:
-        doc["tools"] = list(defn.tools)
-    doc["prompt"] = _readonly_preamble(defn) + defn.instructions
-    return yaml.safe_dump(doc, sort_keys=False)
-
-
-def compile_agent(defn: AgentDefinition, vendor: str, model: str | None) -> CompiledAgent:
+def compile_agent(
+    defn: AgentDefinition, vendor: str, model: str | None, *, name: str | None = None
+) -> CompiledAgent:
     """Compile one agent definition into a runtime-native sub-agent file.
 
     Args:
         defn: The parsed, vendor-neutral agent definition.
         vendor: Target runtime (``codex`` / ``claude`` / ``cursor``).
         model: Model id to attach to the compiled agent (role binding), or None.
+        name: Canonical compiled name (the manifest role key). Defaults to the
+            agent definition's own name when omitted.
 
     Returns:
-        The rendered :class:`CompiledAgent` (vendor, worktree-relative path,
-        contents).
+        The rendered :class:`CompiledAgent`.
 
     Raises:
         AgentCompileError: If the vendor has no known sub-agent layout.
@@ -137,20 +124,20 @@ def compile_agent(defn: AgentDefinition, vendor: str, model: str | None) -> Comp
             f"no sub-agent format for vendor '{vendor}' (known: {sorted(_VENDOR_LAYOUT)})"
         )
     directory, ext = layout
+    compiled_name = name or defn.name
     if vendor == Vendor.CODEX:
-        content = _compile_codex(defn, model)
-    elif vendor == Vendor.CLAUDE:
-        content = _compile_claude(defn, model)
+        content = _compile_codex(compiled_name, defn, model)
     else:
-        content = _compile_cursor(defn, model)
-    return CompiledAgent(vendor=vendor, relpath=f"{directory}/{defn.name}.{ext}", content=content)
+        content = _compile_markdown(compiled_name, defn, model, cursor=vendor == Vendor.CURSOR)
+    return CompiledAgent(vendor=vendor, relpath=f"{directory}/{compiled_name}.{ext}", content=content)
 
 
 def write_compiled_agents(workdir: Path, compiled: list[CompiledAgent]) -> list[Path]:
     """Write compiled sub-agent files into a run worktree.
 
-    Each destination is confirmed to remain under ``workdir`` before writing, so
-    a crafted agent name can never escape the run directory.
+    Each destination is confirmed to remain under ``workdir`` and to be unique
+    before writing, so a crafted agent name can neither escape the run directory
+    nor silently overwrite another role's file.
 
     Args:
         workdir: The run worktree root.
@@ -161,12 +148,17 @@ def write_compiled_agents(workdir: Path, compiled: list[CompiledAgent]) -> list[
 
     Raises:
         ValueError: If a compiled file would resolve outside the worktree.
+        AgentCompileError: If two compiled agents target the same destination.
     """
     workdir = workdir.resolve()
     written: list[Path] = []
+    seen: set[Path] = set()
     for agent in compiled:
         dest = (workdir / agent.relpath).resolve()
         assert_under(workdir, dest, label="compiled agent")
+        if dest in seen:
+            raise AgentCompileError(f"two roles compile to the same file: {agent.relpath}")
+        seen.add(dest)
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_text(agent.content, encoding="utf-8")
         written.append(dest)

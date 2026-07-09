@@ -37,6 +37,12 @@ _DURATION_RE = re.compile(r"^\s*(\d+)\s*([smh])\s*$", re.IGNORECASE)
 #: never an absolute path, ``..`` traversal, or anything with separators.
 LOOP_ID_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 
+#: Canonical role-name vocabulary (M3.5). A role name is interpolated into a
+#: per-stage log filename and used as the canonical compiled sub-agent filename,
+#: so it must be a single safe path segment: lowercase alphanumeric components
+#: separated by single hyphens (e.g. ``implementer``, ``code-reviewer``).
+ROLE_NAME_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+
 
 class ManifestError(Exception):
     """Raised when a manifest cannot be parsed or fails validation."""
@@ -333,6 +339,22 @@ class LoopManifest(_ManifestModel):
         """Resolve a role's runtime: role → loop ``runtime`` → global default."""
         return role.vendor or self.runtime.vendor or default_vendor
 
+    def effective_outputs(self) -> list[str]:
+        """Return every ledger path this loop can produce (top-level + roles).
+
+        Used for fleet-wide producer-collision and dependency-graph analysis so
+        a role-produced file participates like any top-level output. Top-level
+        outputs already inherited by a maker are not double-counted.
+        """
+        seen: set[str] = set()
+        result: list[str] = []
+        for declared in [*self.outputs, *(o for r in (self.roles or {}).values() for o in r.outputs)]:
+            key = _norm(declared)
+            if key not in seen:
+                seen.add(key)
+                result.append(declared)
+        return result
+
     def validation_report(self) -> ValidationReport:
         """Validate this manifest and return structured issues."""
         issues: list[ValidationIssue] = []
@@ -453,6 +475,18 @@ class LoopManifest(_ManifestModel):
             issues.append(ValidationIssue(scope="roles", message="roles is empty; declare at least one role"))
             return issues
         for name, role in self.roles.items():
+            # The role name becomes a per-stage log filename and the canonical
+            # compiled sub-agent filename, so it must be a single safe segment.
+            if not ROLE_NAME_RE.fullmatch(name):
+                issues.append(
+                    ValidationIssue(
+                        scope=f"roles.{name}",
+                        message=(
+                            "role name must be lowercase alphanumeric components "
+                            f"separated by single hyphens (e.g. 'reviewer'): {name!r}"
+                        ),
+                    )
+                )
             if not role.agent:
                 issues.append(ValidationIssue(scope=f"roles.{name}.agent", message="missing required field"))
                 continue
@@ -464,6 +498,26 @@ class LoopManifest(_ManifestModel):
                 issue = self._state_output_issue(declared, f"roles.{name}.outputs")
                 if issue is not None:
                     issues.append(issue)
+
+        # A read-only role must not own top-level outputs implicitly, and no two
+        # roles may own the same declared output (ambiguous ownership across
+        # stages — see review finding 7).
+        seen_role_outputs: dict[str, str] = {}
+        for name, role in self.roles.items():
+            for declared in role.outputs:
+                norm = _norm(declared)
+                if norm in seen_role_outputs:
+                    issues.append(
+                        ValidationIssue(
+                            scope=f"roles.{name}.outputs",
+                            message=(
+                                f"output '{declared}' is also owned by role "
+                                f"'{seen_role_outputs[norm]}'"
+                            ),
+                        )
+                    )
+                else:
+                    seen_role_outputs[norm] = name
 
         explicit_vendors = {role.vendor for role in self.roles.values() if role.vendor is not None}
         if (
@@ -619,6 +673,9 @@ def load_all(loops_dir: Path | str) -> ManifestCatalog:
     # same durable ledger file. Duplicates within one manifest are flagged too.
     producers: dict[str, list[str]] = {}
     for manifest in manifests:
+        # Duplicate detection is on the raw top-level outputs (a repeated line is
+        # a manifest error); cross-loop producer analysis uses effective outputs
+        # (deduped, including role outputs) so a loop never collides with itself.
         declared_norms: set[str] = set()
         for output in manifest.outputs:
             norm = _norm(output)
@@ -631,7 +688,8 @@ def load_all(loops_dir: Path | str) -> ManifestCatalog:
                 )
                 continue
             declared_norms.add(norm)
-            producers.setdefault(norm, []).append(manifest.id)
+        for output in manifest.effective_outputs():
+            producers.setdefault(_norm(output), []).append(manifest.id)
     for norm, producing_loops in sorted(producers.items()):
         if len(producing_loops) > 1:
             issues.append(
@@ -669,7 +727,7 @@ def _detect_cycles(manifests: list[LoopManifest]) -> ValidationReport:
     """
     producers: dict[str, list[str]] = {}
     for manifest in manifests:
-        for output in manifest.outputs:
+        for output in manifest.effective_outputs():
             producers.setdefault(_norm(output), []).append(manifest.id)
 
     graph = nx.DiGraph()

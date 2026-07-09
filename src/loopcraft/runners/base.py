@@ -18,7 +18,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from loopcraft.config import LoopcraftConfig, SourcePathError
 from loopcraft.manifest import LoopManifest
-from loopcraft.outputs import OutputBinding
+from loopcraft.outputs import OutputBinding, is_safe_regular_file
 from loopcraft.paths import is_lexically_under
 from loopcraft.runners.capabilities import check_declared_capabilities
 
@@ -69,7 +69,12 @@ class RunContext(_RunnerModel):
 
 
 class RunResult(_RunnerModel):
-    """Normalized outcome of a headless run, across vendors."""
+    """Normalized outcome of a headless run, across vendors.
+
+    ``stages`` carries per-stage records for a multi-model pipeline run (empty
+    for a single-model run), so aggregate status/cost never hides which stage
+    did what (see the M3.5 orchestrator).
+    """
 
     status: str
     exit_code: int | None = None
@@ -79,6 +84,7 @@ class RunResult(_RunnerModel):
     log_path: Path | None = None
     outputs: list[str] = Field(default_factory=list)
     problems: list[str] = Field(default_factory=list)
+    stages: list[dict] = Field(default_factory=list)
 
 
 class BaseRunner(ABC):
@@ -288,25 +294,36 @@ class BaseRunner(ABC):
         )
         ctx.log_path.write_text(log, encoding="utf-8")
 
-        missing = [p for p in ctx.resolved_outputs if not p.exists()]
+        # An output must be a real regular file. A symlink or directory at the
+        # declared path is rejected (never followed), so an agent cannot redirect
+        # promotion to read an arbitrary file (see review finding 10).
+        unsafe = [p for p in ctx.resolved_outputs if p.exists() and not is_safe_regular_file(p)]
+        unsafe_set = set(unsafe)
+        missing = [p for p in ctx.resolved_outputs if not p.exists() and p not in unsafe_set]
         stale = [
             p
             for p in ctx.resolved_outputs
-            if p.exists()
+            if p not in unsafe_set
+            and is_safe_regular_file(p)
             and pre_mtimes[p] is not None
-            and p.stat().st_mtime_ns == pre_mtimes[p]
+            and p.stat(follow_symlinks=False).st_mtime_ns == pre_mtimes[p]
         ]
         stale_set = set(stale)
-        produced = [str(p) for p in ctx.resolved_outputs if p.exists() and p not in stale_set]
+        produced = [
+            str(p)
+            for p in ctx.resolved_outputs
+            if is_safe_regular_file(p) and p not in stale_set
+        ]
 
         if completed.returncode != 0:
             problems = [f"{self.vendor} exited {completed.returncode}"]
         else:
             problems = [f"declared output not produced: {p}" for p in missing]
             problems += [f"declared output not refreshed this run: {p}" for p in stale]
+            problems += [f"declared output is not a regular file (symlink/dir refused): {p}" for p in unsafe]
         status = (
             RunStatus.DONE
-            if completed.returncode == 0 and not missing and not stale
+            if completed.returncode == 0 and not missing and not stale and not unsafe
             else RunStatus.FAILED
         )
 

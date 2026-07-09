@@ -86,19 +86,21 @@ def test_compile_claude_produces_frontmatter_and_model() -> None:
     assert "READ-ONLY" in compiled.content  # readonly preamble present
 
 
-def test_compile_cursor_is_valid_yaml_with_model() -> None:
-    """Cursor compilation yields a YAML doc carrying the per-agent model."""
+def test_compile_cursor_is_markdown_with_model() -> None:
+    """Cursor compilation yields a Markdown sub-agent (frontmatter + body)."""
     defn = parse_agent_definition(_REVIEWER)
     compiled = compile_agent(defn, "cursor", "claude-opus-4-8")
-    assert compiled.relpath == ".cursor/agents/reviewer.yaml"
-    doc = yaml.safe_load(compiled.content)
-    assert doc["name"] == "reviewer"
-    assert doc["model"] == "claude-opus-4-8"
-    assert doc["readonly"] is True
+    assert compiled.relpath == ".cursor/agents/reviewer.md"
+    assert compiled.content.startswith("---\n")
+    header = yaml.safe_load(compiled.content.split("---\n")[1])
+    assert header["name"] == "reviewer"
+    assert header["model"] == "claude-opus-4-8"
+    assert header["readonly"] is True  # Cursor supports native read-only
+    assert "READ-ONLY" in compiled.content
 
 
-def test_compile_codex_is_valid_toml_with_model() -> None:
-    """Codex compilation yields parseable TOML with the model and read_only flag."""
+def test_compile_codex_is_valid_toml_with_current_schema() -> None:
+    """Codex compilation uses developer_instructions + sandbox_mode (read-only)."""
     tomllib = pytest.importorskip("tomllib")
     defn = parse_agent_definition(_REVIEWER)
     compiled = compile_agent(defn, "codex", "gpt-5.5")
@@ -106,7 +108,18 @@ def test_compile_codex_is_valid_toml_with_model() -> None:
     doc = tomllib.loads(compiled.content)
     assert doc["name"] == "reviewer"
     assert doc["model"] == "gpt-5.5"
-    assert doc["read_only"] is True
+    assert doc["sandbox_mode"] == "read-only"
+    assert "developer_instructions" in doc
+    assert "cites file:line" in doc["developer_instructions"]  # verify travels
+
+
+def test_compile_uses_canonical_name_override() -> None:
+    """The compiled name/filename come from the role key, not the def name."""
+    defn = parse_agent_definition(_REVIEWER)  # def name is 'reviewer'
+    compiled = compile_agent(defn, "cursor", None, name="checker")
+    assert compiled.relpath == ".cursor/agents/checker.md"
+    header = yaml.safe_load(compiled.content.split("---\n")[1])
+    assert header["name"] == "checker"
 
 
 def test_compile_rejects_unknown_vendor() -> None:
@@ -121,7 +134,7 @@ def test_write_compiled_agents_materializes_files(tmp_path: Path) -> None:
     defn = parse_agent_definition(_REVIEWER)
     compiled = [compile_agent(defn, "cursor", "opus")]
     written = write_compiled_agents(tmp_path, compiled)
-    assert written[0] == (tmp_path / ".cursor/agents/reviewer.yaml").resolve()
+    assert written[0] == (tmp_path / ".cursor/agents/reviewer.md").resolve()
     assert written[0].read_text(encoding="utf-8")
 
 
@@ -129,6 +142,14 @@ def test_write_compiled_agents_rejects_escape(tmp_path: Path) -> None:
     """A compiled agent path that escapes the worktree is refused."""
     defn = parse_agent_definition(_REVIEWER)
     compiled = [compile_agent(defn, "cursor", "opus")]
-    compiled[0].relpath = "../escape.yaml"
+    compiled[0].relpath = "../escape.md"
     with pytest.raises(ValueError):
+        write_compiled_agents(tmp_path, compiled)
+
+
+def test_write_compiled_agents_rejects_duplicate_destination(tmp_path: Path) -> None:
+    """Two agents targeting the same file are refused (no silent overwrite)."""
+    defn = parse_agent_definition(_REVIEWER)
+    compiled = [compile_agent(defn, "cursor", "opus"), compile_agent(defn, "cursor", "opus")]
+    with pytest.raises(AgentCompileError):
         write_compiled_agents(tmp_path, compiled)

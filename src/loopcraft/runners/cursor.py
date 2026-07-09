@@ -5,12 +5,12 @@ top of :class:`BaseRunner`, sharing the vendor-neutral prompt and capability
 checks. Cursor is cross-provider (a loop can request a gpt/claude/gemini model),
 so the model check is intentionally permissive.
 
-M3.5 writable-root grant: unlike Codex/Claude, ``cursor-agent`` has no per-dir
-``--add-dir`` flag, so a loop's declared ledger outputs (which resolve outside
-the per-run worktree) are granted by running with the sandbox disabled and
-commands force-allowed (``--sandbox disabled --force --trust``). This is a
-coarser grant than the scoped Codex/Claude writable roots — it is whole-machine
-rather than per-directory — and is applied only in headless ``--print`` mode.
+Output model (M3.5): declared outputs are staged inside the run worktree and
+promoted to the ledger by the control plane after the run, so in the normal path
+Cursor writes only inside its worktree and keeps its sandbox — no coarse grant is
+used. The ``--sandbox disabled --force`` grant below is a **fallback**, applied
+only when a loop is pointed at a write target *outside* the worktree (Cursor has
+no per-dir ``--add-dir`` flag), and even then only in headless ``--print`` mode.
 """
 
 from __future__ import annotations

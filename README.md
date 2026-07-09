@@ -138,14 +138,26 @@ loop's top-level `outputs`.
 Two execution paths:
 
 - **`inter-stage`** (portable default): each role runs as its own ordered
-  adapter invocation and hands its output to the next stage through the run
-  worktree / ledger. Works across any mix of Codex/Claude/Cursor with no
-  gateway; the read-only reviewer owns no outputs and reviews the maker's.
+  adapter invocation and hands a **structured artifact** (prior status, promoted
+  ledger output paths + content digests, and captured stdout) to the next stage
+  through the ledger. Works across any mix of Codex/Claude/Cursor with no
+  gateway. A read-only reviewer's contract is enforced: it runs against the
+  maker's promoted ledger outputs and the control plane rejects the run if the
+  reviewer modifies any protected (pre-existing) worktree file.
 - **`intra-run`**: the role agent definitions are compiled into the harness
-  runtime's native sub-agent format (`.codex/agents/*.toml`, `.claude/agents/*.md`,
-  `.cursor/agents/*.yaml`) and one invocation spawns them as sub-agents.
-  Cross-provider intra-run is native only on **Cursor**, so a mixed-vendor
-  intra-run loop must use a Cursor harness (enforced at validation/preflight).
+  runtime's current native sub-agent format (`.codex/agents/*.toml` with
+  `developer_instructions`/`sandbox_mode`, and Markdown-with-frontmatter
+  `.claude/agents/*.md` / `.cursor/agents/*.md`) and one invocation spawns them
+  as sub-agents. Cross-provider intra-run is native only on **Cursor**, so a
+  mixed-vendor intra-run loop must use a Cursor harness (enforced at
+  validation/preflight).
+
+**Scope (M3.5).** The inter-stage handoff is a structured artifact, not a Git
+diff; running a code maker/checker against a real Git worktree/diff is deferred
+with the L4 build loop. Per-role vendor/model, output ownership, read-only
+enforcement, verify verdict parsing, and the aggregate **runtime** budget are
+enforced; per-stage token/turn caps are not enforced because headless CLI output
+does not expose usage telemetry yet.
 
 `loopctl run <loop>` and `--dry-run` detect a roles loop automatically: dry-run
 shows the resolved per-role vendor/model, and preflight checks every role's

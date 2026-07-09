@@ -7,19 +7,33 @@ CLI subprocess.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from pathlib import Path
+from typing import Any, TypedDict
 
 import pytest
 
 import loopcraft.runners as runners_pkg
 from loopcraft.config import LoopcraftConfig
 from loopcraft.manifest import LoopManifest
-from loopcraft.orchestrator import preflight_multi_model, run_multi_model
+from loopcraft.orchestrator import build_execution_plan, preflight_multi_model, run_multi_model
 from loopcraft.runners import RunContext
 from loopcraft.runners.base import BaseRunner, PreflightReport, RunResult, RunStatus
 
+
+class CallRecord(TypedDict):
+    """One recorded fake-runner invocation."""
+
+    vendor: str
+    model: str | None
+    skill: str | None
+    roles: dict[str, Any] | None
+    extra_context: str
+    write_outputs: list[str]
+
+
 #: Records every fake-runner invocation across a test (reset by the fixture).
-_CALLS: list[dict] = []
+_CALLS: list[CallRecord] = []
 
 
 class _FakeRunner(BaseRunner):
@@ -43,7 +57,7 @@ class _FakeRunner(BaseRunner):
         )
         # The runner writes only inside the worktree; the control plane promotes
         # these to the ledger.
-        produced = []
+        produced: list[str] = []
         for out in ctx.resolved_outputs:
             out.parent.mkdir(parents=True, exist_ok=True)
             out.write_text("done", encoding="utf-8")
@@ -67,7 +81,7 @@ def _make_runner(name: str) -> type[BaseRunner]:
 
 
 @pytest.fixture(autouse=True)
-def _registry(monkeypatch):
+def _registry(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     """Swap the runner registry for fakes and reset recorded calls."""
     _CALLS.clear()
     original = dict(runners_pkg._RUNNERS)
@@ -95,8 +109,8 @@ def _config(tmp_path: Path) -> LoopcraftConfig:
     return LoopcraftConfig(source_path=_source(tmp_path), memory_path=tmp_path / "mem")
 
 
-def _manifest(**overrides) -> LoopManifest:
-    base = {
+def _manifest(**overrides: Any) -> LoopManifest:
+    base: dict[str, Any] = {
         "id": "demo",
         "name": "Demo",
         "cadence": {"type": "cron", "at": "0 9 * * *"},
@@ -130,9 +144,12 @@ def test_inter_stage_runs_roles_in_order_with_per_role_binding(tmp_path: Path) -
     assert [c["vendor"] for c in _CALLS] == ["codex", "claude"]
     assert _CALLS[0]["model"] == "gpt-5.5"
     assert _CALLS[1]["model"] == "opus"
-    # Each stage runs its own agent def as the stage skill.
-    assert _CALLS[0]["skill"] == "agents/implementer.md"
-    assert _CALLS[1]["skill"] == "agents/reviewer.md"
+    # Each stage carries its own agent behavior via the prompt context (not a
+    # top-level skill file), so verify/read-only policy travel with the role.
+    assert _CALLS[0]["skill"] is None
+    assert "## Role: implementer" in _CALLS[0]["extra_context"]
+    assert "make the change" in _CALLS[0]["extra_context"]
+    assert "## Role: reviewer" in _CALLS[1]["extra_context"]
 
 
 def test_inter_stage_hands_output_to_reviewer(tmp_path: Path) -> None:
@@ -195,18 +212,33 @@ def test_intra_run_compiles_subagents_and_runs_once(tmp_path: Path) -> None:
     assert _CALLS[0]["roles"] is None  # harness runs single-model with sub-agents on disk
     assert "intra-run" in _CALLS[0]["extra_context"]
     wt = tmp_path / "wt"
-    assert (wt / ".cursor/agents/implementer.yaml").exists()
-    assert (wt / ".cursor/agents/reviewer.yaml").exists()
+    assert (wt / ".cursor/agents/implementer.md").exists()
+    assert (wt / ".cursor/agents/reviewer.md").exists()
 
 
-def test_preflight_ok_when_binaries_and_agents_present(tmp_path: Path, monkeypatch) -> None:
+def test_override_vendor_applies_to_inherited_role(tmp_path: Path) -> None:
+    """A --vendor override retargets an inherited role but not an explicit one."""
+    config = _config(tmp_path)
+    manifest = _manifest(
+        roles={
+            "implementer": {"agent": "agents/implementer.md"},  # inherits vendor
+            "reviewer": {"agent": "agents/reviewer.md", "vendor": "claude"},  # explicit
+        }
+    )
+    plan, problems = build_execution_plan(manifest, config, "codex", override_vendor="cursor")
+    by_name = {stage.name: stage.vendor for stage in plan.stages}
+    assert by_name["implementer"] == "cursor"  # inherited role honors the override
+    assert by_name["reviewer"] == "claude"  # explicit role is untouched
+
+
+def test_preflight_ok_when_binaries_and_agents_present(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Roles preflight passes when adapters, binaries, and agent files resolve."""
     monkeypatch.setattr(LoopcraftConfig, "which", lambda self, name: f"/usr/bin/{name}")
     problems = preflight_multi_model(_manifest(), _config(tmp_path), "codex")
     assert problems == []
 
 
-def test_preflight_flags_missing_agent(tmp_path: Path, monkeypatch) -> None:
+def test_preflight_flags_missing_agent(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """A role whose agent file is missing is reported."""
     monkeypatch.setattr(LoopcraftConfig, "which", lambda self, name: f"/usr/bin/{name}")
     manifest = _manifest(
@@ -216,10 +248,12 @@ def test_preflight_flags_missing_agent(tmp_path: Path, monkeypatch) -> None:
         }
     )
     problems = preflight_multi_model(manifest, _config(tmp_path), "codex")
-    assert any("agent definition not found" in p for p in problems)
+    assert any("ghost.md" in p for p in problems)
 
 
-def test_preflight_flags_intra_run_cross_provider_without_cursor(tmp_path: Path, monkeypatch) -> None:
+def test_preflight_flags_intra_run_cross_provider_without_cursor(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Intra-run cross-provider with inherited (non-Cursor) harness is flagged."""
     monkeypatch.setattr(LoopcraftConfig, "which", lambda self, name: f"/usr/bin/{name}")
     # Roles pin codex + claude; no runtime.vendor, so the harness is the default.
