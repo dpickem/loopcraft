@@ -18,6 +18,8 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from loopcraft.config import LoopcraftConfig, SourcePathError
 from loopcraft.manifest import LoopManifest
+from loopcraft.outputs import OutputBinding
+from loopcraft.paths import is_lexically_under
 from loopcraft.runners.capabilities import check_declared_capabilities
 
 
@@ -45,13 +47,25 @@ class PreflightReport(_RunnerModel):
 
 
 class RunContext(_RunnerModel):
-    """Everything a runner needs to execute one loop, isolated from others."""
+    """Everything a runner needs to execute one loop, isolated from others.
+
+    ``extra_context`` is appended verbatim to the assembled prompt. The
+    multi-model orchestrator (M3.5) uses it to hand a prior stage's output to
+    the next stage and to describe the sub-agents available in an intra-run
+    harness; it is empty for an ordinary single-stage run.
+
+    ``resolved_outputs`` are the paths the agent actually writes. Under the
+    worktree-local output model these live inside ``workdir``; ``output_bindings``
+    (when set) map each to its durable ledger destination for post-run promotion.
+    """
 
     config: LoopcraftConfig
     workdir: Path
     log_path: Path
     resolved_outputs: list[Path] = Field(default_factory=list)
+    output_bindings: list[OutputBinding] = Field(default_factory=list)
     env: dict[str, str] = Field(default_factory=dict)
+    extra_context: str = ""
 
 
 class RunResult(_RunnerModel):
@@ -129,7 +143,14 @@ class BaseRunner(ABC):
             lines.append("- inputs (read these):")
             for declared in loop.inputs:
                 lines.append(f"  - {declared} -> {ctx.config.resolve_state_path(declared)}")
-        if loop.outputs:
+        # Prefer the explicit output bindings (declared -> in-worktree write
+        # path); fall back to zipping the manifest outputs with resolved paths
+        # for callers that set resolved_outputs directly (e.g. legacy/tests).
+        if ctx.output_bindings:
+            lines.append("- outputs (write exactly these absolute paths):")
+            for binding in ctx.output_bindings:
+                lines.append(f"  - {binding.declared} -> {binding.write_path}")
+        elif loop.outputs:
             lines.append("- outputs (write exactly these absolute paths):")
             for declared, resolved in zip(loop.outputs, ctx.resolved_outputs):
                 lines.append(f"  - {declared} -> {resolved}")
@@ -144,6 +165,9 @@ class BaseRunner(ABC):
             lines.append(
                 f"- budget: max_turns={budget.max_turns}, max_runtime={budget.max_runtime}"
             )
+        if ctx.extra_context:
+            lines.append("")
+            lines.append(ctx.extra_context)
         return "\n".join(lines) + "\n"
 
     def check_declared_capabilities(self, loop: LoopManifest, config: LoopcraftConfig) -> list[str]:
@@ -164,8 +188,21 @@ class BaseRunner(ABC):
         return check_declared_capabilities(loop, config)
 
     def writable_roots(self, ctx: RunContext) -> list[str]:
-        """Return extra directories the loop is allowed to write to."""
-        roots = {str(p.parent.resolve()) for p in ctx.resolved_outputs}
+        """Return extra write directories that lie *outside* the run worktree.
+
+        Output directories inside the worktree need no grant (the worktree is the
+        agent's writable workspace on every vendor), so only out-of-worktree
+        parents are returned. Under the worktree-local output model this is
+        normally empty — outputs are promoted to the ledger after the run — which
+        is what lets Codex/Claude drop ``--add-dir`` and Cursor keep its sandbox.
+        """
+        workdir = ctx.workdir.resolve()
+        roots = {
+            str(parent)
+            for p in ctx.resolved_outputs
+            for parent in (p.parent.resolve(),)
+            if parent != workdir and not is_lexically_under(parent, workdir)
+        }
         return sorted(roots)
 
     def _load_source_text(self, ctx: RunContext, declared: str | None) -> str:
@@ -273,6 +310,10 @@ class BaseRunner(ABC):
             else RunStatus.FAILED
         )
 
+        # The runner writes only inside the worktree and reports what it produced
+        # there; promoting those files to the durable ledger is a control-plane
+        # concern (see loopcraft.outputs.promote_outputs), so any adapter — not
+        # just BaseRunner subclasses — gets ledger promotion for free.
         return RunResult(
             status=status,
             exit_code=completed.returncode,

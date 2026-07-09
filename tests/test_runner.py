@@ -386,14 +386,13 @@ def test_cursor_accepts_any_model(tmp_path: Path, monkeypatch) -> None:
     assert report.ok, report.problems
 
 
-def test_cursor_flags_ledger_outputs(tmp_path: Path, monkeypatch) -> None:
-    """Cursor preflight rejects a loop that declares ledger outputs it can't write."""
+def test_cursor_supports_ledger_outputs(tmp_path: Path, monkeypatch) -> None:
+    """Cursor preflight accepts a ledger-writing loop (M3.5 writable-root grant)."""
     monkeypatch.setattr(LoopcraftConfig, "which", lambda self, name: f"/usr/bin/{name}")
     report = CursorRunner().preflight(
         _manifest(runtime={"vendor": "cursor"}, outputs=["state/demo/out.md"]), _config(tmp_path)
     )
-    assert not report.ok
-    assert any("cannot grant write access to ledger outputs" in p for p in report.problems)
+    assert report.ok, report.problems
 
 
 def test_cursor_build_command(tmp_path: Path) -> None:
@@ -403,3 +402,22 @@ def test_cursor_build_command(tmp_path: Path) -> None:
     cmd = CursorRunner().build_command(manifest, _ctx(config, tmp_path))
     assert cmd[:2] == ["cursor-agent", "-p"]
     assert "--model" in cmd and "gpt-5.5" in cmd
+
+
+def test_cursor_grants_writable_root_for_ledger_outputs(tmp_path: Path) -> None:
+    """With declared outputs, Cursor disables the sandbox to grant the writes."""
+    config = _config(tmp_path)
+    manifest = _manifest(runtime={"vendor": "cursor"})
+    cmd = CursorRunner().build_command(manifest, _ctx(config, tmp_path))
+    assert "--force" in cmd
+    assert cmd[cmd.index("--sandbox") + 1] == "disabled"
+
+
+def test_cursor_keeps_sandbox_without_outputs(tmp_path: Path) -> None:
+    """With no external outputs, Cursor keeps the default sandbox (no --force)."""
+    config = _config(tmp_path)
+    manifest = _manifest(runtime={"vendor": "cursor"}, outputs=[])
+    ctx = RunContext(config=config, workdir=tmp_path / "wt", log_path=tmp_path / "wt" / "run.log")
+    cmd = CursorRunner().build_command(manifest, ctx)
+    assert "--sandbox" not in cmd
+    assert "--force" not in cmd

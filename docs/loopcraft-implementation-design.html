@@ -724,9 +724,8 @@ roles:
     agent:  agents/reviewer.md      # the checker's own instructions + readonly tools
     vendor: claude                  # cross-provider checker
     model:  opus
-  # execution:
-  #   intra-run  -> one harness spawns both as sub-agents (native on cursor)
-  #   inter-stage-> control plane runs each as an ordered stage (any providers)
+execution: inter-stage     # inter-stage (default) -> ordered stages, any providers
+                           # intra-run             -> sub-agents in one harness (cross-provider native on cursor)
 
 locus: vm                  # vm | cloud | local   (default: vm — always-on first)
 cadence:

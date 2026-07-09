@@ -46,6 +46,8 @@ from loopcraft.manifest import (
     load_all,
     loop_id_problem,
 )
+from loopcraft.orchestrator import preflight_multi_model, run_multi_model
+from loopcraft.outputs import plan_output_bindings, promote_outputs
 from loopcraft.paths import assert_under, is_lexically_under
 from loopcraft.runners import RunContext, available_vendors, get_runner
 from loopcraft.runners.base import PreflightReport, RunStatus
@@ -301,12 +303,29 @@ def _cmd_run(
             lines=[f"error: {exc}"],
         )
 
-    preflight = _safe_preflight(runner, manifest, config, effective_vendor)
+    # A multi-model loop's readiness spans every role (per-role adapter, binary,
+    # and agent definition), so it uses the orchestrator's roles preflight; a
+    # single-model loop uses its one adapter's preflight.
+    if manifest.is_multi_model:
+        preflight = _safe_multi_model_preflight(config, manifest, effective_vendor)
+    else:
+        preflight = _safe_preflight(runner, manifest, config, effective_vendor)
 
     if dry_run:
         return _run_dry_run(config, manifest, effective_vendor, preflight, as_json=as_json)
 
     return _run_execute(config, manifest, runner, effective_vendor, preflight, as_json=as_json)
+
+
+def _safe_multi_model_preflight(
+    config: LoopcraftConfig, manifest: LoopManifest, effective_vendor: str
+) -> PreflightReport:
+    """Run the multi-model roles preflight, normalizing faults to a report."""
+    try:
+        problems = preflight_multi_model(manifest, config, config.default_vendor)
+    except Exception as exc:  # noqa: BLE001 — a faulty preflight must not escape as a traceback
+        problems = [f"multi-model preflight raised {type(exc).__name__}: {exc}"]
+    return PreflightReport(vendor=effective_vendor, ok=not problems, problems=problems)
 
 
 def _safe_preflight(
@@ -341,6 +360,17 @@ def _run_dry_run(
         config.resolve_state_template(o, run_id="<run_id>", date="<date>")
         for o in manifest.outputs
     ]
+    roles = None
+    if manifest.is_multi_model:
+        roles = {
+            name: {
+                "vendor": manifest.role_vendor(role, config.default_vendor),
+                "model": role.model,
+                "agent": role.agent,
+                "outputs": role.outputs,
+            }
+            for name, role in manifest.ordered_roles()
+        }
     data = {
         "loop": manifest.id,
         "vendor": effective_vendor,
@@ -352,6 +382,16 @@ def _run_dry_run(
         f"loop:    {manifest.id}",
         f"vendor:  {effective_vendor}  model: {manifest.runtime.model or '(default)'}",
         f"outputs: {[str(p) for p in resolved_outputs] or '(none)'}",
+    ]
+    if roles is not None:
+        data["execution"] = str(manifest.execution)
+        data["roles"] = roles
+        lines.append(f"roles ({manifest.execution}):")
+        lines += [
+            f"  - {name}: {spec['vendor']} / {spec['model'] or '(default)'} <- {spec['agent']}"
+            for name, spec in roles.items()
+        ]
+    lines += [
         f"preflight: {'OK' if preflight.ok else 'PROBLEMS'}",
         *[f"  - {problem}" for problem in preflight.problems],
     ]
@@ -372,10 +412,7 @@ def _run_execute(
     run_id = store.new_run_id()
     started = datetime.now(UTC)
     start_perf = time.perf_counter()
-    resolved_outputs = [
-        config.resolve_state_template(o, run_id=run_id, date=started.date().isoformat())
-        for o in manifest.outputs
-    ]
+    date_str = started.date().isoformat()
 
     if not preflight.ok:
         return _record_run_failure(
@@ -405,6 +442,17 @@ def _run_execute(
             stage_loop_assets(
                 config, manifest, worktree, extra_assets=content_assets(manifest, config)
             )
+            # Single-model outputs are staged inside the worktree and promoted to
+            # the ledger after the run, so the agent never writes outside its
+            # worktree. A multi-model loop binds outputs per role in the
+            # orchestrator instead.
+            output_bindings = (
+                []
+                if manifest.is_multi_model
+                else plan_output_bindings(
+                    config, worktree, manifest.outputs, run_id=run_id, date=date_str
+                )
+            )
         except (StagingError, ValueError, OSError) as exc:
             return _record_run_failure(
                 store,
@@ -421,7 +469,8 @@ def _run_execute(
             config=config,
             workdir=worktree,
             log_path=worktree / "run.log",
-            resolved_outputs=resolved_outputs,
+            resolved_outputs=[b.write_path for b in output_bindings],
+            output_bindings=output_bindings,
             # Hand the control-plane run id and resolved run date to any direct
             # CLI the loop invokes so its run-scoped history archives and dated
             # digests match the manifest's {{run_id}}/{{date}} outputs — even
@@ -435,7 +484,18 @@ def _run_execute(
         )
 
         try:
-            result = runner.run(manifest, ctx)
+            # A roles loop composes per-role adapter runs (inter-stage) or a
+            # sub-agent harness (intra-run); a single-model loop runs its one
+            # adapter directly.
+            if manifest.is_multi_model:
+                result = run_multi_model(manifest, config, ctx, config.default_vendor)
+            else:
+                result = runner.run(manifest, ctx)
+                # The adapter writes outputs inside the worktree; the control
+                # plane promotes them to the durable ledger and reports the
+                # ledger paths as the run's provenance.
+                promoted = promote_outputs(ctx.output_bindings)
+                result = result.model_copy(update={"outputs": [str(p) for p in promoted]})
         except Exception as exc:  # noqa: BLE001 — the attempt must not vanish from history
             ctx.log_path.parent.mkdir(parents=True, exist_ok=True)
             ctx.log_path.write_text(traceback.format_exc(), encoding="utf-8")
