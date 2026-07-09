@@ -152,11 +152,25 @@ Two execution paths:
   mixed-vendor intra-run loop must use a Cursor harness (enforced at
   validation/preflight).
 
+**Cross-provider Cursor spawn — verified live.** The compiled `.cursor/agents/*.md`
+sub-agent is discovered and spawned by a real `cursor-agent` run: a
+`gpt-5.5-high` main agent spawned the compiler-emitted `reviewer` sub-agent
+running on `claude-opus-4-8-high` (confirmed via the run's structured
+`taskToolCall`), satisfying the M3.5 cross-provider exit criterion. The opt-in
+smoke test reproduces it (skipped offline per `CONTRIBUTING.md`):
+
+```bash
+LOOPCRAFT_LIVE_CURSOR=1 uv run pytest tests/test_cursor_live.py -q
+```
+
+> Caveat: per-sub-agent model selection is plan-dependent. On legacy
+> request-based plans without Max Mode, Cursor may run sub-agents on the
+> parent/Composer model regardless of the compiled `model` field.
+
 **Scope (M3.5).** The inter-stage handoff is a **structured artifact** (status,
 promoted output paths + content digests, stdout) persisted through the ledger and
 reconstructed for the next stage — not a Git diff; a code maker/checker against a
-real Git worktree/diff, and a demonstrated live Cursor cross-provider spawn, are
-deferred with the L4 build loop (the compiler/spawn path is schema-tested only).
+real Git worktree/diff is deferred with the L4 build loop.
 Enforced: per-role vendor/model, output ownership, read-only enforcement
 (control-plane hash check inter-stage; native `readonly`/`sandbox_mode`
 intra-run, with a read-only role rejected under a Claude harness), a single
