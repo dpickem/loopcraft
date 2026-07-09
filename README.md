@@ -152,12 +152,21 @@ Two execution paths:
   mixed-vendor intra-run loop must use a Cursor harness (enforced at
   validation/preflight).
 
-**Scope (M3.5).** The inter-stage handoff is a structured artifact, not a Git
-diff; running a code maker/checker against a real Git worktree/diff is deferred
-with the L4 build loop. Per-role vendor/model, output ownership, read-only
-enforcement, verify verdict parsing, and the aggregate **runtime** budget are
-enforced; per-stage token/turn caps are not enforced because headless CLI output
-does not expose usage telemetry yet.
+**Scope (M3.5).** The inter-stage handoff is a **structured artifact** (status,
+promoted output paths + content digests, stdout) persisted through the ledger and
+reconstructed for the next stage — not a Git diff; a code maker/checker against a
+real Git worktree/diff, and a demonstrated live Cursor cross-provider spawn, are
+deferred with the L4 build loop (the compiler/spawn path is schema-tested only).
+Enforced: per-role vendor/model, output ownership, read-only enforcement
+(control-plane hash check inter-stage; native `readonly`/`sandbox_mode`
+intra-run, with a read-only role rejected under a Claude harness), a single
+explicit reviewer `Verdict: PASS`/`FAIL` (missing/conflicting/FAIL fails and
+stops the pipeline), and the aggregate **runtime** budget (measured from pipeline
+start). Not enforced yet (named deferrals): `max_turns`/`max_tokens` need adapter
+usage telemetry, and `max_consecutive_failures` is a scheduler/store concern.
+Role `tools` are **policy-validated** (unknown tool or a read-only role holding a
+mutating local tool fails preflight), not yet mapped to runtime-native
+allowlists.
 
 `loopctl run <loop>` and `--dry-run` detect a roles loop automatically: dry-run
 shows the resolved per-role vendor/model, and preflight checks every role's

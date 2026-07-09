@@ -68,6 +68,24 @@ class RunContext(_RunnerModel):
     extra_context: str = ""
 
 
+class StageRunResult(_RunnerModel):
+    """One stage's record in a multi-model pipeline run (M3.5).
+
+    Preserved on the aggregate :class:`RunResult` and copied into the durable
+    run record, so each stage stays independently observable and costed.
+    """
+
+    role: str
+    vendor: str
+    model: str | None = None
+    status: str
+    verdict: str | None = None
+    exit_code: int | None = None
+    tokens: int | None = None
+    cost_usd: float | None = None
+    log_path: str | None = None
+
+
 class RunResult(_RunnerModel):
     """Normalized outcome of a headless run, across vendors.
 
@@ -84,7 +102,7 @@ class RunResult(_RunnerModel):
     log_path: Path | None = None
     outputs: list[str] = Field(default_factory=list)
     problems: list[str] = Field(default_factory=list)
-    stages: list[dict] = Field(default_factory=list)
+    stages: list[StageRunResult] = Field(default_factory=list)
 
 
 class BaseRunner(ABC):

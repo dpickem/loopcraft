@@ -340,19 +340,27 @@ class LoopManifest(_ManifestModel):
         return role.vendor or self.runtime.vendor or default_vendor
 
     def effective_outputs(self) -> list[str]:
-        """Return every ledger path this loop can produce (top-level + roles).
+        """Return every ledger path this loop can produce, for fleet analysis.
 
-        Used for fleet-wide producer-collision and dependency-graph analysis so
-        a role-produced file participates like any top-level output. Top-level
-        outputs already inherited by a maker are not double-counted.
+        Includes every role's own ``outputs``, plus the top-level ``outputs``
+        *only when some role has no explicit outputs* — that role inherits the
+        top-level set, so it is owned; if every role declares its own outputs,
+        the top-level set is unowned and excluded. This matches the orchestrator's
+        per-stage ownership (a maker's explicit outputs replace inheritance) for
+        fleet producer-collision and dependency-graph analysis without loading
+        agent definitions. Used only for fleet-wide validation; execution and
+        dry-run derive ownership from the resolved ``ExecutionPlan``.
         """
+        role_outputs = [o for r in (self.roles or {}).values() for o in r.outputs]
+        include_top_level = not self.roles or any(not r.outputs for r in self.roles.values())
+        declared = [*(self.outputs if include_top_level else []), *role_outputs]
         seen: set[str] = set()
         result: list[str] = []
-        for declared in [*self.outputs, *(o for r in (self.roles or {}).values() for o in r.outputs)]:
-            key = _norm(declared)
+        for item in declared:
+            key = _norm(item)
             if key not in seen:
                 seen.add(key)
-                result.append(declared)
+                result.append(item)
         return result
 
     def validation_report(self) -> ValidationReport:

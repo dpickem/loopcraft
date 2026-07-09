@@ -34,9 +34,10 @@ class CursorRunner(BaseRunner):
         Verifies the ``cursor-agent`` binary and the shared declared
         capabilities. The model id is not vendor-checked (Cursor is
         cross-provider and its slugs are account/plan-dependent, so the CLI
-        validates it). As of M3.5 the adapter grants write access to declared
-        ledger outputs (see the module note), so output-producing loops are
-        supported.
+        validates it). Declared ledger outputs are staged in the worktree and
+        promoted by the control plane after the run (see the module note), so
+        output-producing loops are supported without any out-of-worktree write
+        grant in the normal path.
 
         Returns:
             A report listing any problems found (empty when ready to run).

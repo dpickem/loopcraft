@@ -21,7 +21,8 @@ grant collapses to nothing for Codex/Claude/Cursor alike.
 from __future__ import annotations
 
 import os
-import shutil
+import stat
+import tempfile
 from pathlib import Path
 
 from pydantic import BaseModel
@@ -32,6 +33,9 @@ from loopcraft.paths import assert_under
 #: Subdirectory of a run worktree where declared outputs are staged for writing.
 OUTPUTS_STAGING_DIR = "outputs"
 
+#: Chunk size for streaming a promoted output from its opened descriptor.
+_COPY_CHUNK = 1 << 20
+
 
 class PromotionError(Exception):
     """Raised when a produced output cannot be safely promoted to the ledger."""
@@ -40,12 +44,12 @@ class PromotionError(Exception):
 def is_safe_regular_file(path: Path) -> bool:
     """Return whether ``path`` is a real regular file (not a symlink/dir/device).
 
-    Uses ``lstat`` so a symlink is never followed: an agent that writes its
-    declared output as a symlink cannot trick the control plane into reading or
-    copying the link target.
+    Uses a single ``lstat`` so a symlink is never followed: an agent that writes
+    its declared output as a symlink cannot trick the control plane into reading
+    or copying the link target.
     """
     try:
-        return path.is_file() and not path.is_symlink()
+        return stat.S_ISREG(os.lstat(path).st_mode)
     except OSError:
         return False
 
@@ -97,46 +101,100 @@ def plan_output_bindings(
     return bindings
 
 
-def promote_outputs(bindings: list[OutputBinding], *, workdir: Path | None = None) -> list[Path]:
+def _open_regular_nofollow(path: Path) -> int:
+    """Open ``path`` read-only without following a final symlink; verify regular.
+
+    Returns an open file descriptor. Using ``O_NOFOLLOW`` + ``fstat`` on the
+    *descriptor* closes the check-then-copy (TOCTOU) window: if the path is a
+    symlink at open time the open fails, and the descriptor we copy from is the
+    exact inode we validated — a background swap cannot redirect the read.
+
+    Raises:
+        PromotionError: If the path is a symlink or not a regular file.
+    """
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        fd = os.open(path, flags)
+    except OSError as exc:
+        raise PromotionError(f"cannot open output for promotion (symlink refused?): {path}: {exc}") from exc
+    try:
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            raise PromotionError(f"output is not a regular file: {path}")
+    except Exception:
+        os.close(fd)
+        raise
+    return fd
+
+
+def promote_outputs(
+    bindings: list[OutputBinding],
+    *,
+    workdir: Path | None = None,
+    ledger_root: Path | None = None,
+) -> list[Path]:
     """Atomically copy produced worktree outputs to their ledger destinations.
 
-    Only bindings whose ``write_path`` is a real regular file are promoted (a run
-    may not produce every declared output). Each copy goes through a temporary
-    file in the destination directory and is then atomically renamed into place,
-    so a reader never observes a half-written ledger file and a failed copy
-    cannot leave a partial canonical output.
+    Promotion is validated across *all* bindings before any destination is
+    replaced, and each file is copied from a no-follow-opened descriptor through
+    a uniquely-named same-directory temp file, then ``os.replace``\\d into place:
+
+    - a produced output that is a symlink / directory / device is refused, and no
+      destination is written (fail before any replace);
+    - the source is opened with ``O_NOFOLLOW`` and copied from that descriptor,
+      so a source swapped for a symlink after validation cannot redirect the read;
+    - a unique ``mkstemp`` temp file avoids a fixed-name collision/redirect;
+    - the destination (and parent) are re-asserted under the ledger before write.
+
+    Only bindings whose ``write_path`` exists are promoted (a run may not produce
+    every declared output).
 
     Args:
         bindings: The output bindings to promote.
-        workdir: When given, re-assert every write path stays inside it right
-            before reading — defense against a symlinked/relocated staging path.
+        workdir: When given, re-assert every write path stays inside it.
+        ledger_root: When given, re-assert every ledger destination stays inside
+            it right before writing.
 
     Returns:
         The ledger paths actually written.
 
     Raises:
-        PromotionError: If a declared output exists but is not a safe regular
-            file (symlink, directory, device, etc.).
+        PromotionError: If any produced output is not a safe regular file.
     """
-    promoted: list[Path] = []
+    # Phase 1: decide which bindings are present and validate every one BEFORE
+    # replacing any destination, so a later unsafe/failed output cannot leave a
+    # mix of old/new canonical state.
+    pending: list[OutputBinding] = []
     for binding in bindings:
-        write_path = binding.write_path
-        if not write_path.exists() and not write_path.is_symlink():
+        if not is_safe_regular_file(binding.write_path):
+            # Distinguish "not produced" (skip) from "produced but unsafe" (fail).
+            if binding.write_path.exists() or binding.write_path.is_symlink():
+                raise PromotionError(
+                    f"declared output is not a regular file (symlink/dir refused): {binding.declared}"
+                )
             continue
-        if not is_safe_regular_file(write_path):
-            raise PromotionError(
-                f"declared output is not a regular file (symlink/dir refused): {binding.declared}"
-            )
         if workdir is not None:
-            assert_under(workdir.resolve(), write_path.resolve(), label="output write path")
+            assert_under(workdir.resolve(), binding.write_path, label="output write path")
+        if ledger_root is not None:
+            assert_under(ledger_root.resolve(), binding.ledger_path, label="ledger output path")
+        pending.append(binding)
+
+    # Phase 2: copy each validated source (no-follow) through a unique temp file
+    # in the destination directory, then atomically replace.
+    promoted: list[Path] = []
+    for binding in pending:
         binding.ledger_path.parent.mkdir(parents=True, exist_ok=True)
-        # Copy to a temp file in the destination dir, then atomically replace.
-        tmp = binding.ledger_path.with_name(binding.ledger_path.name + ".loopcraft.tmp")
+        fd = _open_regular_nofollow(binding.write_path)
+        tmp_fd, tmp_name = tempfile.mkstemp(
+            dir=binding.ledger_path.parent, prefix=f".{binding.ledger_path.name}.", suffix=".tmp"
+        )
+        tmp_path = Path(tmp_name)
         try:
-            shutil.copyfile(write_path, tmp)  # copyfile does not follow dest symlinks
-            os.replace(tmp, binding.ledger_path)
+            with os.fdopen(fd, "rb") as src, os.fdopen(tmp_fd, "wb") as dst:
+                while chunk := src.read(_COPY_CHUNK):
+                    dst.write(chunk)
+            os.replace(tmp_path, binding.ledger_path)
         finally:
-            if tmp.exists():
-                tmp.unlink()
+            if tmp_path.exists():
+                tmp_path.unlink()
         promoted.append(binding.ledger_path)
     return promoted

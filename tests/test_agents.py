@@ -17,6 +17,7 @@ from loopcraft.agents import (
     load_agent_definition,
     parse_agent_definition,
 )
+from loopcraft.role_tools import ToolAccess, role_tool_problems, tool_access
 
 _REVIEWER = """---
 name: reviewer
@@ -37,6 +38,14 @@ def test_parse_agent_definition_frontmatter_and_body() -> None:
     assert defn.tools == ["repo-read"]
     assert defn.verify == "cites file:line"
     assert defn.instructions == "You are the checker, not the maker."
+
+
+def test_readonly_reviewer_can_spawn_review_agents_and_run_tests() -> None:
+    """Reviewer orchestration/test capabilities are executable, not mutating."""
+    tools = ["repo-read", "agent-spawn", "test-run"]
+    assert tool_access("agent-spawn") is ToolAccess.EXECUTE
+    assert tool_access("test-run") is ToolAccess.EXECUTE
+    assert role_tool_problems("reviewer", tools, readonly=True) == []
 
 
 def test_parse_uses_name_hint_when_frontmatter_absent() -> None:

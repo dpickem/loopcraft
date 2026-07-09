@@ -47,7 +47,7 @@ from loopcraft.manifest import (
     load_all,
     loop_id_problem,
 )
-from loopcraft.orchestrator import run_multi_model
+from loopcraft.orchestrator import build_execution_plan, run_multi_model
 from loopcraft.outputs import plan_output_bindings, promote_outputs
 from loopcraft.paths import assert_under, is_lexically_under
 from loopcraft.runners import RunContext, available_vendors, get_runner
@@ -299,7 +299,9 @@ def _cmd_run(
     preflight = PreflightReport(vendor=pf_vendor, ok=not pf_problems, problems=pf_problems)
 
     if dry_run:
-        return _run_dry_run(config, manifest, effective_vendor, preflight, as_json=as_json)
+        return _run_dry_run(
+            config, manifest, effective_vendor, preflight, override_vendor=vendor, as_json=as_json
+        )
 
     return _run_execute(
         config, manifest, effective_vendor, preflight, override_vendor=vendor, as_json=as_json
@@ -312,24 +314,36 @@ def _run_dry_run(
     effective_vendor: str,
     preflight,
     *,
+    override_vendor: str | None = None,
     as_json: bool,
 ) -> int:
-    """Report the planned invocation and preflight result without executing."""
-    resolved_outputs = [
-        config.resolve_state_template(o, run_id="<run_id>", date="<date>")
-        for o in manifest.outputs
-    ]
+    """Report the planned invocation and preflight result without executing.
+
+    For a roles loop this builds the same normalized execution plan run/preflight
+    use, so the displayed per-role vendor (override-aware), effective output
+    contract, and read-only policy match what would actually execute.
+    """
     roles = None
     if manifest.is_multi_model:
+        plan, _ = build_execution_plan(
+            manifest, config, config.default_vendor, override_vendor=override_vendor
+        )
+        declared_outputs = plan.effective_outputs
         roles = {
-            name: {
-                "vendor": manifest.role_vendor(role, config.default_vendor),
-                "model": role.model,
-                "agent": role.agent,
-                "outputs": role.outputs,
+            stage.name: {
+                "vendor": stage.vendor,
+                "model": stage.model,
+                "agent": stage.agent,
+                "readonly": stage.readonly,
+                "outputs": stage.owned_outputs,
             }
-            for name, role in manifest.ordered_roles()
+            for stage in plan.stages
         }
+    else:
+        declared_outputs = manifest.outputs
+    resolved_outputs = [
+        config.resolve_state_template(o, run_id="<run_id>", date="<date>") for o in declared_outputs
+    ]
     data = {
         "loop": manifest.id,
         "vendor": effective_vendor,
@@ -347,7 +361,8 @@ def _run_dry_run(
         data["roles"] = roles
         lines.append(f"roles ({manifest.execution}):")
         lines += [
-            f"  - {name}: {spec['vendor']} / {spec['model'] or '(default)'} <- {spec['agent']}"
+            f"  - {name}: {spec['vendor']} / {spec['model'] or '(default)'}"
+            f"{' [read-only]' if spec['readonly'] else ''} <- {spec['agent']}"
             for name, spec in roles.items()
         ]
     lines += [
@@ -445,19 +460,29 @@ def _run_execute(
         try:
             # A roles loop composes per-role adapter runs (inter-stage) or a
             # sub-agent harness (intra-run); a single-model loop runs its one
-            # adapter directly.
+            # adapter directly. Preflight already passed, so the plan is used to
+            # drive execution and to record effective (per-stage) declared
+            # outputs — the same plan preflight validated.
             if manifest.is_multi_model:
+                plan, _ = build_execution_plan(
+                    manifest, config, config.default_vendor, override_vendor=override_vendor
+                )
+                declared_outputs = plan.effective_outputs
                 result = run_multi_model(
-                    manifest, config, ctx, config.default_vendor, override_vendor=override_vendor
+                    manifest, config, ctx, config.default_vendor,
+                    override_vendor=override_vendor, plan=plan,
                 )
             else:
+                declared_outputs = manifest.outputs
                 result = get_runner(effective_vendor).run(manifest, ctx)
                 # The adapter writes outputs inside the worktree; the control
                 # plane promotes them to the durable ledger only when the run
                 # fully succeeded, so a failed/partial run never overwrites a
                 # canonical ledger value (review finding 5).
                 if result.status == RunStatus.DONE:
-                    promoted = promote_outputs(ctx.output_bindings, workdir=worktree)
+                    promoted = promote_outputs(
+                        ctx.output_bindings, workdir=worktree, ledger_root=config.ledger_dir
+                    )
                     result = result.model_copy(update={"outputs": [str(p) for p in promoted]})
                 else:
                     result = result.model_copy(update={"outputs": []})
@@ -493,9 +518,10 @@ def _run_execute(
             iterations=result.iterations,
             inputs=manifest.inputs,
             outputs=result.outputs,
-            declared_outputs=manifest.outputs,
+            declared_outputs=declared_outputs,
             log_path=str(result.log_path) if result.log_path else None,
             problems=result.problems,
+            stages=result.stages,
         )
         record_path = store.record_run(record)
     finally:

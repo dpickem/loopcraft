@@ -18,6 +18,7 @@ import pytest
 import loopcraft.runners as runners_pkg
 from loopcraft import cli
 from loopcraft.config import LoopcraftConfig
+from loopcraft.manifest import LoopManifest
 from loopcraft.runners import register_runner
 from loopcraft.runners.base import BaseRunner, PreflightReport, RunContext, RunResult, RunStatus
 
@@ -49,16 +50,16 @@ class _MakerStub(BaseRunner):
 
     vendor = "codex"
 
-    def preflight(self, loop, config) -> PreflightReport:  # noqa: ANN001
+    def preflight(self, loop: LoopManifest, config: LoopcraftConfig) -> PreflightReport:
         return PreflightReport(vendor=self.vendor, ok=True)
 
-    def build_command(self, loop, ctx) -> list[str]:  # noqa: ANN001
+    def build_command(self, loop: LoopManifest, ctx: RunContext) -> list[str]:
         return ["stub"]
 
-    def run(self, loop, ctx: RunContext) -> RunResult:  # noqa: ANN001
+    def run(self, loop: LoopManifest, ctx: RunContext) -> RunResult:
         ctx.log_path.parent.mkdir(parents=True, exist_ok=True)
         ctx.log_path.write_text("--- STDOUT ---\nmade it\n--- STDERR ---\n", encoding="utf-8")
-        produced = []
+        produced: list[str] = []
         for out in ctx.resolved_outputs:
             out.parent.mkdir(parents=True, exist_ok=True)
             out.write_text("implemented", encoding="utf-8")
@@ -71,10 +72,10 @@ class _ReviewerStub(_MakerStub):
 
     vendor = "claude"
 
-    def run(self, loop, ctx: RunContext) -> RunResult:  # noqa: ANN001
+    def run(self, loop: LoopManifest, ctx: RunContext) -> RunResult:
         ctx.log_path.parent.mkdir(parents=True, exist_ok=True)
         ctx.log_path.write_text("--- STDOUT ---\nreviewed\n--- STDERR ---\n", encoding="utf-8")
-        produced = []
+        produced: list[str] = []
         for out in ctx.resolved_outputs:
             out.parent.mkdir(parents=True, exist_ok=True)
             out.write_text("Blockers: none\nVerdict: PASS\n", encoding="utf-8")
@@ -173,7 +174,7 @@ def test_run_roles_reviewer_mutation_is_rejected(
     class _MutatingReviewer(_MakerStub):
         vendor = "claude"
 
-        def run(self, loop, ctx: RunContext) -> RunResult:  # noqa: ANN001
+        def run(self, loop: LoopManifest, ctx: RunContext) -> RunResult:
             ctx.log_path.parent.mkdir(parents=True, exist_ok=True)
             ctx.log_path.write_text("--- STDOUT ---\nx\n--- STDERR ---\n", encoding="utf-8")
             # Tamper with the maker's staged output (a protected file).
@@ -201,7 +202,7 @@ def test_run_roles_failed_maker_not_promoted(
     class _FailingMaker(_MakerStub):
         vendor = "codex"
 
-        def run(self, loop, ctx: RunContext) -> RunResult:  # noqa: ANN001
+        def run(self, loop: LoopManifest, ctx: RunContext) -> RunResult:
             ctx.log_path.parent.mkdir(parents=True, exist_ok=True)
             ctx.log_path.write_text("--- STDOUT ---\nboom\n--- STDERR ---\n", encoding="utf-8")
             # Write a partial output but report failure.
@@ -216,3 +217,144 @@ def test_run_roles_failed_maker_not_promoted(
     rc = cli.main(["run", "build-ship"])
     assert rc == 1
     assert not (tmp_path / "mem" / "ledger" / "build" / "out.md").exists()
+
+
+_THREE_STAGE = """\
+id: build-ship
+name: Build/ship
+cadence:
+  type: cron
+  at: "0 9 * * *"
+tier: propose
+outputs:
+  - state/build/out.md
+roles:
+  maker:
+    agent: agents/implementer.md
+    vendor: codex
+  reviewer:
+    agent: agents/reviewer.md
+    vendor: claude
+    outputs:
+      - state/build/reviews/{{run_id}}.md
+  finisher:
+    agent: agents/implementer.md
+    vendor: codex
+    outputs:
+      - state/build/final.md
+"""
+
+
+class _FailVerdictReviewer(_ReviewerStub):
+    """A reviewer that returns an explicit FAIL verdict."""
+
+    def run(self, loop: LoopManifest, ctx: RunContext) -> RunResult:
+        ctx.log_path.parent.mkdir(parents=True, exist_ok=True)
+        ctx.log_path.write_text("--- STDOUT ---\nx\n--- STDERR ---\n", encoding="utf-8")
+        for out in ctx.resolved_outputs:
+            out.parent.mkdir(parents=True, exist_ok=True)
+            out.write_text("Blockers: one\nVerdict: FAIL\n", encoding="utf-8")
+        return RunResult(status=RunStatus.DONE, exit_code=0, log_path=ctx.log_path)
+
+
+def test_run_roles_reviewer_fail_stops_pipeline(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A reviewer FAIL fails the run and the later maker stage never runs (findings 1-2)."""
+    _env(monkeypatch, tmp_path, _THREE_STAGE)
+    register_runner("codex", _MakerStub)
+    register_runner("claude", _FailVerdictReviewer)
+
+    rc = cli.main(["run", "build-ship"])
+    assert rc == 1
+    # The finisher (third stage) must not have run.
+    assert not (tmp_path / "mem" / "ledger" / "build" / "final.md").exists()
+
+
+class _NoVerdictReviewer(_ReviewerStub):
+    """A reviewer that omits the required verdict."""
+
+    def run(self, loop: LoopManifest, ctx: RunContext) -> RunResult:
+        ctx.log_path.parent.mkdir(parents=True, exist_ok=True)
+        ctx.log_path.write_text("--- STDOUT ---\nx\n--- STDERR ---\n", encoding="utf-8")
+        for out in ctx.resolved_outputs:
+            out.parent.mkdir(parents=True, exist_ok=True)
+            out.write_text("Some notes without a verdict line\n", encoding="utf-8")
+        return RunResult(status=RunStatus.DONE, exit_code=0, log_path=ctx.log_path)
+
+
+def test_run_roles_missing_verdict_fails(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """A read-only reviewer with a verify rubric but no verdict fails the run (finding 1)."""
+    _env(monkeypatch, tmp_path)
+    register_runner("codex", _MakerStub)
+    register_runner("claude", _NoVerdictReviewer)
+
+    rc = cli.main(["run", "build-ship"])
+    assert rc == 1
+
+
+def test_run_roles_records_durable_stage_results(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The run record persists per-stage results (finding 9)."""
+    _env(monkeypatch, tmp_path)
+    register_runner("codex", _MakerStub)
+    register_runner("claude", _ReviewerStub)
+
+    rc = cli.main(["run", "build-ship"])
+    assert rc == 0
+    records = list((tmp_path / "mem" / "ledger" / "runs").glob("*.json"))
+    assert len(records) == 1
+    record = json.loads(records[0].read_text(encoding="utf-8"))
+    stage_roles = [s["role"] for s in record["stages"]]
+    assert stage_roles == ["implementer", "reviewer"]
+    assert record["stages"][1]["verdict"] == "PASS"
+
+
+_EXPLICIT_MAKER_OUTPUT = """\
+id: build-ship
+name: Build/ship
+cadence:
+  type: cron
+  at: "0 9 * * *"
+tier: propose
+outputs:
+  - state/build/top.md
+roles:
+  maker:
+    agent: agents/implementer.md
+    outputs:
+      - state/build/maker.md
+"""
+
+
+def test_run_roles_explicit_maker_output_replaces_top_level(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """An explicit maker output replaces top-level inheritance (finding 6)."""
+    _env(monkeypatch, tmp_path, _EXPLICIT_MAKER_OUTPUT)
+    register_runner("codex", _MakerStub)
+
+    rc = cli.main(["run", "build-ship"])
+    assert rc == 0
+    assert (tmp_path / "mem" / "ledger" / "build" / "maker.md").exists()
+    # The unowned top-level output is neither required nor produced.
+    assert not (tmp_path / "mem" / "ledger" / "build" / "top.md").exists()
+
+
+def test_dry_run_roles_uses_plan_with_override(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Dry-run shows the plan's per-role vendor honoring --vendor (finding 10)."""
+    _env(monkeypatch, tmp_path, _EXPLICIT_MAKER_OUTPUT)
+    register_runner("codex", _MakerStub)
+    register_runner("claude", _ReviewerStub)
+
+    rc = cli.main(["--json", "run", "build-ship", "--vendor", "claude", "--dry-run"])
+    payload = json.loads(capsys.readouterr().out)
+    assert rc == 0
+    # maker inherits its vendor -> honors the override, and effective outputs are
+    # the maker's explicit output only.
+    assert payload["data"]["roles"]["maker"]["vendor"] == "claude"
+    assert any("maker.md" in o for o in payload["data"]["resolved_outputs"])
+    assert not any("top.md" in o for o in payload["data"]["resolved_outputs"])
