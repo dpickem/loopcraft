@@ -37,6 +37,12 @@ _DURATION_RE = re.compile(r"^\s*(\d+)\s*([smh])\s*$", re.IGNORECASE)
 #: never an absolute path, ``..`` traversal, or anything with separators.
 LOOP_ID_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 
+#: Canonical role-name vocabulary (M3.5). A role name is interpolated into a
+#: per-stage log filename and used as the canonical compiled sub-agent filename,
+#: so it must be a single safe path segment: lowercase alphanumeric components
+#: separated by single hyphens (e.g. ``implementer``, ``code-reviewer``).
+ROLE_NAME_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+
 
 class ManifestError(Exception):
     """Raised when a manifest cannot be parsed or fails validation."""
@@ -93,6 +99,20 @@ class CadenceType(StrEnum):
     ON_ARTIFACT = "on-artifact"
 
 
+class ExecutionMode(StrEnum):
+    """How a multi-model (``roles``) loop composes its roles (M3.5).
+
+    ``INTER_STAGE`` runs each role as its own ordered adapter invocation and
+    hands context between stages through the memory ledger — portable across any
+    mix of providers with no gateway. ``INTRA_RUN`` runs both roles as
+    sub-agents inside a single harness; cross-provider intra-run is native only
+    on Cursor. Ignored for single-model loops (no ``roles``).
+    """
+
+    INTER_STAGE = "inter-stage"
+    INTRA_RUN = "intra-run"
+
+
 def parse_duration(value: str | None) -> int | None:
     """Parse a duration like ``10m``/``30s``/``1h`` into seconds.
 
@@ -126,6 +146,35 @@ class Runtime(_ManifestModel):
     vendor: Vendor | None = None
     model: str | None = None
     reasoning_effort: str | None = None
+
+
+class Role(_ManifestModel):
+    """One role in a multi-model (maker/checker) loop (M3.5).
+
+    A role binds an **agent definition** (its behavior) to an **execution
+    binding** (vendor + model). The behavior — instructions, tool list, and
+    read-only/verify policy — lives in the vendor-neutral agent definition file
+    at ``agent`` (a source-relative markdown path); ``vendor``/``model`` say
+    which engine runs it. Keeping the two separate is what lets a reviewer role
+    point at Opus today and a different model tomorrow without rewriting its
+    instructions.
+
+    Attributes:
+        agent: Source-relative path to the role's agent definition (e.g.
+            ``agents/reviewer.md``).
+        vendor: Runtime for this role; inherits ``runtime.vendor`` / the global
+            default when unset (the portability lever, per role).
+        model: Model id for this role (adapter maps it to the vendor's flag).
+        outputs: Ledger (``state/...``) paths this role owns and may write —
+            e.g. a reviewer's review-notes file. A read-only role writes *only*
+            its own ``outputs`` (never source code or the maker's outputs); a
+            maker with no ``outputs`` inherits the loop's top-level ``outputs``.
+    """
+
+    agent: str
+    vendor: Vendor | None = None
+    model: str | None = None
+    outputs: list[str] = Field(default_factory=list)
 
 
 class Cadence(_ManifestModel):
@@ -223,6 +272,8 @@ class LoopManifest(_ManifestModel):
     name: str
     description: str = ""
     runtime: Runtime = Field(default_factory=Runtime)
+    roles: dict[str, Role] | None = None
+    execution: ExecutionMode = ExecutionMode.INTER_STAGE
     locus: Locus = Locus.VM
     cadence: Cadence = Field(default_factory=Cadence)
     tier: Tier = Tier.OBSERVE
@@ -270,6 +321,48 @@ class LoopManifest(_ManifestModel):
         """Return this manifest's vendor, or the global default."""
         return self.runtime.vendor or default_vendor
 
+    @property
+    def is_multi_model(self) -> bool:
+        """Whether this loop decomposes into per-role agents (has ``roles``)."""
+        return bool(self.roles)
+
+    def ordered_roles(self) -> list[tuple[str, Role]]:
+        """Return ``(name, role)`` pairs in manifest declaration order.
+
+        Order is significant for :attr:`ExecutionMode.INTER_STAGE`: roles run as
+        ordered stages (e.g. implementer before reviewer). YAML mappings load
+        into an insertion-ordered dict, so declaration order is preserved.
+        """
+        return list((self.roles or {}).items())
+
+    def role_vendor(self, role: Role, default_vendor: str) -> str:
+        """Resolve a role's runtime: role → loop ``runtime`` → global default."""
+        return role.vendor or self.runtime.vendor or default_vendor
+
+    def effective_outputs(self) -> list[str]:
+        """Return every ledger path this loop can produce, for fleet analysis.
+
+        Includes every role's own ``outputs``, plus the top-level ``outputs``
+        *only when some role has no explicit outputs* — that role inherits the
+        top-level set, so it is owned; if every role declares its own outputs,
+        the top-level set is unowned and excluded. This matches the orchestrator's
+        per-stage ownership (a maker's explicit outputs replace inheritance) for
+        fleet producer-collision and dependency-graph analysis without loading
+        agent definitions. Used only for fleet-wide validation; execution and
+        dry-run derive ownership from the resolved ``ExecutionPlan``.
+        """
+        role_outputs = [o for r in (self.roles or {}).values() for o in r.outputs]
+        include_top_level = not self.roles or any(not r.outputs for r in self.roles.values())
+        declared = [*(self.outputs if include_top_level else []), *role_outputs]
+        seen: set[str] = set()
+        result: list[str] = []
+        for item in declared:
+            key = _norm(item)
+            if key not in seen:
+                seen.add(key)
+                result.append(item)
+        return result
+
     def validation_report(self) -> ValidationReport:
         """Validate this manifest and return structured issues."""
         issues: list[ValidationIssue] = []
@@ -281,13 +374,18 @@ class LoopManifest(_ManifestModel):
             issues.append(ValidationIssue(scope="name", message="missing required field"))
         if self.cadence.type == CadenceType.CRON and not self.cadence.at:
             issues.append(ValidationIssue(scope="cadence", message="cron requires cadence.at"))
-        if not self.logic.skill:
+        # A single-model loop drives its behavior from `logic.skill`; a
+        # multi-model loop (`roles`) drives each stage from its role agent
+        # definition, so the top-level skill becomes optional there.
+        if not self.logic.skill and not self.is_multi_model:
             issues.append(ValidationIssue(scope="logic.skill", message="missing required field"))
-        else:
+        elif self.logic.skill:
             try:
                 safe_source_relpath(self.logic.skill)
             except Exception as exc:
                 issues.append(ValidationIssue(scope="logic.skill", message=str(exc)))
+
+        issues.extend(self._role_issues())
 
         if self.content.config:
             try:
@@ -345,6 +443,108 @@ class LoopManifest(_ManifestModel):
                 issues.append(ValidationIssue(scope="budget.max_runtime", message=str(exc)))
 
         return ValidationReport(issues=issues)
+
+    def _state_output_issue(self, declared: str, label: str) -> ValidationIssue | None:
+        """Validate one ledger output path, returning an issue or None.
+
+        Role outputs use the same ``state/...`` ledger vocabulary as top-level
+        ``outputs``: no absolute paths, no external sinks, and no traversal
+        outside the ledger.
+        """
+        rel = declared.strip()
+        if PurePosixPath(rel).is_absolute() or rel.startswith("/"):
+            return ValidationIssue(scope=label, message=f"absolute path is not allowed: {declared!r}")
+        parts = PurePosixPath(rel).parts
+        if not parts or parts[0] != STATE_PREFIX:
+            return ValidationIssue(
+                scope=label, message=f"role outputs must use the 'state/...' prefix: {declared!r}"
+            )
+        try:
+            safe_state_relpath(declared)
+        except Exception as exc:
+            return ValidationIssue(scope=label, message=str(exc))
+        return None
+
+    def _role_issues(self) -> list[ValidationIssue]:
+        """Validate the multi-model ``roles`` block (M3.5).
+
+        Checks that a declared ``roles`` mapping is non-empty, each role's
+        ``agent`` is a safe source-relative path, and — for an intra-run loop
+        whose roles pin two or more different explicit vendors — that the
+        harness ``runtime.vendor`` is Cursor (the only runtime that brokers
+        cross-provider sub-agents in one process). Role vendors left unset
+        inherit at run time, so the harness check is completed at preflight when
+        the global default is known.
+        """
+        if self.roles is None:
+            return []
+        issues: list[ValidationIssue] = []
+        if not self.roles:
+            issues.append(ValidationIssue(scope="roles", message="roles is empty; declare at least one role"))
+            return issues
+        for name, role in self.roles.items():
+            # The role name becomes a per-stage log filename and the canonical
+            # compiled sub-agent filename, so it must be a single safe segment.
+            if not ROLE_NAME_RE.fullmatch(name):
+                issues.append(
+                    ValidationIssue(
+                        scope=f"roles.{name}",
+                        message=(
+                            "role name must be lowercase alphanumeric components "
+                            f"separated by single hyphens (e.g. 'reviewer'): {name!r}"
+                        ),
+                    )
+                )
+            if not role.agent:
+                issues.append(ValidationIssue(scope=f"roles.{name}.agent", message="missing required field"))
+                continue
+            try:
+                safe_source_relpath(role.agent)
+            except Exception as exc:
+                issues.append(ValidationIssue(scope=f"roles.{name}.agent", message=str(exc)))
+            for declared in role.outputs:
+                issue = self._state_output_issue(declared, f"roles.{name}.outputs")
+                if issue is not None:
+                    issues.append(issue)
+
+        # A read-only role must not own top-level outputs implicitly, and no two
+        # roles may own the same declared output (ambiguous ownership across
+        # stages — see review finding 7).
+        seen_role_outputs: dict[str, str] = {}
+        for name, role in self.roles.items():
+            for declared in role.outputs:
+                norm = _norm(declared)
+                if norm in seen_role_outputs:
+                    issues.append(
+                        ValidationIssue(
+                            scope=f"roles.{name}.outputs",
+                            message=(
+                                f"output '{declared}' is also owned by role "
+                                f"'{seen_role_outputs[norm]}'"
+                            ),
+                        )
+                    )
+                else:
+                    seen_role_outputs[norm] = name
+
+        explicit_vendors = {role.vendor for role in self.roles.values() if role.vendor is not None}
+        if (
+            self.execution == ExecutionMode.INTRA_RUN
+            and len(explicit_vendors) > 1
+            and self.runtime.vendor is not None
+            and self.runtime.vendor != Vendor.CURSOR
+        ):
+            issues.append(
+                ValidationIssue(
+                    scope="execution",
+                    message=(
+                        "intra-run cross-provider roles require a Cursor harness "
+                        f"(runtime.vendor is '{self.runtime.vendor}'); use execution: "
+                        "inter-stage or set runtime.vendor: cursor"
+                    ),
+                )
+            )
+        return issues
 
     def validate(self) -> list[str]:
         """Return validation problems as human-readable messages."""
@@ -481,6 +681,9 @@ def load_all(loops_dir: Path | str) -> ManifestCatalog:
     # same durable ledger file. Duplicates within one manifest are flagged too.
     producers: dict[str, list[str]] = {}
     for manifest in manifests:
+        # Duplicate detection is on the raw top-level outputs (a repeated line is
+        # a manifest error); cross-loop producer analysis uses effective outputs
+        # (deduped, including role outputs) so a loop never collides with itself.
         declared_norms: set[str] = set()
         for output in manifest.outputs:
             norm = _norm(output)
@@ -493,7 +696,8 @@ def load_all(loops_dir: Path | str) -> ManifestCatalog:
                 )
                 continue
             declared_norms.add(norm)
-            producers.setdefault(norm, []).append(manifest.id)
+        for output in manifest.effective_outputs():
+            producers.setdefault(_norm(output), []).append(manifest.id)
     for norm, producing_loops in sorted(producers.items()):
         if len(producing_loops) > 1:
             issues.append(
@@ -531,7 +735,7 @@ def _detect_cycles(manifests: list[LoopManifest]) -> ValidationReport:
     """
     producers: dict[str, list[str]] = {}
     for manifest in manifests:
-        for output in manifest.outputs:
+        for output in manifest.effective_outputs():
             producers.setdefault(_norm(output), []).append(manifest.id)
 
     graph = nx.DiGraph()

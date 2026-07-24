@@ -488,7 +488,9 @@ def test_deps_check_loop_normalizes_preflight_exception(monkeypatch, tmp_path: P
             """Raise to simulate a broken adapter."""
             raise RuntimeError("boom")
 
-    monkeypatch.setattr(cli, "get_runner", lambda vendor: ExplodingPreflightRunner())
+    # The shared preflight dispatch (used by run/apply/deps) resolves adapters
+    # via loopcraft.deploy, so patch the boundary there.
+    monkeypatch.setattr("loopcraft.deploy.get_runner", lambda vendor: ExplodingPreflightRunner())
     rc = cli.main(["--json", "deps", "check", "--loop", "slack-triage"])
     payload = json.loads(capsys.readouterr().out)
     assert rc == 1

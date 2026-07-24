@@ -18,6 +18,8 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from loopcraft.config import LoopcraftConfig, SourcePathError
 from loopcraft.manifest import LoopManifest
+from loopcraft.outputs import OutputBinding, is_safe_regular_file
+from loopcraft.paths import is_lexically_under
 from loopcraft.runners.capabilities import check_declared_capabilities
 
 
@@ -45,17 +47,52 @@ class PreflightReport(_RunnerModel):
 
 
 class RunContext(_RunnerModel):
-    """Everything a runner needs to execute one loop, isolated from others."""
+    """Everything a runner needs to execute one loop, isolated from others.
+
+    ``extra_context`` is appended verbatim to the assembled prompt. The
+    multi-model orchestrator (M3.5) uses it to hand a prior stage's output to
+    the next stage and to describe the sub-agents available in an intra-run
+    harness; it is empty for an ordinary single-stage run.
+
+    ``resolved_outputs`` are the paths the agent actually writes. Under the
+    worktree-local output model these live inside ``workdir``; ``output_bindings``
+    (when set) map each to its durable ledger destination for post-run promotion.
+    """
 
     config: LoopcraftConfig
     workdir: Path
     log_path: Path
     resolved_outputs: list[Path] = Field(default_factory=list)
+    output_bindings: list[OutputBinding] = Field(default_factory=list)
     env: dict[str, str] = Field(default_factory=dict)
+    extra_context: str = ""
+
+
+class StageRunResult(_RunnerModel):
+    """One stage's record in a multi-model pipeline run (M3.5).
+
+    Preserved on the aggregate :class:`RunResult` and copied into the durable
+    run record, so each stage stays independently observable and costed.
+    """
+
+    role: str
+    vendor: str
+    model: str | None = None
+    status: str
+    verdict: str | None = None
+    exit_code: int | None = None
+    tokens: int | None = None
+    cost_usd: float | None = None
+    log_path: str | None = None
 
 
 class RunResult(_RunnerModel):
-    """Normalized outcome of a headless run, across vendors."""
+    """Normalized outcome of a headless run, across vendors.
+
+    ``stages`` carries per-stage records for a multi-model pipeline run (empty
+    for a single-model run), so aggregate status/cost never hides which stage
+    did what (see the M3.5 orchestrator).
+    """
 
     status: str
     exit_code: int | None = None
@@ -65,6 +102,7 @@ class RunResult(_RunnerModel):
     log_path: Path | None = None
     outputs: list[str] = Field(default_factory=list)
     problems: list[str] = Field(default_factory=list)
+    stages: list[StageRunResult] = Field(default_factory=list)
 
 
 class BaseRunner(ABC):
@@ -129,7 +167,14 @@ class BaseRunner(ABC):
             lines.append("- inputs (read these):")
             for declared in loop.inputs:
                 lines.append(f"  - {declared} -> {ctx.config.resolve_state_path(declared)}")
-        if loop.outputs:
+        # Prefer the explicit output bindings (declared -> in-worktree write
+        # path); fall back to zipping the manifest outputs with resolved paths
+        # for callers that set resolved_outputs directly (e.g. legacy/tests).
+        if ctx.output_bindings:
+            lines.append("- outputs (write exactly these absolute paths):")
+            for binding in ctx.output_bindings:
+                lines.append(f"  - {binding.declared} -> {binding.write_path}")
+        elif loop.outputs:
             lines.append("- outputs (write exactly these absolute paths):")
             for declared, resolved in zip(loop.outputs, ctx.resolved_outputs):
                 lines.append(f"  - {declared} -> {resolved}")
@@ -144,6 +189,9 @@ class BaseRunner(ABC):
             lines.append(
                 f"- budget: max_turns={budget.max_turns}, max_runtime={budget.max_runtime}"
             )
+        if ctx.extra_context:
+            lines.append("")
+            lines.append(ctx.extra_context)
         return "\n".join(lines) + "\n"
 
     def check_declared_capabilities(self, loop: LoopManifest, config: LoopcraftConfig) -> list[str]:
@@ -164,8 +212,21 @@ class BaseRunner(ABC):
         return check_declared_capabilities(loop, config)
 
     def writable_roots(self, ctx: RunContext) -> list[str]:
-        """Return extra directories the loop is allowed to write to."""
-        roots = {str(p.parent.resolve()) for p in ctx.resolved_outputs}
+        """Return extra write directories that lie *outside* the run worktree.
+
+        Output directories inside the worktree need no grant (the worktree is the
+        agent's writable workspace on every vendor), so only out-of-worktree
+        parents are returned. Under the worktree-local output model this is
+        normally empty — outputs are promoted to the ledger after the run — which
+        is what lets Codex/Claude drop ``--add-dir`` and Cursor keep its sandbox.
+        """
+        workdir = ctx.workdir.resolve()
+        roots = {
+            str(parent)
+            for p in ctx.resolved_outputs
+            for parent in (p.parent.resolve(),)
+            if parent != workdir and not is_lexically_under(parent, workdir)
+        }
         return sorted(roots)
 
     def _load_source_text(self, ctx: RunContext, declared: str | None) -> str:
@@ -251,28 +312,43 @@ class BaseRunner(ABC):
         )
         ctx.log_path.write_text(log, encoding="utf-8")
 
-        missing = [p for p in ctx.resolved_outputs if not p.exists()]
+        # An output must be a real regular file. A symlink or directory at the
+        # declared path is rejected (never followed), so an agent cannot redirect
+        # promotion to read an arbitrary file (see review finding 10).
+        unsafe = [p for p in ctx.resolved_outputs if p.exists() and not is_safe_regular_file(p)]
+        unsafe_set = set(unsafe)
+        missing = [p for p in ctx.resolved_outputs if not p.exists() and p not in unsafe_set]
         stale = [
             p
             for p in ctx.resolved_outputs
-            if p.exists()
+            if p not in unsafe_set
+            and is_safe_regular_file(p)
             and pre_mtimes[p] is not None
-            and p.stat().st_mtime_ns == pre_mtimes[p]
+            and p.stat(follow_symlinks=False).st_mtime_ns == pre_mtimes[p]
         ]
         stale_set = set(stale)
-        produced = [str(p) for p in ctx.resolved_outputs if p.exists() and p not in stale_set]
+        produced = [
+            str(p)
+            for p in ctx.resolved_outputs
+            if is_safe_regular_file(p) and p not in stale_set
+        ]
 
         if completed.returncode != 0:
             problems = [f"{self.vendor} exited {completed.returncode}"]
         else:
             problems = [f"declared output not produced: {p}" for p in missing]
             problems += [f"declared output not refreshed this run: {p}" for p in stale]
+            problems += [f"declared output is not a regular file (symlink/dir refused): {p}" for p in unsafe]
         status = (
             RunStatus.DONE
-            if completed.returncode == 0 and not missing and not stale
+            if completed.returncode == 0 and not missing and not stale and not unsafe
             else RunStatus.FAILED
         )
 
+        # The runner writes only inside the worktree and reports what it produced
+        # there; promoting those files to the durable ledger is a control-plane
+        # concern (see loopcraft.outputs.promote_outputs), so any adapter — not
+        # just BaseRunner subclasses — gets ledger promotion for free.
         return RunResult(
             status=status,
             exit_code=completed.returncode,

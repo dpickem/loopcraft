@@ -21,6 +21,7 @@ from typing import Any
 from pydantic import BaseModel, Field, ValidationError
 
 from loopcraft.config import LoopcraftConfig
+from loopcraft.runners.base import StageRunResult
 
 
 class RunRecord(BaseModel):
@@ -78,6 +79,8 @@ class RunRecord(BaseModel):
     artifacts: list[str] = Field(default_factory=list)
     log_path: str | None = None
     problems: list[str] = Field(default_factory=list)
+    #: Per-stage records for a multi-model (roles) run; empty for single-model.
+    stages: list[StageRunResult] = Field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         """Return a plain JSON-serializable dict of this record."""

@@ -95,15 +95,96 @@ model is left to the CLI to validate.
 > model) is therefore validated by the vendor CLI at run time, not at `apply`.
 > Live catalog probing is deferred to a later milestone.
 
-**Shipped adapter scope (M3).** Codex and Claude are full adapters: they grant
-each declared ledger-output directory to the sandboxed run (`--add-dir`), so a
-loop runs unchanged on either. The **Cursor adapter is limited** in M3 — it has
-no equivalent writable-root grant, so a loop that declares `state/...` outputs is
-reported as unsupported for Cursor at preflight (use Codex/Claude for
-output-producing loops). The M3 design's cross-provider **sub-agent** capability
-(a Cursor loop spawning a sub-agent on another provider) and per-role multi-model
-compilation are **deferred to M3.5**; the shipped adapters run a single headless
-invocation per loop.
+**Outputs never require an out-of-worktree write grant (M3.5).** Declared
+`state/...` outputs are staged *inside* the run worktree
+(`<worktree>/outputs/...`); the agent writes only there, and the control plane
+**promotes** the produced files to the durable ledger after the run. Because no
+adapter writes outside its worktree, Codex/Claude no longer need `--add-dir` and
+Cursor keeps its sandbox — the earlier coarse `--sandbox disabled` grant is gone
+in the normal path. (If a loop is ever pointed at a write target outside the
+worktree, the adapters still grant it: `--add-dir` for Codex/Claude, and
+`--sandbox disabled --force` for Cursor, since `cursor-agent` has no per-dir
+flag.) All three adapters run output-producing loops.
+
+## Multi-model loops (M3.5)
+
+A loop can split into per-role agents on different providers — e.g. a `gpt-5.5`
+**implementer** and an `opus` **reviewer**. A role binds a vendor-neutral *agent
+definition* (its behavior — instructions, tools, read-only flag, verify rubric)
+to an *execution binding* (`vendor` + `model`); the agent definition is the
+single source of truth for behavior and the engine is a swappable binding on top
+of it.
+
+```yaml
+# roles decompose a loop into maker/checker; omit for a single-model loop.
+roles:
+  implementer:
+    agent: agents/implementer.md   # vendor-neutral behavior
+    vendor: codex
+    model: gpt-5.5
+  reviewer:
+    agent: agents/reviewer.md      # readonly: true travels with the role
+    vendor: claude
+    model: opus
+    outputs: [state/build/reviews/{{run_id}}.md]   # its own review notes
+execution: inter-stage             # inter-stage (default) | intra-run
+```
+
+A role owns its declared `outputs`. `readonly` means the role must not modify
+source code or the maker's outputs — but a read-only reviewer still writes its
+**own** review-notes output (above). A maker with no role `outputs` inherits the
+loop's top-level `outputs`.
+
+Two execution paths:
+
+- **`inter-stage`** (portable default): each role runs as its own ordered
+  adapter invocation and hands a **structured artifact** (prior status, promoted
+  ledger output paths + content digests, and captured stdout) to the next stage
+  through the ledger. Works across any mix of Codex/Claude/Cursor with no
+  gateway. A read-only reviewer's contract is enforced: it runs against the
+  maker's promoted ledger outputs and the control plane rejects the run if the
+  reviewer modifies any protected (pre-existing) worktree file.
+- **`intra-run`**: the role agent definitions are compiled into the harness
+  runtime's current native sub-agent format (`.codex/agents/*.toml` with
+  `developer_instructions`/`sandbox_mode`, and Markdown-with-frontmatter
+  `.claude/agents/*.md` / `.cursor/agents/*.md`) and one invocation spawns them
+  as sub-agents. Cross-provider intra-run is native only on **Cursor**, so a
+  mixed-vendor intra-run loop must use a Cursor harness (enforced at
+  validation/preflight).
+
+**Cross-provider Cursor spawn — verified live.** The compiled `.cursor/agents/*.md`
+sub-agent is discovered and spawned by a real `cursor-agent` run: a
+`gpt-5.5-high` main agent spawned the compiler-emitted `reviewer` sub-agent
+running on `claude-opus-4-8-high` (confirmed via the run's structured
+`taskToolCall`), satisfying the M3.5 cross-provider exit criterion. The opt-in
+smoke test reproduces it (skipped offline per `CONTRIBUTING.md`):
+
+```bash
+LOOPCRAFT_LIVE_CURSOR=1 uv run pytest tests/test_cursor_live.py -q
+```
+
+> Caveat: per-sub-agent model selection is plan-dependent. On legacy
+> request-based plans without Max Mode, Cursor may run sub-agents on the
+> parent/Composer model regardless of the compiled `model` field.
+
+**Scope (M3.5).** The inter-stage handoff is a **structured artifact** (status,
+promoted output paths + content digests, stdout) persisted through the ledger and
+reconstructed for the next stage — not a Git diff; a code maker/checker against a
+real Git worktree/diff is deferred with the L4 build loop.
+Enforced: per-role vendor/model, output ownership, read-only enforcement
+(control-plane hash check inter-stage; native `readonly`/`sandbox_mode`
+intra-run, with a read-only role rejected under a Claude harness), a single
+explicit reviewer `Verdict: PASS`/`FAIL` (missing/conflicting/FAIL fails and
+stops the pipeline), and the aggregate **runtime** budget (measured from pipeline
+start). Not enforced yet (named deferrals): `max_turns`/`max_tokens` need adapter
+usage telemetry, and `max_consecutive_failures` is a scheduler/store concern.
+Role `tools` are **policy-validated** (unknown tool or a read-only role holding a
+mutating local tool fails preflight), not yet mapped to runtime-native
+allowlists.
+
+`loopctl run <loop>` and `--dry-run` detect a roles loop automatically: dry-run
+shows the resolved per-role vendor/model, and preflight checks every role's
+adapter, binary, and agent definition.
 
 ## Scheduling & deployment (M2)
 

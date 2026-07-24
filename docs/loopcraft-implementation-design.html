@@ -724,9 +724,8 @@ roles:
     agent:  agents/reviewer.md      # the checker's own instructions + readonly tools
     vendor: claude                  # cross-provider checker
     model:  opus
-  # execution:
-  #   intra-run  -> one harness spawns both as sub-agents (native on cursor)
-  #   inter-stage-> control plane runs each as an ordered stage (any providers)
+execution: inter-stage     # inter-stage (default) -> ordered stages, any providers
+                           # intra-run             -> sub-agents in one harness (cross-provider native on cursor)
 
 locus: vm                  # vm | cloud | local   (default: vm — always-on first)
 cadence:
@@ -797,7 +796,7 @@ verify: "every claimed issue cites a file:line; no false 'looks good'"
 You are the checker, not the maker. Find what the implementer talked itself
 into. Output: blockers, then nits, then an explicit PASS/FAIL.</code></pre>
     <p>
-      At deploy time the adapter <strong>compiles each role&rsquo;s agent definition into the chosen runtime&rsquo;s native agent format</strong> &mdash; <code>.codex/agents/*.toml</code>, <code>.claude/agents/*</code>, or <code>.cursor/agents/*.yaml</code> &mdash; and attaches the role&rsquo;s model. For an <em>intra-run</em> loop the harness spawns both as sub-agents in one process; for an <em>inter-stage</em> loop the control plane runs each agent definition as its own ordered adapter invocation, passing the diff through the memory ledger. Either way, the <strong>agent definition is the single source of truth for what a role does</strong>, and the vendor/model is a swappable binding on top of it.
+      At deploy time the adapter <strong>compiles each role&rsquo;s agent definition into the chosen runtime&rsquo;s native agent format</strong> &mdash; <code>.codex/agents/*.toml</code> (TOML with <code>developer_instructions</code> + <code>sandbox_mode</code>), <code>.claude/agents/*.md</code>, or <code>.cursor/agents/*.md</code> (Markdown with YAML frontmatter) &mdash; and attaches the role&rsquo;s model. For an <em>intra-run</em> loop the harness spawns both as sub-agents in one process; for an <em>inter-stage</em> loop the control plane runs each agent definition as its own ordered adapter invocation, passing a structured handoff artifact (status, promoted output paths + digests, stdout) through the memory ledger. Either way, the <strong>agent definition is the single source of truth for what a role does</strong>, and the vendor/model is a swappable binding on top of it. <em>(Full Git-diff code maker/checker execution is deferred with the L4 build loop.)</em>
     </p>
     <div class="note">
       <strong>Why this matters:</strong> separating behavior (agent def) from execution (vendor+model) keeps the maker/checker split portable and honest &mdash; the reviewer&rsquo;s <code>readonly: true</code> and verify rubric travel with the <em>role</em>, not the model, so a checker can never quietly become a maker just because you swapped its engine.
@@ -835,7 +834,7 @@ into. Output: blockers, then nits, then an explicit PASS/FAIL.</code></pre>
         <tr><td>Tools / connectors</td><td>MCP + <code>nv-tools</code></td><td>MCP + <code>nv-tools</code></td><td>MCP + <code>nv-tools</code></td></tr>
         <tr><td>Stop condition</td><td><code>/goal</code>-style check</td><td><code>/goal</code> + evaluator</td><td>wrapper loop + evaluator sub-agent</td></tr>
         <tr><td>Isolation</td><td>built-in worktree</td><td><code>git worktree</code></td><td><code>--worktree</code> flag</td></tr>
-        <tr><td>Sub-agents</td><td><code>.codex/agents/</code> (TOML)</td><td><code>.claude/agents/</code></td><td><code>.cursor/agents/</code> (YAML)</td></tr>
+        <tr><td>Sub-agents</td><td><code>.codex/agents/</code> (TOML)</td><td><code>.claude/agents/</code> (Markdown)</td><td><code>.cursor/agents/</code> (Markdown)</td></tr>
         <tr><td>Run logs / cost</td><td><code>~/.codex/</code></td><td><code>~/.claude/</code></td><td>Cursor session logs</td></tr>
         <tr><td>Model selection</td><td><code>--model</code> / effort</td><td><code>--model</code></td><td><code>--model</code>; per-subagent model</td></tr>
         <tr><td>Cross-provider in one run</td><td>via gateway only</td><td>via gateway only</td><td><strong>native</strong> (GPT + Opus)</td></tr>
@@ -1510,8 +1509,8 @@ check:        ## verify deps + manifests without deploying
       <ul>
         <li><strong>Build:</strong> the <code>roles:</code> manifest block; the agent-definition compiler (role def &rarr; <code>.codex/.claude/.cursor</code> agent formats); both execution paths &mdash; intra-run sub-agents (native on Cursor) and inter-stage composition across adapters via the memory ledger; the Cursor writable-root grant so ledger-writing loops run under Cursor (parity carried over from M3).</li>
         <li><strong>Depends on:</strong> M3 (adapters).</li>
-        <li><strong>Exit criteria:</strong> a maker/checker loop runs a <code>gpt-5.5</code> implementer + an <code>opus</code> reviewer and hands the diff between stages cleanly; a Cursor loop spawns a cross-provider sub-agent; a ledger-writing loop runs unchanged under Cursor.</li>
-        <li><strong>Risks:</strong> passing context/diffs across stages without loss; two-model token cost; verifying the readonly reviewer can&rsquo;t mutate.</li>
+        <li><strong>Exit criteria:</strong> a maker/checker loop runs a <code>gpt-5.5</code> implementer + an <code>opus</code> reviewer and hands a <strong>structured artifact</strong> (status, promoted output paths + content digests, stdout) between stages cleanly through the ledger; the read-only reviewer&rsquo;s verdict gates the pipeline and it cannot mutate protected state; a ledger-writing loop runs unchanged under Cursor; a Cursor loop spawns a cross-provider sub-agent &mdash; <strong>verified live</strong>: a <code>gpt-5.5-high</code> main agent spawned the compiler-emitted <code>reviewer</code> sub-agent on <code>claude-opus-4-8-high</code> (opt-in smoke test <code>tests/test_cursor_live.py</code>; per-sub-agent model honoring is plan/Max-Mode dependent). <em>Deferred to L4:</em> a full Git-diff code maker/checker.</li>
+        <li><strong>Risks:</strong> passing context/diffs across stages without loss; two-model token cost; verifying the readonly reviewer can&rsquo;t mutate. <em>Budget note:</em> the aggregate <strong>runtime</strong> cap is enforced across stages (measured from pipeline start); <code>max_turns</code>/<code>max_tokens</code> need adapter usage telemetry and <code>max_consecutive_failures</code> is a scheduler/store concern &mdash; both are named deferrals, not silently dropped.</li>
       </ul>
     </details>
 

@@ -310,7 +310,13 @@ def check_declared_capabilities(loop: LoopManifest, config: LoopcraftConfig) -> 
         A list of problem strings (empty when all declared capabilities pass).
     """
     problems: list[str] = []
-    problems += _check_source_asset(config, loop.logic.skill or "", label="logic.skill", required=True)
+    # A multi-model loop drives behavior from its per-role agent definitions, so
+    # a top-level skill is optional there (the roles preflight checks the agent
+    # files instead); a single-model loop still requires one.
+    skill_required = not loop.is_multi_model
+    problems += _check_source_asset(
+        config, loop.logic.skill or "", label="logic.skill", required=skill_required
+    )
     problems += _check_source_asset(config, loop.logic.verify or "", label="logic.verify", required=False)
     problems += _check_source_asset(config, loop.content.config or "", label="content.config", required=False)
     problems += _check_content_config_validity(config, loop)

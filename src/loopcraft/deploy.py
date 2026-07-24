@@ -23,6 +23,7 @@ from pydantic import BaseModel, Field
 from loopcraft.config import LoopcraftConfig, SystemdScope
 from loopcraft.env import parse_env_file
 from loopcraft.manifest import LoopManifest, load_all
+from loopcraft.orchestrator import preflight_multi_model
 from loopcraft.paths import is_lexically_under
 from loopcraft.runners import get_runner
 from loopcraft.scheduler import (
@@ -112,27 +113,45 @@ class DeploymentPlan(BaseModel):
         return not self.problems
 
 
-def preflight_loop(config: LoopcraftConfig, manifest: LoopManifest) -> LoopPreflight:
-    """Run one loop's adapter preflight, normalizing faults to a failed result.
+def resolve_preflight(
+    config: LoopcraftConfig, manifest: LoopManifest, *, override_vendor: str | None = None
+) -> tuple[str, list[str]]:
+    """Return ``(vendor, problems)`` for a loop, single- or multi-model.
 
-    An unknown vendor or a raising adapter becomes a failed :class:`LoopPreflight`
-    rather than an exception, so aggregate validation never aborts on one loop.
+    This is the one shared preflight dispatcher used by ``run``, ``apply``, and
+    ``deps check --loop`` so every entry point validates a roles loop through the
+    multi-model path (every role's adapter, binary, and agent) instead of only
+    the top-level vendor. A raising adapter/preflight becomes a problem rather
+    than an exception, so aggregate validation never aborts on one loop.
     """
-    vendor = manifest.effective_vendor(config.default_vendor)
+    vendor = override_vendor or manifest.effective_vendor(config.default_vendor)
+    if manifest.is_multi_model:
+        try:
+            problems = preflight_multi_model(
+                manifest, config, config.default_vendor, override_vendor=override_vendor
+            )
+        except Exception as exc:  # noqa: BLE001 — a faulty preflight must not abort the plan
+            problems = [f"multi-model preflight raised {type(exc).__name__}: {exc}"]
+        return vendor, problems
     try:
         runner = get_runner(vendor)
     except ValueError as exc:
-        return LoopPreflight(loop=manifest.id, vendor=vendor, ok=False, problems=[str(exc)])
+        return vendor, [str(exc)]
     try:
         report = runner.preflight(manifest, config)
     except Exception as exc:  # noqa: BLE001 — a faulty adapter must not abort the plan
-        return LoopPreflight(
-            loop=manifest.id,
-            vendor=vendor,
-            ok=False,
-            problems=[f"preflight raised {type(exc).__name__}: {exc}"],
-        )
-    return LoopPreflight(loop=manifest.id, vendor=vendor, ok=report.ok, problems=report.problems)
+        return vendor, [f"preflight raised {type(exc).__name__}: {exc}"]
+    return vendor, report.problems
+
+
+def preflight_loop(config: LoopcraftConfig, manifest: LoopManifest) -> LoopPreflight:
+    """Run one loop's preflight (single- or multi-model), normalizing faults.
+
+    Wraps :func:`resolve_preflight` into a :class:`LoopPreflight` for the
+    deployment planner.
+    """
+    vendor, problems = resolve_preflight(config, manifest)
+    return LoopPreflight(loop=manifest.id, vendor=vendor, ok=not problems, problems=problems)
 
 
 def resolve_loopctl_command(config: LoopcraftConfig) -> tuple[list[str] | None, str | None]:
